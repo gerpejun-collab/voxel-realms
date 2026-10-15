@@ -14,6 +14,7 @@ export class SceneManager {
       0.1,
       600
     );
+    this.scene.add(this.camera);
 
     // --- WebGL Renderer ---
     this.renderer = new THREE.WebGLRenderer({

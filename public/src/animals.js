@@ -1,20 +1,21 @@
 // public/src/animals.js
-// Procedural Minecraft-style voxel fauna: articulated cubic sheep & pigs with autonomous wandering AI
+// Procedural Minecraft-style voxel fauna: articulated cubic sheep, pigs & cows with autonomous wandering AI
 import * as THREE from 'three';
 
 class VoxelAnimal {
   constructor(type, x, z, world, scene) {
-    this.type = type; // 'sheep' | 'pig'
+    this.type = type; // 'sheep' | 'pig' | 'cow'
     this.world = world;
     this.scene = scene;
 
     this.group = new THREE.Group();
-    this.pos = new THREE.Vector3(x, world.getHeightAt(x, z) + 1.0, z);
+    const spawnY = this.getGroundY(x, z);
+    this.pos = new THREE.Vector3(x, spawnY, z);
     this.group.position.copy(this.pos);
 
     this.yaw = Math.random() * Math.PI * 2;
     this.targetYaw = this.yaw;
-    this.speed = (type === 'pig') ? 1.4 : 1.1;
+    this.speed = (type === 'pig') ? 1.4 : ((type === 'cow') ? 1.0 : 1.15);
 
     // AI State
     this.state = 'idle'; // 'idle' | 'walking' | 'grazing'
@@ -28,9 +29,23 @@ class VoxelAnimal {
     this.scene.add(this.group);
   }
 
+  getGroundY(wx, wz) {
+    let groundY = this.world.getHeightAt(wx, wz);
+    const bx = Math.floor(wx);
+    const bz = Math.floor(wz);
+    // Ascend if solid block is placed on top
+    while (groundY < 60 && this.world.getBlock(bx, groundY + 1, bz) !== 0) {
+      groundY++;
+    }
+    // Block occupies [groundY, groundY + 1), standing surface is at groundY + 1.0
+    return groundY + 1.0;
+  }
+
   buildModel() {
     if (this.type === 'sheep') {
       this.buildSheepModel();
+    } else if (this.type === 'cow') {
+      this.buildCowModel();
     } else {
       this.buildPigModel();
     }
@@ -159,6 +174,91 @@ class VoxelAnimal {
     }
   }
 
+  buildCowModel() {
+    const cowBrownMat = new THREE.MeshStandardMaterial({ color: 0x4a3325, roughness: 0.85 });
+    const cowWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf3f4f6, roughness: 0.85 });
+    const hornMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.5 });
+    const muzzleMat = new THREE.MeshStandardMaterial({ color: 0xbfa393, roughness: 0.7 });
+    const udderMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.7 });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
+
+    // Body (y = 0.8)
+    const bodyGeom = new THREE.BoxGeometry(0.9, 0.75, 1.25);
+    const bodyMesh = new THREE.Mesh(bodyGeom, cowBrownMat);
+    bodyMesh.position.set(0, 0.8, 0);
+    bodyMesh.castShadow = true;
+    this.group.add(bodyMesh);
+
+    // White cow spots on torso
+    const spotGeom = new THREE.BoxGeometry(0.92, 0.5, 0.6);
+    const spotMesh = new THREE.Mesh(spotGeom, cowWhiteMat);
+    spotMesh.position.set(0, 0.82, -0.1);
+    this.group.add(spotMesh);
+
+    // Udder beneath belly
+    const udderGeom = new THREE.BoxGeometry(0.24, 0.12, 0.28);
+    const udderMesh = new THREE.Mesh(udderGeom, udderMat);
+    udderMesh.position.set(0, 0.38, -0.25);
+    this.group.add(udderMesh);
+
+    // Head group (pivot at front y = 0.95, z = 0.65)
+    this.headGroup = new THREE.Group();
+    this.headGroup.position.set(0, 0.95, 0.65);
+
+    const headGeom = new THREE.BoxGeometry(0.48, 0.46, 0.48);
+    const headMesh = new THREE.Mesh(headGeom, cowBrownMat);
+    headMesh.position.set(0, 0, 0.12);
+    headMesh.castShadow = true;
+    this.headGroup.add(headMesh);
+
+    // Cow Muzzle
+    const muzzleGeom = new THREE.BoxGeometry(0.32, 0.2, 0.14);
+    const muzzleMesh = new THREE.Mesh(muzzleGeom, muzzleMat);
+    muzzleMesh.position.set(0, -0.1, 0.38);
+    this.headGroup.add(muzzleMesh);
+
+    // 2 Iconic Horns
+    const hornGeom = new THREE.BoxGeometry(0.08, 0.16, 0.08);
+    const hornL = new THREE.Mesh(hornGeom, hornMat);
+    hornL.position.set(-0.25, 0.28, 0.06);
+    const hornR = new THREE.Mesh(hornGeom, hornMat);
+    hornR.position.set(0.25, 0.28, 0.06);
+    this.headGroup.add(hornL);
+    this.headGroup.add(hornR);
+
+    // Eyes
+    const eyeGeom = new THREE.BoxGeometry(0.06, 0.06, 0.02);
+    const eyeL = new THREE.Mesh(eyeGeom, eyeMat);
+    eyeL.position.set(-0.245, 0.08, 0.22);
+    const eyeR = new THREE.Mesh(eyeGeom, eyeMat);
+    eyeR.position.set(0.245, 0.08, 0.22);
+    this.headGroup.add(eyeL);
+    this.headGroup.add(eyeR);
+
+    this.group.add(this.headGroup);
+
+    // 4 Legs
+    this.legPivots = [];
+    const legOffsets = [
+      [-0.28, 0.5, 0.4],
+      [0.28, 0.5, 0.4],
+      [-0.28, 0.5, -0.4],
+      [0.28, 0.5, -0.4]
+    ];
+
+    const legGeom = new THREE.BoxGeometry(0.22, 0.6, 0.22);
+    for (let i = 0; i < 4; i++) {
+      const pivot = new THREE.Group();
+      pivot.position.set(...legOffsets[i]);
+      const legMesh = new THREE.Mesh(legGeom, cowBrownMat);
+      legMesh.position.y = -0.25;
+      legMesh.castShadow = true;
+      pivot.add(legMesh);
+      this.group.add(pivot);
+      this.legPivots.push(pivot);
+    }
+  }
+
   update(dt) {
     this.animTime += dt;
     this.stateTimer -= dt;
@@ -198,11 +298,11 @@ class VoxelAnimal {
       const nextZ = this.pos.z + Math.cos(this.yaw) * moveDist;
 
       // Ensure terrain height is walkable (not plunging into deep water)
-      const groundY = this.world.getHeightAt(nextX, nextZ);
-      if (groundY >= 18 && groundY <= 45) {
+      const targetY = this.getGroundY(nextX, nextZ);
+      if (targetY >= 19 && targetY <= 48) {
         this.pos.x = nextX;
         this.pos.z = nextZ;
-        this.pos.y += (groundY - this.pos.y) * Math.min(1.0, dt * 10.0);
+        this.pos.y += (targetY - this.pos.y) * Math.min(1.0, dt * 10.0);
       } else {
         // Turn around on steep drop or water
         this.targetYaw += Math.PI;
@@ -210,7 +310,7 @@ class VoxelAnimal {
 
       // Minecraft quadruped walk swing: diagonal pairs swing in sync
       const swing = Math.sin(this.animTime * 7.0) * 0.55;
-      if (this.legPivots.length === 4) {
+      if (this.legPivots && this.legPivots.length === 4) {
         this.legPivots[0].rotation.x = swing;   // Front Left
         this.legPivots[1].rotation.x = -swing;  // Front Right
         this.legPivots[2].rotation.x = -swing;  // Back Left
@@ -218,8 +318,10 @@ class VoxelAnimal {
       }
     } else {
       // Return legs to upright
-      for (const pivot of this.legPivots) {
-        pivot.rotation.x *= Math.max(0, 1.0 - dt * 8.0);
+      if (this.legPivots) {
+        for (const pivot of this.legPivots) {
+          pivot.rotation.x *= Math.max(0, 1.0 - dt * 8.0);
+        }
       }
     }
 
@@ -258,15 +360,18 @@ export class AnimalManager {
   }
 
   spawnInitialFlock() {
-    // Spawn ambient sheep and pigs around grassy zones near spawn
+    // Ambient sheep, pigs, and cows around grassy zones near spawn and monuments
     const spawnPoints = [
       { type: 'sheep', x: 8, z: 12 },
       { type: 'sheep', x: 12, z: 14 },
-      { type: 'sheep', x: 10, z: 18 },
+      { type: 'cow',   x: 10, z: 18 },
+      { type: 'cow',   x: -8, z: 16 },
       { type: 'pig',   x: -10, z: 12 },
       { type: 'pig',   x: -14, z: 10 },
       { type: 'sheep', x: 14, z: -10 },
-      { type: 'pig',   x: -12, z: -12 }
+      { type: 'cow',   x: 18, z: -14 },
+      { type: 'pig',   x: -12, z: -12 },
+      { type: 'sheep', x: 26, z: 34 }  // Japan garden sheep
     ];
 
     for (const pt of spawnPoints) {

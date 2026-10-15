@@ -1,5 +1,6 @@
 // public/src/controls.js
-// First-person pointer lock controls, mobile touch/joystick input, and 3D voxel DDA raycasting
+// First-person & third-person controls, Minecraft camera perspective toggle (F5),
+// articulated 1st-person arm punch animations, mobile touch/joystick input, and 3D voxel DDA raycasting
 import * as THREE from 'three';
 import { BLOCKS, BLOCK_DEFS } from './blocks.js';
 
@@ -43,14 +44,113 @@ export class Controls {
     this.bobTimer = 0;
     this.bobAmount = 0;
 
+    // Minecraft Perspective modes: 'first' | 'third-back' | 'third-front'
+    this.perspective = 'first';
+    this.perspectiveIndex = 0;
+    this.localAvatar = null;
+
     // Callbacks
     this.onBreakBlock = null;
     this.onPlaceBlock = null;
     this.onSelectHotbar = null;
     this.onLockChange = null;
+    this.onPerspectiveChange = null;
+
+    // Build first person arm & tool attached to camera
+    this.buildFirstPersonArm();
 
     this.setupListeners();
     this.setupTouchControls();
+  }
+
+  setLocalAvatar(avatar) {
+    this.localAvatar = avatar;
+    if (this.localAvatar && this.localAvatar.group) {
+      this.localAvatar.group.visible = (this.perspective !== 'first');
+    }
+  }
+
+  togglePerspective() {
+    this.perspectiveIndex = (this.perspectiveIndex + 1) % 3;
+    const modes = ['first', 'third-back', 'third-front'];
+    this.perspective = modes[this.perspectiveIndex];
+
+    if (this.firstPersonArm) {
+      this.firstPersonArm.visible = (this.perspective === 'first');
+    }
+    if (this.localAvatar && this.localAvatar.group) {
+      this.localAvatar.group.visible = (this.perspective !== 'first');
+    }
+
+    if (this.onPerspectiveChange) {
+      this.onPerspectiveChange(this.perspective);
+    }
+    return this.perspective;
+  }
+
+  buildFirstPersonArm() {
+    this.firstPersonArm = new THREE.Group();
+    this.camera.add(this.firstPersonArm);
+
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0ac69, roughness: 0.8 });
+    const shirtMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.7 }); // Cyan Steve shirt
+
+    this.armPivot = new THREE.Group();
+    // Position arm naturally in the bottom right corner of the view
+    this.armPivot.position.set(0.36, -0.32, -0.52);
+    this.armPivot.rotation.set(-0.25, 0.35, -0.1);
+
+    // Upper arm sleeve
+    const sleeveGeom = new THREE.BoxGeometry(0.16, 0.26, 0.16);
+    const sleeveMesh = new THREE.Mesh(sleeveGeom, shirtMat);
+    sleeveMesh.position.set(0, -0.13, 0);
+    this.armPivot.add(sleeveMesh);
+
+    // Forearm & Hand
+    const handGeom = new THREE.BoxGeometry(0.15, 0.30, 0.15);
+    const handMesh = new THREE.Mesh(handGeom, skinMat);
+    handMesh.position.set(0, -0.38, 0);
+    this.armPivot.add(handMesh);
+
+    // Mini held block attached to hand
+    const blockGeom = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+    this.heldBlockMat = new THREE.MeshStandardMaterial({ color: 0x5b8a3c, roughness: 0.85 });
+    this.heldBlockMesh = new THREE.Mesh(blockGeom, this.heldBlockMat);
+    this.heldBlockMesh.position.set(0, -0.44, 0.12);
+    this.armPivot.add(this.heldBlockMesh);
+
+    this.firstPersonArm.add(this.armPivot);
+    this.punchProgress = 0;
+  }
+
+  updateHeldBlock(blockId) {
+    if (!this.heldBlockMat) return;
+    const colors = {
+      1: 0x5b8a3c, // Grass
+      2: 0x866043, // Dirt
+      3: 0xa1724e, // Dirt dry
+      4: 0x808080, // Stone
+      5: 0x6e6e6e, // Cobblestone
+      6: 0x6d5032, // Oak Log
+      7: 0x3d732c, // Leaves
+      8: 0xb58c54, // Wood Plank
+      9: 0xdfd3a2, // Sand
+      10: 0x939393, // Gravel
+      11: 0x3b82f6, // Water
+      12: 0xf8fafc, // Snow
+      13: 0x93c5fd, // Ice
+      14: 0xb91c1c, // Brick
+      15: 0xa8a29e, // Clay
+      16: 0xbae6fd, // Glass
+      17: 0xd97706, // Iron Ore
+      18: 0xeab308  // Gold Ore
+    };
+    if (colors[blockId]) {
+      this.heldBlockMat.color.setHex(colors[blockId]);
+      this.heldBlockMesh.visible = true;
+    } else {
+      this.heldBlockMesh.visible = false;
+    }
   }
 
   setupListeners() {
@@ -120,10 +220,9 @@ export class Controls {
     window.addEventListener('touchstart', (e) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
-        // If touch is on right half and not interacting with a button
         if (touch.clientX > window.innerWidth * 0.35 && this.lookTouchId === null) {
           const target = document.elementFromPoint(touch.clientX, touch.clientY);
-          if (target && (target.closest('.touch-btn') || target.closest('#chat-container') || target.closest('.modal-card') || target.closest('#hotbar-wrapper'))) {
+          if (target && (target.closest('.touch-btn') || target.closest('.mobile-action-btn') || target.closest('#chat-container') || target.closest('.modal-card') || target.closest('#hotbar-wrapper'))) {
             continue;
           }
           this.lookTouchId = touch.identifier;
@@ -167,13 +266,22 @@ export class Controls {
     window.addEventListener('touchcancel', endTouchLook, { passive: true });
   }
 
+  triggerPunch() {
+    this.punchProgress = 1.0;
+    if (this.localAvatar) {
+      this.localAvatar.triggerSwing();
+    }
+  }
+
   triggerBreak() {
+    this.triggerPunch();
     if (this.targetedVoxel && this.onBreakBlock) {
       this.onBreakBlock(this.targetedVoxel);
     }
   }
 
   triggerPlace() {
+    this.triggerPunch();
     if (this.targetedVoxel && this.onPlaceBlock) {
       this.onPlaceBlock(this.targetedVoxel.place);
     }
@@ -181,6 +289,10 @@ export class Controls {
 
   setJump(isDown) {
     this.keys.jump = isDown;
+  }
+
+  setSprint(isSprint) {
+    this.keys.sprint = isSprint;
   }
 
   handleKeyDown(e) {
@@ -209,6 +321,10 @@ export class Controls {
       case 'ShiftLeft':
       case 'ShiftRight':
         this.keys.sprint = true;
+        break;
+      case 'F5':
+        e.preventDefault();
+        this.togglePerspective();
         break;
       case 'Digit1': case 'Digit2': case 'Digit3':
       case 'Digit4': case 'Digit5': case 'Digit6':
@@ -393,10 +509,74 @@ export class Controls {
     const bobY = Math.sin(this.bobTimer) * 0.045 * this.bobAmount;
     const bobRoll = Math.cos(this.bobTimer * 0.5) * 0.012 * this.bobAmount;
 
-    // Sync camera position to eye level + bobbing
+    // First-person punch & arm animation
+    if (this.armPivot) {
+      if (this.punchProgress > 0) {
+        this.punchProgress -= dt * 6.5;
+        if (this.punchProgress < 0) this.punchProgress = 0;
+        const punch = Math.sin((1.0 - this.punchProgress) * Math.PI);
+        this.armPivot.rotation.x = -0.25 - punch * 0.9;
+        this.armPivot.rotation.y = 0.35 - punch * 0.4;
+        this.armPivot.position.z = -0.52 - punch * 0.12;
+      } else {
+        const bobArmX = isMoving ? Math.sin(this.bobTimer) * 0.05 : 0;
+        const bobArmY = isMoving ? Math.abs(Math.cos(this.bobTimer)) * 0.03 : 0;
+        this.armPivot.rotation.x = -0.25 + bobArmX;
+        this.armPivot.position.y = -0.32 + bobArmY;
+        this.armPivot.rotation.y = 0.35;
+        this.armPivot.position.z = -0.52;
+      }
+    }
+
+    // Camera placement based on perspective mode (1st person, 3rd person back, 3rd person front)
     const eye = this.physics.getEyePosition();
-    this.camera.position.set(eye.x, eye.y + bobY, eye.z);
-    this.camera.rotation.set(this.pitch, this.yaw, bobRoll, 'YXZ');
+
+    if (this.perspective === 'first') {
+      this.camera.position.set(eye.x, eye.y + bobY, eye.z);
+      this.camera.rotation.set(this.pitch, this.yaw, bobRoll, 'YXZ');
+      if (this.firstPersonArm) this.firstPersonArm.visible = true;
+      if (this.localAvatar && this.localAvatar.group) this.localAvatar.group.visible = false;
+    } else if (this.perspective === 'third-back') {
+      const dist = 3.5;
+      const cosPitch = Math.cos(this.pitch);
+      const sinPitch = Math.sin(this.pitch);
+      const sinYaw = Math.sin(this.yaw);
+      const cosYaw = Math.cos(this.yaw);
+
+      const backX = sinYaw * cosPitch * dist;
+      const backY = -sinPitch * dist + 0.35;
+      const backZ = cosYaw * cosPitch * dist;
+
+      this.camera.position.set(eye.x + backX, eye.y + backY, eye.z + backZ);
+      this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+      if (this.firstPersonArm) this.firstPersonArm.visible = false;
+      if (this.localAvatar && this.localAvatar.group) this.localAvatar.group.visible = true;
+    } else if (this.perspective === 'third-front') {
+      const dist = 3.5;
+      const cosPitch = Math.cos(this.pitch);
+      const sinPitch = Math.sin(this.pitch);
+      const sinYaw = Math.sin(this.yaw);
+      const cosYaw = Math.cos(this.yaw);
+
+      const frontX = -sinYaw * cosPitch * dist;
+      const frontY = -sinPitch * dist + 0.35;
+      const frontZ = -cosYaw * cosPitch * dist;
+
+      this.camera.position.set(eye.x + frontX, eye.y + frontY, eye.z + frontZ);
+      this.camera.rotation.set(-this.pitch, this.yaw + Math.PI, 0, 'YXZ');
+      if (this.firstPersonArm) this.firstPersonArm.visible = false;
+      if (this.localAvatar && this.localAvatar.group) this.localAvatar.group.visible = true;
+    }
+
+    // Sync local avatar for 3rd person rendering
+    if (this.localAvatar) {
+      this.localAvatar.setTargetState(
+        [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z],
+        [this.yaw, this.pitch],
+        this.physics.action
+      );
+      this.localAvatar.update(dt);
+    }
 
     // Update raycast
     this.raycastVoxel();

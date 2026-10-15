@@ -8,6 +8,7 @@ class SoundSystem {
     this.masterGain = null;
     this.enabled = true;
     this.lastStepTime = 0;
+    this.lastClickTime = 0;
 
     // Initialize audio context lazily on first user gesture
     this.initContext = this.initContext.bind(this);
@@ -275,24 +276,70 @@ class SoundSystem {
   }
 
   /**
-   * Minecraft authentic UI button click
+   * Authentic Minecraft UI button click synthesizer
+   * Crisp, tactile mechanical transient with high-pass noise burst + tone drop
    */
-  playButtonClick() {
+  playClick(pitch = 1.0) {
     if (!this.enabled) return;
     this.ensureContext();
     if (!this.ctx) return;
+
+    const now = performance.now();
+    if (this.lastClickTime && (now - this.lastClickTime < 18)) {
+      return; // Prevent duplicate triggers in same frame
+    }
+    this.lastClickTime = now;
+
     const t = this.ctx.currentTime;
+
+    // 1. Primary tonal snap: fast downward pitch contour (1200 Hz down to 680 Hz)
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
+
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(600, t);
-    osc.frequency.exponentialRampToValueAtTime(120, t + 0.04);
-    gain.gain.setValueAtTime(0.35, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    const baseFreq = 1200 * pitch;
+    const endFreq = 680 * pitch;
+
+    osc.frequency.setValueAtTime(baseFreq, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(40, endFreq), t + 0.026);
+
+    gain.gain.setValueAtTime(0.42, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.026);
+
     osc.connect(gain);
     gain.connect(this.masterGain);
+
     osc.start(t);
-    osc.stop(t + 0.04);
+    osc.stop(t + 0.026);
+
+    // 2. High-pass noise burst for sharp mechanical switch bite (2200 Hz highpass)
+    const noiseBuffer = this.createNoiseBuffer(0.016);
+    if (noiseBuffer) {
+      const noiseSrc = this.ctx.createBufferSource();
+      noiseSrc.buffer = noiseBuffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(2200, t);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.35, t);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.016);
+
+      noiseSrc.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.masterGain);
+
+      noiseSrc.start(t);
+      noiseSrc.stop(t + 0.016);
+    }
+  }
+
+  /**
+   * Alias for backward compatibility with existing callers
+   */
+  playButtonClick(pitch = 1.0) {
+    this.playClick(pitch);
   }
 
   /**

@@ -31,10 +31,21 @@ export class UIManager {
     this.isInventoryOpen = false;
     this.isGuideOpen = false;
     this.isMapOpen = false;
+    this.isPlayerListOpen = false;
     this.currentSpeedTier = 1; // 1: 1x, 2: 2.5x, 3: 5x flight
 
     // 3D wireframe box for highlighting targeted voxel
     this.buildHighlightBox();
+
+    // Setup real-time multiplayer player count listener
+    if (this.multiplayer) {
+      this.multiplayer.onPlayerCountChange = (count) => {
+        this.updatePlayerCountBadge(count);
+        if (this.isPlayerListOpen) {
+          this.updatePlayerListModal(true);
+        }
+      };
+    }
 
     this.initLobby();
     this.initHotbar();

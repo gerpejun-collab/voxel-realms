@@ -10,6 +10,7 @@ import { Controls } from './controls.js';
 import { MultiplayerClient } from './multiplayer.js';
 import { UIManager } from './ui.js';
 import { AnimalManager } from './animals.js';
+import { Avatar } from './avatar.js';
 
 class VoxelRealmsApp {
   constructor() {
@@ -26,13 +27,15 @@ class VoxelRealmsApp {
     // 3. Initialize Character Physics & Swept-AABB
     this.physics = new PlayerPhysics(this.world);
 
-    // 4. Initialize First-Person Controls & Voxel Raycast
+    // 4. Initialize Controls, Camera & Local Avatar
     this.controls = new Controls(
       this.sceneManager.camera,
       this.sceneManager.renderer.domElement,
       this.physics,
       this.world
     );
+    this.localAvatar = new Avatar('local', 'Tú', this.sceneManager.scene);
+    this.controls.setLocalAvatar(this.localAvatar);
 
     // 5. Initialize Multiplayer Client
     this.multiplayer = new MultiplayerClient(

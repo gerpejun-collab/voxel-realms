@@ -1,7 +1,7 @@
 // server/rooms.js
 // Room manager and message dispatcher for multiplayer sessions
 
-const { MSG, sanitizeName, sanitizeChat, isValidBlockModify, isValidMove } = require('./protocol');
+const { MSG, sanitizeName, sanitizeChat, isValidBlockModify, isValidMove, validateTeleportPacket } = require('./protocol');
 const { GameState } = require('./game-state');
 
 class RoomManager {
@@ -129,6 +129,10 @@ class RoomManager {
       case MSG.CHAT:
         this.handleChat(ws, meta, data);
         break;
+
+      case MSG.TELEPORT_TO_PLAYER:
+        this.handleTeleportToPlayer(ws, meta, (data && typeof data === 'object') ? data : parsed);
+        break;
     }
   }
 
@@ -211,6 +215,52 @@ class RoomManager {
       senderId: player.id,
       senderName: player.name,
       text,
+      timestamp: Date.now()
+    });
+  }
+
+  handleTeleportToPlayer(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
+
+    if (!validateTeleportPacket(data)) {
+      this.send(ws, MSG.ERROR, { message: 'Paquete de teletransporte inválido.' });
+      return;
+    }
+
+    const requester = room.gameState.getPlayer(meta.id);
+    if (!requester) return;
+
+    const target = room.gameState.getPlayer(data.targetPlayerId);
+    if (!target) {
+      this.send(ws, MSG.ERROR, { message: 'El jugador objetivo no está disponible.' });
+      return;
+    }
+
+    const tx = typeof target.x === 'number' ? target.x : (Array.isArray(target.pos) ? target.pos[0] : 0);
+    const ty = typeof target.y === 'number' ? target.y : (Array.isArray(target.pos) ? target.pos[1] : 25);
+    const tz = typeof target.z === 'number' ? target.z : (Array.isArray(target.pos) ? target.pos[2] : 0);
+
+    if (Array.isArray(requester.pos)) {
+      requester.pos[0] = tx;
+      requester.pos[1] = ty;
+      requester.pos[2] = tz;
+      requester.lastUpdate = Date.now();
+    }
+
+    this.send(ws, MSG.TELEPORT_CONFIRM, {
+      type: MSG.TELEPORT_CONFIRM,
+      x: tx,
+      y: ty,
+      z: tz,
+      targetName: target.name
+    });
+
+    this.broadcast(room, MSG.CHAT_BROADCAST, {
+      senderId: 'SYSTEM',
+      senderName: 'SISTEMA',
+      text: `${requester.name} se ha teletransportado hacia ${target.name}`,
       timestamp: Date.now()
     });
   }

@@ -32,6 +32,7 @@ export class MultiplayerClient {
     this.onChatMessage = null;
     this.onNotification = null;
     this.onError = null;
+    this.onTeleportConfirm = null;
   }
 
   connect(playerName) {
@@ -215,6 +216,15 @@ export class MultiplayerClient {
         }
         break;
 
+      case 'teleport_confirm':
+        if (this.onTeleportConfirm && data) {
+          const x = typeof data.x === 'number' ? data.x : (Array.isArray(data.pos) ? data.pos[0] : 0);
+          const y = typeof data.y === 'number' ? data.y : (Array.isArray(data.pos) ? data.pos[1] : 25);
+          const z = typeof data.z === 'number' ? data.z : (Array.isArray(data.pos) ? data.pos[2] : 0);
+          this.onTeleportConfirm(x, y, z, data.targetName || 'Jugador');
+        }
+        break;
+
       case 'chat_broadcast':
         if (this.onChatMessage) {
           this.onChatMessage(data.senderName, data.text);
@@ -296,6 +306,21 @@ export class MultiplayerClient {
   sendChat(text) {
     if (!text || !text.trim()) return;
     this.send('chat', { text: text.trim() });
+  }
+
+  requestTeleportToPlayer(targetPlayerId) {
+    if (!this.connected || !targetPlayerId) return;
+    this.send('teleport_to_player', { targetPlayerId });
+  }
+
+  shareLocation(x, y, z, sectorName) {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const sector = sectorName ? (sectorName.startsWith('[') ? sectorName : `[${sectorName}]`) : '[Tierras del Reino]';
+    const msg = `📍 Mi ubicación: ${sector} (X: ${rx}, Y: ${ry}, Z: ${rz})`;
+    this.sendChat(msg);
+    return msg;
   }
 
   update(dt) {

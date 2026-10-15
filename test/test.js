@@ -7,7 +7,8 @@ const {
   sanitizeName,
   sanitizeChat,
   isValidBlockModify,
-  isValidMove
+  isValidMove,
+  validateTeleportPacket
 } = require('../server/protocol');
 
 const { GameState } = require('../server/game-state');
@@ -66,6 +67,24 @@ it('validates player movement packets', () => {
   assert.strictEqual(isValidMove({ pos: [1.2, 30.5], rot: [0.5, -0.2] }), false);
   assert.strictEqual(isValidMove({ pos: [NaN, 30.5, 0], rot: [0, 0] }), false);
   assert.strictEqual(isValidMove(null), false);
+});
+
+it('validates player teleportation packets and rejects invalid targets', () => {
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: 'p_1234567' }), true);
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: 'player-test_99' }), true);
+  // Missing or non-string targetPlayerId
+  assert.strictEqual(validateTeleportPacket({}), false);
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: null }), false);
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: 123 }), false);
+  // Empty or whitespace
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: '' }), false);
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: '   ' }), false);
+  // Exceeding max length
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: 'a'.repeat(65) }), false);
+  // Malicious/invalid characters
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: '<script>alert(1)</script>' }), false);
+  assert.strictEqual(validateTeleportPacket({ targetPlayerId: 'id with spaces' }), false);
+  assert.strictEqual(validateTeleportPacket(null), false);
 });
 
 // ==========================================
@@ -187,6 +206,97 @@ it('sends BLOCK_REJECT with exact coordinates when an invalid block modification
   assert.strictEqual(rejectMsg.data.x, 100);
   assert.strictEqual(rejectMsg.data.y, 32);
   assert.strictEqual(rejectMsg.data.z, 100);
+
+  roomManager.destroy();
+});
+
+it('processes valid player teleportation request, updates coordinates, and broadcasts social chat announcement', () => {
+  const roomManager = new RoomManager({ maxPlayers: 4, seed: 12345 });
+  const p1Messages = [];
+  const p2Messages = [];
+
+  const ws1 = {
+    readyState: 1,
+    send: (str) => { p1Messages.push(JSON.parse(str)); },
+    on: () => {}
+  };
+  const ws2 = {
+    readyState: 1,
+    send: (str) => { p2Messages.push(JSON.parse(str)); },
+    on: () => {}
+  };
+
+  roomManager.handleConnection(ws1);
+  roomManager.handleConnection(ws2);
+
+  const meta1 = roomManager.socketMeta.get(ws1);
+  const meta2 = roomManager.socketMeta.get(ws2);
+
+  roomManager.handleJoin(ws1, meta1, { name: 'Explorer1' });
+  roomManager.handleJoin(ws2, meta2, { name: 'Explorer2' });
+
+  // Move Explorer2 to Japan Imperial sector (250, 25, 250)
+  roomManager.handleMove(ws2, meta2, {
+    pos: [250.0, 25.0, 250.0],
+    rot: [0, 0]
+  });
+
+  const room = roomManager.rooms.get(meta1.roomId);
+  const targetPlayer = room.gameState.getPlayer(meta2.id);
+  assert.deepStrictEqual(targetPlayer.pos, [250.0, 25.0, 250.0]);
+
+  // Explorer1 requests teleportation to Explorer2
+  roomManager.handleTeleportToPlayer(ws1, meta1, { targetPlayerId: meta2.id });
+
+  // Verify TELEPORT_CONFIRM packet received by Explorer1
+  const confirmMsg = p1Messages.find(m => m.type === MSG.TELEPORT_CONFIRM);
+  assert.ok(confirmMsg, 'Expected TELEPORT_CONFIRM packet to be sent to requester');
+  assert.strictEqual(confirmMsg.data.x, 250.0);
+  assert.strictEqual(confirmMsg.data.y, 25.0);
+  assert.strictEqual(confirmMsg.data.z, 250.0);
+  assert.strictEqual(confirmMsg.data.targetName, 'Explorer2');
+
+  // Verify requester's authoritative game state updated
+  const requester = room.gameState.getPlayer(meta1.id);
+  assert.strictEqual(requester.pos[0], 250.0);
+  assert.strictEqual(requester.pos[1], 25.0);
+  assert.strictEqual(requester.pos[2], 250.0);
+
+  // Verify social chat announcement broadcast to all room clients
+  const broadcastMsg = p1Messages.find(m => m.type === MSG.CHAT_BROADCAST && m.data.senderId === 'SYSTEM');
+  assert.ok(broadcastMsg, 'Expected SYSTEM chat broadcast');
+  assert.strictEqual(broadcastMsg.data.text, 'Explorer1 se ha teletransportado hacia Explorer2');
+
+  const p2Broadcast = p2Messages.find(m => m.type === MSG.CHAT_BROADCAST && m.data.senderId === 'SYSTEM');
+  assert.ok(p2Broadcast, 'Expected target player to also receive social chat announcement');
+
+  roomManager.destroy();
+});
+
+it('rejects teleportation when target player is missing or packet is invalid', () => {
+  const roomManager = new RoomManager({ maxPlayers: 4, seed: 12345 });
+  const messages = [];
+  const ws = {
+    readyState: 1,
+    send: (str) => { messages.push(JSON.parse(str)); },
+    on: () => {}
+  };
+
+  roomManager.handleConnection(ws);
+  const meta = roomManager.socketMeta.get(ws);
+  roomManager.handleJoin(ws, meta, { name: 'SoloExplorer' });
+
+  // 1. Request nonexistent player
+  roomManager.handleTeleportToPlayer(ws, meta, { targetPlayerId: 'p_nonexistent' });
+  const errorMsg1 = messages[messages.length - 1];
+  assert.strictEqual(errorMsg1.type, MSG.ERROR);
+  assert.ok(errorMsg1.data.message.includes('objetivo no está disponible'));
+
+  // 2. Request invalid packet payload
+  roomManager.handleTeleportToPlayer(ws, meta, { targetPlayerId: '' });
+  const errorMsg2 = messages[messages.length - 1];
+  assert.strictEqual(errorMsg2.type, MSG.ERROR);
+  assert.ok(errorMsg2.data.message.includes('inválido'));
 
   roomManager.destroy();
 });

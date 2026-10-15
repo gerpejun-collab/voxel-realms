@@ -8,6 +8,7 @@ const MSG = {
   BLOCK_MODIFY: 'block_modify',
   CHAT: 'chat',
   PING: 'ping',
+  TELEPORT_TO_PLAYER: 'teleport_to_player',
 
   // Server -> Client
   INIT: 'init',
@@ -17,6 +18,7 @@ const MSG = {
   BLOCK_UPDATE: 'block_update',
   BLOCK_REJECT: 'block_reject',
   CHAT_BROADCAST: 'chat_broadcast',
+  TELEPORT_CONFIRM: 'teleport_confirm',
   PONG: 'pong',
   ERROR: 'error'
 };
@@ -24,6 +26,7 @@ const MSG = {
 const MAX_NAME_LENGTH = 16;
 const MAX_CHAT_LENGTH = 120;
 const MAX_BLOCK_ID = 32;
+const MAX_PLAYER_ID_LENGTH = 64;
 
 /**
  * Sanitize username to prevent HTML injection and excessive length
@@ -76,15 +79,30 @@ function isValidMove(data) {
   return true;
 }
 
+/**
+ * Validate teleport packet
+ */
+function validateTeleportPacket(packet) {
+  if (!packet || typeof packet !== 'object') return false;
+  const { targetPlayerId } = packet;
+  if (typeof targetPlayerId !== 'string') return false;
+  const clean = targetPlayerId.trim();
+  if (clean.length === 0 || clean.length > MAX_PLAYER_ID_LENGTH) return false;
+  if (!/^[a-zA-Z0-9_\-]+$/.test(clean)) return false;
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     MSG,
     MAX_NAME_LENGTH,
     MAX_CHAT_LENGTH,
     MAX_BLOCK_ID,
+    MAX_PLAYER_ID_LENGTH,
     sanitizeName,
     sanitizeChat,
     isValidBlockModify,
-    isValidMove
+    isValidMove,
+    validateTeleportPacket
   };
 }

@@ -111,13 +111,40 @@ export class UIManager {
     // 3D wireframe box for highlighting targeted voxel
     this.buildHighlightBox();
 
-    // Setup real-time multiplayer player count listener
+    // Setup real-time multiplayer player count and teleport listener
     if (this.multiplayer) {
       this.multiplayer.onPlayerCountChange = (count) => {
         this.updatePlayerCountBadge(count);
         if (this.isPlayerListOpen) {
           this.updatePlayerListModal(true);
         }
+      };
+
+      this.multiplayer.onTeleportConfirm = (x, y, z, targetName) => {
+        const px = typeof x === 'number' ? x : parseFloat(x);
+        const py = typeof y === 'number' ? y : parseFloat(y);
+        const pz = typeof z === 'number' ? z : parseFloat(z);
+
+        if (this.physics && typeof this.physics.teleport === 'function') {
+          this.physics.teleport(px, py + 1, pz);
+        } else if (this.controls?.physics && typeof this.controls.physics.teleport === 'function') {
+          this.controls.physics.teleport(px, py + 1, pz);
+        }
+
+        if (typeof sound.playTeleport === 'function') {
+          sound.playTeleport();
+        } else if (typeof sound.playClick === 'function') {
+          sound.playClick();
+        }
+
+        if (this.world && typeof this.world.updateStreaming === 'function') {
+          this.world.updateStreaming(px, pz);
+        }
+
+        const pos = this.physics?.pos || this.controls?.physics?.pos || { x: px, y: py + 1, z: pz };
+        this.updateHUD(60, pos);
+
+        this.showNotification('Te has teletransportado hacia ' + (targetName || 'Jugador'));
       };
     }
 
@@ -681,13 +708,21 @@ export class UIManager {
   }
 
   shareLocation() {
-    const pos = this.controls.physics.pos;
-    const bx = Math.floor(pos.x);
-    const by = Math.floor(pos.y);
-    const bz = Math.floor(pos.z);
+    sound.playClick();
+    const pos = this.physics?.pos || this.controls?.physics?.pos || { x: 0, y: 25, z: 0 };
+    const bx = Math.round(pos.x);
+    const by = Math.round(pos.y);
+    const bz = Math.round(pos.z);
     const sector = this.getSectorName(bx, bz);
-    const msg = `📍 Estoy en [${sector}] XYZ (${bx}, ${by}, ${bz}). ¡Venid a visitarme!`;
-    this.multiplayer.sendChat(msg);
+
+    if (this.multiplayer && typeof this.multiplayer.shareLocation === 'function') {
+      this.multiplayer.shareLocation(bx, by, bz, sector);
+    } else if (this.multiplayer && typeof this.multiplayer.sendChat === 'function') {
+      const msg = `📍 Mi ubicación: [${sector}] (X: ${bx}, Y: ${by}, Z: ${bz})`;
+      this.multiplayer.sendChat(msg);
+    }
+
+    this.showNotification('Has compartido tu ubicación en el chat.');
   }
 
   initGuide() {
@@ -977,6 +1012,13 @@ export class UIManager {
       });
     }
 
+    const chatShareBtn = document.getElementById('chat-share-loc-btn');
+    if (chatShareBtn) {
+      chatShareBtn.addEventListener('click', () => {
+        this.shareLocation();
+      });
+    }
+
     this.multiplayer.onChatMessage = (sender, text) => {
       this.addChatMessage(sender, text);
     };
@@ -1013,12 +1055,63 @@ export class UIManager {
     const senderSpan = document.createElement('span');
     senderSpan.className = 'chat-sender';
     senderSpan.textContent = `<${sender}> `;
+    row.appendChild(senderSpan);
 
     const textSpan = document.createElement('span');
     textSpan.className = 'chat-text';
-    textSpan.textContent = text;
 
-    row.appendChild(senderSpan);
+    // Check for coordinate patterns to make them clickable
+    const coordRegex = /(?:\(?X:\s*(-?\d+)[,\s]+Y:\s*(-?\d+)[,\s]+Z:\s*(-?\d+)\)?|XYZ(?::|\s)?\s*\(?(-?\d+)[,\s/]+(-?\d+)[,\s/]+(-?\d+)\)?)/i;
+    const match = text.match(coordRegex);
+
+    if (match) {
+      const matchIndex = match.index;
+      const matchText = match[0];
+      const cx = parseInt(match[1] || match[4], 10);
+      const cy = parseInt(match[2] || match[5], 10);
+      const cz = parseInt(match[3] || match[6], 10);
+
+      // Part before coords
+      if (matchIndex > 0) {
+        textSpan.appendChild(document.createTextNode(text.substring(0, matchIndex)));
+      }
+
+      // Interactive coordinate chip
+      const coordBtn = document.createElement('span');
+      coordBtn.className = 'chat-coord-btn';
+      coordBtn.title = `Haz clic para teletransportarte a (${cx}, ${cy}, ${cz})`;
+      coordBtn.textContent = matchText;
+
+      coordBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sound.playClick();
+        if (this.physics && typeof this.physics.teleport === 'function') {
+          this.physics.teleport(cx, cy + 1, cz);
+        } else if (this.controls?.physics && typeof this.controls.physics.teleport === 'function') {
+          this.controls.physics.teleport(cx, cy + 1, cz);
+        }
+        if (typeof sound.playTeleport === 'function') {
+          sound.playTeleport();
+        }
+        if (this.world && typeof this.world.updateStreaming === 'function') {
+          this.world.updateStreaming(cx, cz);
+        }
+        const pos = this.physics?.pos || this.controls?.physics?.pos || { x: cx, y: cy + 1, z: cz };
+        this.updateHUD(60, pos);
+        this.showNotification(`Teletransportado a las coordenadas compartidas (${cx}, ${cy}, ${cz})`);
+      });
+
+      textSpan.appendChild(coordBtn);
+
+      // Part after coords
+      const afterIndex = matchIndex + matchText.length;
+      if (afterIndex < text.length) {
+        textSpan.appendChild(document.createTextNode(text.substring(afterIndex)));
+      }
+    } else {
+      textSpan.textContent = text;
+    }
+
     row.appendChild(textSpan);
     feed.appendChild(row);
 
@@ -1029,6 +1122,10 @@ export class UIManager {
       row.classList.add('fading');
       setTimeout(() => row.remove(), 2000);
     }, 8000);
+  }
+
+  showNotification(text) {
+    this.addSystemNotification(text);
   }
 
   addSystemNotification(text) {
@@ -1107,18 +1204,24 @@ export class UIManager {
       row.innerHTML = `
         <td>${avatar.name}</td>
         <td><span class="location-badge">${remoteSector} (${ax}, ${az})</span></td>
-        <td><button class="tp-friend-btn mc-btn" title="Teletransportarte a ${avatar.name}">🚀 Ir a él</button></td>
+        <td><button class="tp-friend-btn mc-btn" data-player-id="${id}" title="Teletransportarte a ${avatar.name}">Teletransportar 🚀</button></td>
       `;
 
       const tpBtn = row.querySelector('.tp-friend-btn');
       if (tpBtn) {
         tpBtn.addEventListener('click', () => {
           sound.playClick();
-          this.controls.physics.teleport(ax, ay + 1, az);
-          this.world.updateStreaming(ax, az);
-          sound.playTeleport();
+          if (this.multiplayer && typeof this.multiplayer.requestTeleportToPlayer === 'function') {
+            this.multiplayer.requestTeleportToPlayer(id);
+          } else if (this.physics && typeof this.physics.teleport === 'function') {
+            this.physics.teleport(ax, ay + 1, az);
+            if (typeof sound.playTeleport === 'function') sound.playTeleport();
+            this.showNotification('Te has teletransportado hacia ' + avatar.name);
+          }
           this.updatePlayerListModal(false);
-          this.addSystemNotification(`Te has teletransportado junto a ${avatar.name}`);
+          if (!this.controls?.isMobile) {
+            this.controls?.lock?.();
+          }
         });
       }
 

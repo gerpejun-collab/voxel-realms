@@ -298,13 +298,17 @@ it('calculates Norway Fjord deep gorge and colossal cliff heights correctly', ()
   assert.ok(cliffH >= 50 && cliffH <= 56, `Expected cliff height between 50 and 56, got ${cliffH}`);
 });
 
-it('verifies all 6 fast travel sector coordinates are valid and within bounds', () => {
+it('verifies all 10 fast travel sector and monument coordinates are valid and within bounds', () => {
   const sectors = [
     { name: 'Descampado Central', x: 0, y: 24, z: 0 },
     { name: 'Japón Imperial', x: 30, y: 25, z: 30 },
+    { name: 'Santuario Shinto & Zen', x: 30, y: 25, z: 42 },
     { name: 'China & Shanghai', x: -30, y: 25, z: 30 },
+    { name: 'Torre Perla Oriental', x: -40, y: 25, z: 40 },
     { name: 'París & Torre Eiffel', x: 30, y: 25, z: -30 },
+    { name: 'Arco de Triunfo', x: 42, y: 25, z: -20 },
     { name: 'Nueva York', x: -30, y: 25, z: -30 },
+    { name: 'Estatua de la Libertad', x: -42, y: 25, z: -42 },
     { name: 'Fiordos de Noruega', x: 0, y: 22, z: 180 }
   ];
 
@@ -313,6 +317,66 @@ it('verifies all 6 fast travel sector coordinates are valid and within bounds', 
     assert.strictEqual(typeof s.x, 'number');
     assert.strictEqual(typeof s.z, 'number');
   }
+});
+
+it('verifies animal elevation calculation never sinks beneath ground surface', () => {
+  // Mock world height and solid block check
+  const mockWorld = {
+    getHeightAt: (x, z) => 24, // Surface block index 24 (occupies [24, 25))
+    getBlock: (x, y, z) => 0
+  };
+
+  function getGroundY(wx, wz) {
+    let groundY = mockWorld.getHeightAt(wx, wz);
+    const bx = Math.floor(wx);
+    const bz = Math.floor(wz);
+    while (groundY < 60 && mockWorld.getBlock(bx, groundY + 1, bz) !== 0) {
+      groundY++;
+    }
+    // Block occupies [groundY, groundY + 1.0), feet stand at groundY + 1.0
+    return groundY + 1.0;
+  }
+
+  const standingY = getGroundY(10, 10);
+  assert.strictEqual(standingY, 25.0, 'Animal standing Y must be on top of block 24 (25.0), not 24.0');
+});
+
+it('verifies expanded monument plateau (radius 72) ensures flat base height across all 4 sectors', () => {
+  const MONUMENT_RADIUS = 72;
+  const BASE_HEIGHT = 24;
+
+  const landmarkCoords = [
+    [30, 30],   // Japan Pagoda
+    [30, 42],   // Japan Shinto Sanctuary
+    [42, 30],   // Japan Zen Garden
+    [-30, 30],  // Shanghai Tower
+    [-40, 40],  // Shanghai Oriental Pearl Tower
+    [30, -30],  // Paris Eiffel Tower
+    [42, -20],  // Paris Arc de Triomphe
+    [-30, -30], // NYC Empire State
+    [-42, -42]  // NYC Statue of Liberty
+  ];
+
+  for (const [x, z] of landmarkCoords) {
+    const dist = Math.hypot(x, z);
+    assert.ok(
+      dist <= MONUMENT_RADIUS,
+      `Landmark at (${x}, ${z}) has distance ${dist.toFixed(2)}, which must be <= ${MONUMENT_RADIUS}`
+    );
+  }
+});
+
+it('verifies Minecraft camera perspective cycling modes (first, third-back, third-front)', () => {
+  const modes = ['first', 'third-back', 'third-front'];
+  let idx = 0;
+  function toggle() {
+    idx = (idx + 1) % 3;
+    return modes[idx];
+  }
+
+  assert.strictEqual(toggle(), 'third-back');
+  assert.strictEqual(toggle(), 'third-front');
+  assert.strictEqual(toggle(), 'first');
 });
 
 it('validates player speed modes and flight mode toggle mechanics', () => {

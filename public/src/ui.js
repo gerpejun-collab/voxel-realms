@@ -67,6 +67,16 @@ export class UIManager {
     this.sceneManager.scene.add(this.highlightBox);
   }
 
+  updatePlayerCountBadge(count) {
+    if (!this.hudOnlineCount) {
+      this.hudOnlineCount = document.getElementById('hud-online-count');
+    }
+    if (this.hudOnlineCount) {
+      const total = typeof count === 'number' ? count : (1 + (this.multiplayer?.remoteAvatars?.size || 0));
+      this.hudOnlineCount.textContent = total === 1 ? '1 Jugador Conectado' : `${total} Jugadores Conectados`;
+    }
+  }
+
   initLobby() {
     const nameInput = document.getElementById('player-name-input');
     const joinBtn = document.getElementById('join-btn');
@@ -115,6 +125,7 @@ export class UIManager {
 
       this.lobbyOverlay.classList.add('hidden');
       this.hudOverlay.classList.remove('hidden');
+      this.updatePlayerCountBadge(1 + (this.multiplayer?.remoteAvatars?.size || 0));
 
       if (this.controls.isMobile && this.mobileOverlay) {
         this.mobileOverlay.classList.remove('hidden');
@@ -130,11 +141,22 @@ export class UIManager {
     };
 
     if (joinBtn) {
-      joinBtn.addEventListener('click', doJoin);
+      joinBtn.addEventListener('click', () => {
+        sound.playClick();
+        doJoin();
+      });
     }
     if (nameInput) {
       nameInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') doJoin();
+        if (e.key === 'Enter') {
+          sound.playClick();
+          doJoin();
+        }
+      });
+    }
+    if (qualitySelect) {
+      qualitySelect.addEventListener('change', () => {
+        sound.playClick();
       });
     }
   }
@@ -158,6 +180,7 @@ export class UIManager {
       slotDiv.appendChild(iconImg);
 
       slotDiv.addEventListener('click', () => {
+        sound.playClick(1.05);
         this.selectHotbarSlot(i);
       });
 
@@ -165,8 +188,12 @@ export class UIManager {
     }
 
     this.controls.onSelectHotbar = (idx) => {
+      sound.playClick(1.05);
       this.selectHotbarSlot(idx);
     };
+
+    // Initial held block setup
+    this.selectHotbarSlot(0);
   }
 
   updateSlotIcon(imgElem, blockId) {
@@ -189,6 +216,9 @@ export class UIManager {
     });
 
     const activeBlockId = this.hotbarBlocks[index];
+    if (this.controls.updateHeldBlock) {
+      this.controls.updateHeldBlock(activeBlockId);
+    }
     const def = BLOCK_DEFS[activeBlockId];
     const nameLabel = document.getElementById('selected-block-label');
     if (nameLabel && def) {
@@ -232,6 +262,7 @@ export class UIManager {
       itemDiv.appendChild(label);
 
       itemDiv.addEventListener('click', () => {
+        sound.playClick(1.0);
         // Assign to currently selected hotbar slot
         const activeIdx = this.controls.selectedHotbarIndex;
         this.hotbarBlocks[activeIdx] = bId;
@@ -248,12 +279,16 @@ export class UIManager {
     }
 
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => this.toggleInventory(false));
+      closeBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleInventory(false);
+      });
     }
 
     // Toggle on 'E' key or close on 'Escape'
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyE' && !this.isChatOpen && !this.isGuideOpen) {
+        sound.playClick();
         if (this.controls.isLocked) {
           this.controls.unlock();
           this.toggleInventory(true);
@@ -262,6 +297,7 @@ export class UIManager {
           this.controls.lock();
         }
       } else if (e.code === 'Escape' && this.isInventoryOpen) {
+        sound.playClick();
         this.toggleInventory(false);
         this.controls.lock();
       }
@@ -276,6 +312,7 @@ export class UIManager {
   }
 
   initQuickActions() {
+    const btnToggleCam = document.getElementById('btn-toggle-cam');
     const btnChat = document.getElementById('btn-open-chat');
     const btnGuide = document.getElementById('btn-open-guide');
     const btnInv = document.getElementById('btn-open-inv');
@@ -283,23 +320,37 @@ export class UIManager {
     const btnShareLoc = document.getElementById('btn-share-loc');
     const btnSpeedToggle = document.getElementById('btn-speed-toggle');
 
+    if (btnToggleCam) {
+      const updateCamLabel = (mode) => {
+        if (mode === 'first') btnToggleCam.textContent = '📷 1ª Persona';
+        else if (mode === 'third-back') btnToggleCam.textContent = '📷 3ª Persona';
+        else btnToggleCam.textContent = '📷 Frontal';
+      };
+      btnToggleCam.addEventListener('click', () => {
+        sound.playClick();
+        const mode = this.controls.togglePerspective();
+        updateCamLabel(mode);
+      });
+      this.controls.onPerspectiveChange = updateCamLabel;
+    }
+
     if (btnChat) {
       btnChat.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.openChat();
       });
     }
 
     if (btnGuide) {
       btnGuide.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.toggleGuide(true);
       });
     }
 
     if (btnInv) {
       btnInv.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.controls.unlock();
         this.toggleInventory(true);
       });
@@ -307,21 +358,21 @@ export class UIManager {
 
     if (btnMap) {
       btnMap.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.toggleMap(true);
       });
     }
 
     if (btnShareLoc) {
       btnShareLoc.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.shareLocation();
       });
     }
 
     if (btnSpeedToggle) {
       btnSpeedToggle.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.cycleSpeed();
       });
     }
@@ -331,7 +382,7 @@ export class UIManager {
     const closeBtn = document.getElementById('close-map-btn');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.toggleMap(false);
       });
     }
@@ -340,7 +391,7 @@ export class UIManager {
     const destButtons = document.querySelectorAll('.map-dest-btn');
     destButtons.forEach((btn) => {
       btn.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         const tx = parseFloat(btn.dataset.x);
         const ty = parseFloat(btn.dataset.y);
         const tz = parseFloat(btn.dataset.z);
@@ -381,19 +432,19 @@ export class UIManager {
 
     if (speedOpt1) {
       speedOpt1.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         setSpeedOption(1, 1.0, false);
       });
     }
     if (speedOpt2) {
       speedOpt2.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         setSpeedOption(2, 2.5, false);
       });
     }
     if (speedOpt5) {
       speedOpt5.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         setSpeedOption(3, 5.0, true);
       });
     }
@@ -401,10 +452,11 @@ export class UIManager {
     // Hotkey 'KeyM'
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyM' && !this.isChatOpen) {
-        sound.playButtonClick();
+        sound.playClick();
         this.toggleMap(!this.isMapOpen);
       }
       if (e.code === 'Escape' && this.isMapOpen) {
+        sound.playClick();
         this.toggleMap(false);
       }
     });
@@ -482,19 +534,20 @@ export class UIManager {
 
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.toggleGuide(false);
       });
     }
     if (understandBtn) {
       understandBtn.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.toggleGuide(false);
       });
     }
 
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape' && this.isGuideOpen) {
+        sound.playClick();
         this.toggleGuide(false);
         this.controls.lock();
       }
@@ -588,9 +641,11 @@ export class UIManager {
     if (btnBreak) {
       btnBreak.addEventListener('touchstart', (e) => {
         e.preventDefault();
+        sound.playClick(0.9);
         this.controls.triggerBreak();
       });
       btnBreak.addEventListener('click', () => {
+        sound.playClick(0.9);
         this.controls.triggerBreak();
       });
     }
@@ -598,9 +653,11 @@ export class UIManager {
     if (btnPlace) {
       btnPlace.addEventListener('touchstart', (e) => {
         e.preventDefault();
+        sound.playClick(1.1);
         this.controls.triggerPlace();
       });
       btnPlace.addEventListener('click', () => {
+        sound.playClick(1.1);
         this.controls.triggerPlace();
       });
     }
@@ -608,6 +665,7 @@ export class UIManager {
     if (btnJump) {
       const startJump = (e) => {
         e.preventDefault();
+        sound.playClick(1.0);
         this.controls.setJump(true);
       };
       const stopJump = (e) => {
@@ -621,6 +679,33 @@ export class UIManager {
       btnJump.addEventListener('mousedown', startJump);
       btnJump.addEventListener('mouseup', stopJump);
     }
+
+    const btnCam = document.getElementById('mobile-btn-cam');
+    if (btnCam) {
+      btnCam.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        sound.playClick(1.2);
+        this.controls.togglePerspective();
+      });
+      btnCam.addEventListener('click', () => {
+        sound.playClick(1.2);
+        this.controls.togglePerspective();
+      });
+    }
+
+    const btnSprint = document.getElementById('mobile-btn-sprint');
+    if (btnSprint) {
+      let isSprinting = false;
+      const toggleSprint = (e) => {
+        e.preventDefault();
+        isSprinting = !isSprinting;
+        sound.playClick(1.3);
+        this.controls.setSprint(isSprinting);
+        btnSprint.classList.toggle('active', isSprinting);
+      };
+      btnSprint.addEventListener('touchstart', toggleSprint);
+      btnSprint.addEventListener('click', toggleSprint);
+    }
   }
 
   initPauseMenu() {
@@ -633,6 +718,7 @@ export class UIManager {
 
     if (resumeBtn) {
       resumeBtn.addEventListener('click', () => {
+        sound.playClick();
         this.pauseMenu.classList.add('hidden');
         this.controls.lock();
       });
@@ -640,6 +726,7 @@ export class UIManager {
 
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', () => {
+        sound.playClick();
         location.reload();
       });
     }
@@ -648,6 +735,7 @@ export class UIManager {
       sensSlider.addEventListener('input', (e) => {
         this.controls.sensitivity = parseFloat(e.target.value);
       });
+      sensSlider.addEventListener('change', () => sound.playClick());
     }
 
     if (fovSlider) {
@@ -655,16 +743,19 @@ export class UIManager {
         this.sceneManager.camera.fov = parseInt(e.target.value, 10);
         this.sceneManager.camera.updateProjectionMatrix();
       });
+      fovSlider.addEventListener('change', () => sound.playClick());
     }
 
     if (renderDistSlider) {
       renderDistSlider.addEventListener('input', (e) => {
         this.world.renderDistance = parseInt(e.target.value, 10);
       });
+      renderDistSlider.addEventListener('change', () => sound.playClick());
     }
 
     if (qualityMenuSelect) {
       qualityMenuSelect.addEventListener('change', (e) => {
+        sound.playClick();
         this.sceneManager.setGraphicsQuality(e.target.value);
       });
     }
@@ -687,8 +778,10 @@ export class UIManager {
     window.addEventListener('keydown', (e) => {
       if ((e.code === 'KeyT' || e.code === 'Enter') && !this.isChatOpen && (this.controls.isLocked || this.controls.isMobile)) {
         e.preventDefault();
+        sound.playClick();
         this.openChat();
       } else if (e.code === 'Escape' && this.isChatOpen) {
+        sound.playClick();
         this.closeChat();
       }
     });
@@ -709,6 +802,7 @@ export class UIManager {
     if (chatInput) {
       chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
+          sound.playClick();
           sendCurrentText();
         }
       });
@@ -716,6 +810,7 @@ export class UIManager {
 
     if (sendBtn) {
       sendBtn.addEventListener('click', () => {
+        sound.playClick();
         sendCurrentText();
       });
     }
@@ -794,6 +889,7 @@ export class UIManager {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Tab') {
         e.preventDefault();
+        if (!this.isPlayerListOpen) sound.playClick();
         this.updatePlayerListModal(true);
       }
     });
@@ -807,13 +903,14 @@ export class UIManager {
     const closeBtn = document.getElementById('close-player-list-btn');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
-        sound.playButtonClick();
+        sound.playClick();
         this.updatePlayerListModal(false);
       });
     }
   }
 
   updatePlayerListModal(show) {
+    this.isPlayerListOpen = !!show;
     if (!this.playerListOverlay) return;
     if (!show) {
       this.playerListOverlay.classList.add('hidden');
@@ -854,7 +951,7 @@ export class UIManager {
       const tpBtn = row.querySelector('.tp-friend-btn');
       if (tpBtn) {
         tpBtn.addEventListener('click', () => {
-          sound.playButtonClick();
+          sound.playClick();
           this.controls.physics.teleport(ax, ay + 1, az);
           this.world.updateStreaming(ax, az);
           sound.playTeleport();
@@ -869,10 +966,7 @@ export class UIManager {
 
   updateHUD(fps, pos) {
     // Update live connected count badge
-    if (this.hudOnlineCount) {
-      const total = 1 + this.multiplayer.remoteAvatars.size;
-      this.hudOnlineCount.textContent = `${total} Conectado${total > 1 ? 's' : ''}`;
-    }
+    this.updatePlayerCountBadge();
 
     // Update coordinates & sector
     const coordsElem = document.getElementById('hud-coords');

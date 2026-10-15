@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=VT323&family=Silkscreen&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- Import map for modern native ES module Three.js -->
   <script type="importmap">
@@ -37,15 +37,16 @@
 
     <!-- Top Left Information Bar -->
     <div id="hud-top-bar">
-      <div id="hud-coords">XYZ: 0 / 0 / 0 | 60 FPS</div>
-      <div id="hud-online-badge" class="hud-badge">
-        <span class="status-dot online"></span>
-        <span id="hud-online-count">1 Conectado</span>
+      <div id="hud-online-badge" class="hud-badge mc-badge">
+        <span class="status-pulse-dot">🟢</span>
+        <span id="hud-online-count">1 Jugador Conectado</span>
       </div>
+      <div id="hud-coords">XYZ: 0 / 0 / 0 | 60 FPS</div>
     </div>
 
     <!-- Top Right Quick Access Pill Actions -->
     <div id="hud-quick-actions">
+      <button id="btn-toggle-cam" class="hud-action-pill mc-pill" title="Alternar Vista de Cámara (F5)">📷 1ª Persona</button>
       <button id="btn-open-map" class="hud-action-pill mc-pill" title="Mapa del Mundo y Teletransporte (M)">🗺️ Mapa</button>
       <button id="btn-share-loc" class="hud-action-pill mc-pill" title="Compartir mi Ubicación en el Chat">📍 Mi Ubicación</button>
       <button id="btn-speed-toggle" class="hud-action-pill mc-pill" title="Velocidad: 1x / 2.5x / 5x Vuelo">⚡ 1x</button>
@@ -60,7 +61,7 @@
     <!-- Bottom Hotbar -->
     <div id="hotbar-wrapper">
       <div id="hotbar"></div>
-      <div class="hotbar-hint">1-9 o Rueda: Elegir bloque | E o 🎒: Catálogo</div>
+      <div class="hotbar-hint">1-9 o Rueda: Elegir bloque | E o 🎒: Catálogo | F5: Vista</div>
     </div>
 
     <!-- In-Game Chat Feed & Input -->
@@ -83,15 +84,23 @@
 
       <!-- Right Touch Action Buttons -->
       <div id="mobile-action-buttons">
-        <button id="mobile-btn-break" class="mobile-action-btn break-btn">
+        <button id="mobile-btn-break" class="mobile-action-btn break-btn" title="Romper Bloque">
           <span class="btn-icon">⛏️</span>
           <span class="btn-label">ROMPER</span>
         </button>
-        <button id="mobile-btn-place" class="mobile-action-btn place-btn">
+        <button id="mobile-btn-place" class="mobile-action-btn place-btn" title="Colocar Bloque">
           <span class="btn-icon">🧱</span>
           <span class="btn-label">COLOCAR</span>
         </button>
-        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn">
+        <button id="mobile-btn-cam" class="mobile-action-btn cam-btn" title="Alternar Cámara">
+          <span class="btn-icon">📷</span>
+          <span class="btn-label">VISTA</span>
+        </button>
+        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn" title="Alternar Correr">
+          <span class="btn-icon">⚡</span>
+          <span class="btn-label">CORRER</span>
+        </button>
+        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn" title="Saltar">
           <span class="btn-icon">🦘</span>
           <span class="btn-label">SALTAR</span>
         </button>
@@ -104,7 +113,7 @@
     <div class="world-map-card">
       <div class="modal-header">
         <h2>🗺️ Mapa del Mundo y Viaje Rápido</h2>
-        <button id="close-map-btn" class="icon-btn">&times;</button>
+        <button id="close-map-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
       </div>
       <p class="modal-desc">Selecciona un monumento o sector para viajar al instante:</p>
 
@@ -149,6 +158,38 @@
           </div>
         </button>
 
+        <button class="map-dest-btn mc-btn" data-x="-42" data-y="25" data-z="-42">
+          <span class="dest-icon">🗽</span>
+          <div class="dest-info">
+            <span class="dest-title">Estatua de la Libertad</span>
+            <span class="dest-coords">XYZ (-42, 25, -42) • Pedestal & Antorcha</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="42" data-y="25" data-z="-20">
+          <span class="dest-icon">🏛️</span>
+          <div class="dest-info">
+            <span class="dest-title">Arco de Triunfo</span>
+            <span class="dest-coords">XYZ (42, 25, -20) • Bóveda & Campos Elíseos</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="-40" data-y="25" data-z="40">
+          <span class="dest-icon">🗼</span>
+          <div class="dest-info">
+            <span class="dest-title">Torre Perla Oriental</span>
+            <span class="dest-coords">XYZ (-40, 25, 40) • Esferas & Antena</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="30" data-y="25" data-z="42">
+          <span class="dest-icon">⛩️</span>
+          <div class="dest-info">
+            <span class="dest-title">Santuario Shinto & Zen</span>
+            <span class="dest-coords">XYZ (30, 25, 42) • Pabellón Haiden & Bambú</span>
+          </div>
+        </button>
+
         <button class="map-dest-btn mc-btn" data-x="0" data-y="22" data-z="180">
           <span class="dest-icon">🇳🇴</span>
           <div class="dest-info">
@@ -174,7 +215,7 @@
     <div class="player-list-card">
       <div class="modal-header">
         <h3>Exploradores en el Reino</h3>
-        <button id="close-player-list-btn" class="icon-btn">&times;</button>
+        <button id="close-player-list-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
       </div>
       <table class="player-table">
         <thead>
@@ -196,7 +237,7 @@
     <div class="guide-card">
       <div class="modal-header">
         <h2>Guía de Exploración y Construcción</h2>
-        <button id="close-guide-btn" class="icon-btn">&times;</button>
+        <button id="close-guide-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
       </div>
       <div class="guide-content">
         <div class="guide-section">
@@ -248,7 +289,7 @@
     <div class="inventory-card">
       <div class="modal-header">
         <h2>Catálogo de Bloques y Materiales</h2>
-        <button id="close-inventory-btn" class="icon-btn">&times;</button>
+        <button id="close-inventory-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
       </div>
       <p class="modal-desc">Haz clic en cualquier material para asignarlo a tu casilla activa de la barra rápida:</p>
       <div id="inventory-grid"></div>

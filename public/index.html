@@ -40,13 +40,20 @@
       <div id="hud-coords">XYZ: 0 / 0 / 0 | 60 FPS</div>
     </div>
 
+    <!-- Top Right Quick Access Pill Actions -->
+    <div id="hud-quick-actions">
+      <button id="btn-open-chat" class="hud-action-pill" title="Abrir Chat (T)">💬 Chat</button>
+      <button id="btn-open-guide" class="hud-action-pill" title="Cómo Jugar y Controles">❓ Guía</button>
+      <button id="btn-open-inv" class="hud-action-pill" title="Inventario de Bloques (E)">🎒 Bloques</button>
+    </div>
+
     <!-- Selected block toast label -->
     <div id="selected-block-label">Césped</div>
 
     <!-- Bottom Hotbar -->
     <div id="hotbar-wrapper">
       <div id="hotbar"></div>
-      <div class="hotbar-hint">1-9 o Rueda: Elegir bloque | E: Inventario</div>
+      <div class="hotbar-hint">1-9 o Rueda: Elegir bloque | E o 🎒: Catálogo</div>
     </div>
 
     <!-- In-Game Chat Feed & Input -->
@@ -54,6 +61,33 @@
       <div id="chat-feed"></div>
       <div id="chat-input" class="hidden">
         <input type="text" id="chat-input-field" placeholder="Escribe un mensaje y presiona Enter..." maxlength="120" autocomplete="off">
+        <button id="chat-send-btn">Enviar</button>
+      </div>
+    </div>
+
+    <!-- Mobile Touch Controls Overlay -->
+    <div id="mobile-touch-overlay" class="hidden">
+      <!-- Left Virtual Joystick Zone -->
+      <div id="joystick-zone">
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
+        </div>
+      </div>
+
+      <!-- Right Touch Action Buttons -->
+      <div id="mobile-action-buttons">
+        <button id="mobile-btn-break" class="mobile-action-btn break-btn">
+          <span class="btn-icon">⛏️</span>
+          <span class="btn-label">ROMPER</span>
+        </button>
+        <button id="mobile-btn-place" class="mobile-action-btn place-btn">
+          <span class="btn-icon">🧱</span>
+          <span class="btn-label">COLOCAR</span>
+        </button>
+        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn">
+          <span class="btn-icon">🦘</span>
+          <span class="btn-label">SALTAR</span>
+        </button>
       </div>
     </div>
   </div>
@@ -78,6 +112,58 @@
     </div>
   </div>
 
+  <!-- Guide / How to Play Modal -->
+  <div id="guide-modal" class="hidden">
+    <div class="guide-card">
+      <div class="modal-header">
+        <h2>Guía de Exploración y Construcción</h2>
+        <button id="close-guide-btn" class="icon-btn">&times;</button>
+      </div>
+      <div class="guide-content">
+        <div class="guide-section">
+          <h3>🏰 Punto de Encuentro (Descampado Central)</h3>
+          <p>Todos los exploradores aparecen juntos en el descampado central en <strong>XYZ (0, 24, 0)</strong>, con una plaza pavimentada y dos grandes estatuas guardianas de bienvenida.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3>⛏️ Cómo Minar y Construir</h3>
+          <ul>
+            <li><strong>Romper / Minar Bloques:</strong> Apunta a un bloque con la cruceta central y haz <strong>Clic Izquierdo</strong> (o toca el botón <strong>⛏️ Romper</strong> en móvil). El bloque se destruye al instante.</li>
+            <li><strong>Colocar Bloques:</strong> Apunta a la cara del bloque donde deseas edificar y haz <strong>Clic Derecho</strong> (o toca el botón <strong>🧱 Colocar</strong> en móvil).</li>
+            <li><strong>Seleccionar Bloques:</strong> Pulsa los números del <strong>1 al 9</strong>, gira la <strong>Rueda del Ratón</strong> o pulsa <strong>[E]</strong> (o botón <strong>🎒 Bloques</strong>) para elegir materiales como césped, adoquín, madera, ladrillo, nieve, arena, cristal y minerales.</li>
+          </ul>
+        </div>
+
+        <div class="guide-section">
+          <h3>🎮 Controles de Movimiento</h3>
+          <div class="guide-split">
+            <div class="split-col">
+              <h4>💻 Computadora</h4>
+              <p><strong>W, A, S, D</strong>: Moverse</p>
+              <p><strong>Espacio</strong>: Saltar / Salir del agua</p>
+              <p><strong>Shift</strong>: Correr a mayor velocidad</p>
+              <p><strong>Ratón</strong>: Mirar alrededor</p>
+              <p><strong>T o Enter</strong>: Abrir Chat</p>
+              <p><strong>Esc</strong>: Menú y Ajustes</p>
+            </div>
+            <div class="split-col">
+              <h4>📱 Móvil / Pantalla Táctil</h4>
+              <p><strong>Joystick (esquina izq)</strong>: Desplazarse en 360°</p>
+              <p><strong>Arrastrar lado derecho</strong>: Girar cámara</p>
+              <p><strong>Botón ⛏️</strong>: Romper bloque apuntado</p>
+              <p><strong>Botón 🧱</strong>: Poner bloque seleccionado</p>
+              <p><strong>Botón 🦘</strong>: Saltar</p>
+              <p><strong>Botón 💬</strong>: Abrir chat en pantalla</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="guide-understand-btn" class="primary-btn">¡Entendido, a construir!</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Inventory Modal ('E' Key) -->
   <div id="inventory-modal" class="hidden">
     <div class="inventory-card">
@@ -97,7 +183,7 @@
       <div class="pause-divider"></div>
 
       <div class="settings-group">
-        <label for="sens-slider">Sensibilidad del Ratón</label>
+        <label for="sens-slider">Sensibilidad del Ratón / Tacto</label>
         <input type="range" id="sens-slider" min="0.001" max="0.005" step="0.0002" value="0.0022">
       </div>
 
@@ -152,7 +238,7 @@
         <div class="input-group">
           <label for="quality-select">Calidad Gráfica</label>
           <select id="quality-select">
-            <option value="balanced">Equilibrado (Fluido en cualquier equipo)</option>
+            <option value="balanced">Equilibrado (Fluido en cualquier equipo o móvil)</option>
             <option value="high" selected>Alto (PBR + Sombras Suaves + Agua Dinámica)</option>
             <option value="ultra">Ultra (Máximo Detalle + Partículas + Atmósfera)</option>
           </select>
@@ -169,14 +255,12 @@
       <div class="controls-guide">
         <div class="guide-item"><span class="key">W A S D</span> Moverse</div>
         <div class="guide-item"><span class="key">ESPACIO</span> Saltar / Nadar</div>
-        <div class="guide-item"><span class="key">SHIFT</span> Correr</div>
         <div class="guide-item"><span class="key">CLICK IZQ</span> Romper Bloque</div>
         <div class="guide-item"><span class="key">CLICK DER</span> Colocar Bloque</div>
-        <div class="guide-item"><span class="key">1 - 9</span> Barra Rápida</div>
-        <div class="guide-item"><span class="key">E</span> Inventario</div>
-        <div class="guide-item"><span class="key">T / ENTER</span> Chat</div>
-        <div class="guide-item"><span class="key">TAB</span> Lista Jugadores</div>
-        <div class="guide-item"><span class="key">ESC</span> Pausa / Ajustes</div>
+        <div class="guide-item"><span class="key">1 - 9 / E</span> Barra & Inventario</div>
+        <div class="guide-item"><span class="key">T / CHAT</span> Chat Compartido</div>
+        <div class="guide-item"><span class="key">MÓVIL</span> Joystick y Botones</div>
+        <div class="guide-item"><span class="key">ESC</span> Pausa y Ajustes</div>
       </div>
     </div>
   </div>

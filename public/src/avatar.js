@@ -35,63 +35,73 @@ export class Avatar {
     const pantsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.8 });
     const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 });
 
-    // Torso (center at y = 1.05)
-    const torsoGeom = new THREE.BoxGeometry(0.5, 0.65, 0.3);
+    // Torso (Minecraft proportions: 8x12x4 pixels -> 0.5 x 0.75 x 0.25 units)
+    const torsoGeom = new THREE.BoxGeometry(0.5, 0.75, 0.25);
     this.torso = new THREE.Mesh(torsoGeom, shirtMat);
-    this.torso.position.y = 1.075;
+    this.torso.position.y = 1.0;
     this.torso.castShadow = true;
     this.group.add(this.torso);
 
-    // Head group (pivot at neck y = 1.4)
+    // Head group (pivot at neck y = 1.375, Minecraft: 8x8x8 pixels -> 0.5 x 0.5 x 0.5 units)
     this.headGroup = new THREE.Group();
-    this.headGroup.position.set(0, 1.4, 0);
+    this.headGroup.position.set(0, 1.375, 0);
 
-    const headGeom = new THREE.BoxGeometry(0.42, 0.42, 0.42);
+    const headGeom = new THREE.BoxGeometry(0.5, 0.5, 0.5);
     this.head = new THREE.Mesh(headGeom, skinMat);
-    this.head.position.y = 0.21;
+    this.head.position.y = 0.25;
     this.head.castShadow = true;
     this.headGroup.add(this.head);
 
-    // Hair cap
-    const hairGeom = new THREE.BoxGeometry(0.44, 0.16, 0.44);
+    // Hair cap layer
+    const hairGeom = new THREE.BoxGeometry(0.52, 0.18, 0.52);
     const hair = new THREE.Mesh(hairGeom, hairMat);
-    hair.position.y = 0.36;
+    hair.position.y = 0.42;
     this.headGroup.add(hair);
+
+    // Subtle eye accents on face front (+Z)
+    const eyeGeom = new THREE.BoxGeometry(0.08, 0.06, 0.02);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2563eb }); // Classic blue eyes
+    const eyeLeft = new THREE.Mesh(eyeGeom, eyeMat);
+    eyeLeft.position.set(-0.14, 0.24, 0.252);
+    const eyeRight = new THREE.Mesh(eyeGeom, eyeMat);
+    eyeRight.position.set(0.14, 0.24, 0.252);
+    this.headGroup.add(eyeLeft);
+    this.headGroup.add(eyeRight);
 
     this.group.add(this.headGroup);
 
-    // Left Arm (pivot at shoulder)
+    // Left Arm (pivot at shoulder y = 1.375, Minecraft: 4x12x4 pixels -> 0.25 x 0.75 x 0.25 units)
     this.leftArmPivot = new THREE.Group();
-    this.leftArmPivot.position.set(-0.35, 1.35, 0);
-    const armGeom = new THREE.BoxGeometry(0.18, 0.6, 0.18);
-    const leftArmMesh = new THREE.Mesh(armGeom, skinMat);
-    leftArmMesh.position.y = -0.28;
+    this.leftArmPivot.position.set(-0.375, 1.375, 0);
+    const armGeom = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+    const leftArmMesh = new THREE.Mesh(armGeom, shirtMat);
+    leftArmMesh.position.y = -0.375;
     leftArmMesh.castShadow = true;
     this.leftArmPivot.add(leftArmMesh);
     this.group.add(this.leftArmPivot);
 
-    // Right Arm (pivot at shoulder)
+    // Right Arm (pivot at shoulder y = 1.375)
     this.rightArmPivot = new THREE.Group();
-    this.rightArmPivot.position.set(0.35, 1.35, 0);
+    this.rightArmPivot.position.set(0.375, 1.375, 0);
     const rightArmMesh = new THREE.Mesh(armGeom, skinMat);
-    rightArmMesh.position.y = -0.28;
+    rightArmMesh.position.y = -0.375;
     rightArmMesh.castShadow = true;
     this.rightArmPivot.add(rightArmMesh);
     this.group.add(this.rightArmPivot);
 
-    // Left Leg (pivot at hip)
+    // Left Leg (pivot at hip y = 0.625, Minecraft: 4x12x4 pixels -> 0.25 x 0.75 x 0.25 units)
     this.leftLegPivot = new THREE.Group();
-    this.leftLegPivot.position.set(-0.14, 0.75, 0);
-    const legGeom = new THREE.BoxGeometry(0.2, 0.75, 0.22);
+    this.leftLegPivot.position.set(-0.125, 0.625, 0);
+    const legGeom = new THREE.BoxGeometry(0.25, 0.75, 0.25);
     const leftLegMesh = new THREE.Mesh(legGeom, pantsMat);
     leftLegMesh.position.y = -0.375;
     leftLegMesh.castShadow = true;
     this.leftLegPivot.add(leftLegMesh);
     this.group.add(this.leftLegPivot);
 
-    // Right Leg (pivot at hip)
+    // Right Leg (pivot at hip y = 0.625)
     this.rightLegPivot = new THREE.Group();
-    this.rightLegPivot.position.set(0.14, 0.75, 0);
+    this.rightLegPivot.position.set(0.125, 0.625, 0);
     const rightLegMesh = new THREE.Mesh(legGeom, pantsMat);
     rightLegMesh.position.y = -0.375;
     rightLegMesh.castShadow = true;
@@ -190,6 +200,11 @@ export class Avatar {
     const animSpeed = (this.action === 'running') ? 14.0 : 8.0;
     const swingAmp = (this.action === 'running') ? 0.75 : 0.45;
 
+    // Sprint lean / tilt forward
+    const isRunning = (this.action === 'running');
+    const targetTorsoTilt = isRunning ? 0.22 : 0;
+    this.torso.rotation.x += (targetTorsoTilt - this.torso.rotation.x) * Math.min(1.0, dt * 10.0);
+
     if (this.action === 'swimming') {
       this.animTime += dt * 6.0;
       const stroke = Math.sin(this.animTime);
@@ -205,6 +220,7 @@ export class Avatar {
       this.animTime += dt * animSpeed;
       const swing = Math.sin(this.animTime) * swingAmp;
 
+      // Minecraft opposing sinusoidal swing
       this.leftArmPivot.rotation.x = swing;
       this.rightArmPivot.rotation.x = -swing;
       this.leftLegPivot.rotation.x = -swing;
@@ -212,10 +228,10 @@ export class Avatar {
     } else if (this.action === 'jumping') {
       this.leftArmPivot.rotation.z = 0;
       this.rightArmPivot.rotation.z = 0;
-      this.leftArmPivot.rotation.x = -0.5;
-      this.rightArmPivot.rotation.x = -0.5;
-      this.leftLegPivot.rotation.x = 0.3;
-      this.rightLegPivot.rotation.x = -0.3;
+      this.leftArmPivot.rotation.x = -0.6;
+      this.rightArmPivot.rotation.x = -0.6;
+      this.leftLegPivot.rotation.x = 0.35;
+      this.rightLegPivot.rotation.x = -0.35;
     } else {
       // Idle: smoothly return to neutral
       this.leftArmPivot.rotation.z = 0;
@@ -230,8 +246,11 @@ export class Avatar {
     if (this.swingProgress > 0) {
       this.swingProgress -= dt * 5.0;
       if (this.swingProgress < 0) this.swingProgress = 0;
-      const punch = Math.sin((1.0 - this.swingProgress) * Math.PI) * 1.3;
+      const punch = Math.sin((1.0 - this.swingProgress) * Math.PI) * 1.35;
       this.rightArmPivot.rotation.x -= punch;
+      this.rightArmPivot.rotation.y = -punch * 0.25;
+    } else {
+      this.rightArmPivot.rotation.y *= Math.max(0, 1.0 - dt * 10);
     }
   }
 

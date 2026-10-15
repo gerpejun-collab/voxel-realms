@@ -12,10 +12,10 @@ class GameState {
 
   /**
    * Returns normalized day time from 0.0 (midnight) to 0.5 (noon) to 1.0 (midnight)
+   * Fixed at 0.32 (perpetual bright sunny day mode) per strict user instruction.
    */
   getTimeOfDay() {
-    const elapsedSeconds = (Date.now() - this.startTime) / 1000;
-    return (elapsedSeconds % this.dayDurationSeconds) / this.dayDurationSeconds;
+    return 0.32;
   }
 
   addPlayer(id, name) {
@@ -30,7 +30,7 @@ class GameState {
     const player = {
       id,
       name: finalName,
-      pos: [0, 32, 0], // Default spawn point, will be adjusted by client terrain height
+      pos: [0, 25, 0], // Default spawn point at central plaza
       rot: [0, 0],     // [yaw, pitch]
       action: 'idle',
       lastUpdate: Date.now()

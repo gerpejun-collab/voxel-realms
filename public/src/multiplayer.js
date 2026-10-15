@@ -17,7 +17,7 @@ export class MultiplayerClient {
 
     this.remoteAvatars = new Map(); // id -> Avatar
     this.pendingModifications = new Map(); // "x,y,z" -> originalBlock (for rollback on rejection)
-    this.timeOfDay = 0.35; // Default morning
+    this.timeOfDay = 0.32; // Perpetual bright sunny day
 
     // Throttled movement packets
     this.lastSendTime = 0;

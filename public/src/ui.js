@@ -1,5 +1,5 @@
 // public/src/ui.js
-// Modern game UI: Lobby, HUD, Hotbar with procedural icons, Inventory modal, Pause menu, and Chat
+// Modern game UI: Lobby, HUD, Hotbar, Inventory, Pause menu, Chat, Mobile Virtual Controls & Interactive Tutorial
 import * as THREE from 'three';
 import { BLOCKS, BLOCK_DEFS, HOTBAR_BLOCKS } from './blocks.js';
 
@@ -16,6 +16,8 @@ export class UIManager {
     this.hudOverlay = document.getElementById('hud-overlay');
     this.pauseMenu = document.getElementById('pause-menu');
     this.inventoryModal = document.getElementById('inventory-modal');
+    this.guideModal = document.getElementById('guide-modal');
+    this.mobileOverlay = document.getElementById('mobile-touch-overlay');
     this.chatContainer = document.getElementById('chat-container');
     this.chatInput = document.getElementById('chat-input');
     this.hotbarContainer = document.getElementById('hotbar');
@@ -24,6 +26,7 @@ export class UIManager {
     this.hotbarBlocks = [...HOTBAR_BLOCKS];
     this.isChatOpen = false;
     this.isInventoryOpen = false;
+    this.isGuideOpen = false;
 
     // 3D wireframe box for highlighting targeted voxel
     this.buildHighlightBox();
@@ -33,6 +36,9 @@ export class UIManager {
     this.initInventory();
     this.initPauseMenu();
     this.initChat();
+    this.initQuickActions();
+    this.initGuide();
+    this.initMobileControls();
     this.initPlayerList();
   }
 
@@ -93,8 +99,17 @@ export class UIManager {
       this.lobbyOverlay.classList.add('hidden');
       this.hudOverlay.classList.remove('hidden');
 
+      if (this.controls.isMobile && this.mobileOverlay) {
+        this.mobileOverlay.classList.remove('hidden');
+      }
+
       this.multiplayer.connect(name);
       this.controls.lock();
+
+      // Show friendly tutorial prompt in chat
+      setTimeout(() => {
+        this.addSystemNotification('🏰 ¡Bienvenido a la Plaza Central! Clic Izq: Romper | Clic Der: Construir | [🎒 Bloques] | [❓ Guía]');
+      }, 700);
     };
 
     if (joinBtn) {
@@ -221,7 +236,7 @@ export class UIManager {
 
     // Toggle on 'E' key or close on 'Escape'
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyE' && !this.isChatOpen) {
+      if (e.code === 'KeyE' && !this.isChatOpen && !this.isGuideOpen) {
         if (this.controls.isLocked) {
           this.controls.unlock();
           this.toggleInventory(true);
@@ -240,6 +255,172 @@ export class UIManager {
     this.isInventoryOpen = open;
     if (this.inventoryModal) {
       this.inventoryModal.classList.toggle('hidden', !open);
+    }
+  }
+
+  initQuickActions() {
+    const btnChat = document.getElementById('btn-open-chat');
+    const btnGuide = document.getElementById('btn-open-guide');
+    const btnInv = document.getElementById('btn-open-inv');
+
+    if (btnChat) {
+      btnChat.addEventListener('click', () => {
+        this.openChat();
+      });
+    }
+
+    if (btnGuide) {
+      btnGuide.addEventListener('click', () => {
+        this.toggleGuide(true);
+      });
+    }
+
+    if (btnInv) {
+      btnInv.addEventListener('click', () => {
+        this.controls.unlock();
+        this.toggleInventory(true);
+      });
+    }
+  }
+
+  initGuide() {
+    const closeBtn = document.getElementById('close-guide-btn');
+    const understandBtn = document.getElementById('guide-understand-btn');
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => this.toggleGuide(false));
+    }
+    if (understandBtn) {
+      understandBtn.addEventListener('click', () => this.toggleGuide(false));
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape' && this.isGuideOpen) {
+        this.toggleGuide(false);
+        this.controls.lock();
+      }
+    });
+  }
+
+  toggleGuide(open) {
+    this.isGuideOpen = open;
+    if (this.guideModal) {
+      this.guideModal.classList.toggle('hidden', !open);
+    }
+    if (open) {
+      this.controls.unlock();
+    } else {
+      this.controls.lock();
+    }
+  }
+
+  initMobileControls() {
+    // If mobile or touch capable, prepare virtual joystick and action buttons
+    const joystickZone = document.getElementById('joystick-zone');
+    const joystickBase = document.getElementById('joystick-base');
+    const joystickKnob = document.getElementById('joystick-knob');
+
+    let activeTouchId = null;
+
+    if (joystickZone && joystickBase && joystickKnob) {
+      const handleTouchStart = (e) => {
+        if (activeTouchId !== null) return;
+        const touch = e.changedTouches[0];
+        activeTouchId = touch.identifier;
+        updateKnob(touch);
+      };
+
+      const handleTouchMove = (e) => {
+        if (activeTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === activeTouchId) {
+            updateKnob(e.changedTouches[i]);
+            break;
+          }
+        }
+      };
+
+      const handleTouchEnd = (e) => {
+        if (activeTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === activeTouchId) {
+            activeTouchId = null;
+            joystickKnob.style.transform = 'translate(0px, 0px)';
+            this.controls.joystick.x = 0;
+            this.controls.joystick.y = 0;
+            break;
+          }
+        }
+      };
+
+      const updateKnob = (touch) => {
+        const rect = joystickBase.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const maxRadius = (rect.width / 2) - 8;
+
+        let dx = touch.clientX - centerX;
+        let dy = touch.clientY - centerY;
+        const distance = Math.hypot(dx, dy);
+
+        if (distance > maxRadius) {
+          dx = (dx / distance) * maxRadius;
+          dy = (dy / distance) * maxRadius;
+        }
+
+        joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+
+        // Normalize -1 to 1 (screen Y down is backward, so negate dy for forward)
+        this.controls.joystick.x = dx / maxRadius;
+        this.controls.joystick.y = -(dy / maxRadius);
+      };
+
+      joystickZone.addEventListener('touchstart', handleTouchStart, { passive: false });
+      joystickZone.addEventListener('touchmove', handleTouchMove, { passive: false });
+      joystickZone.addEventListener('touchend', handleTouchEnd, { passive: false });
+      joystickZone.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+    }
+
+    // Mobile Action buttons
+    const btnBreak = document.getElementById('mobile-btn-break');
+    const btnPlace = document.getElementById('mobile-btn-place');
+    const btnJump = document.getElementById('mobile-btn-jump');
+
+    if (btnBreak) {
+      btnBreak.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.controls.triggerBreak();
+      });
+      btnBreak.addEventListener('click', () => {
+        this.controls.triggerBreak();
+      });
+    }
+
+    if (btnPlace) {
+      btnPlace.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.controls.triggerPlace();
+      });
+      btnPlace.addEventListener('click', () => {
+        this.controls.triggerPlace();
+      });
+    }
+
+    if (btnJump) {
+      const startJump = (e) => {
+        e.preventDefault();
+        this.controls.setJump(true);
+      };
+      const stopJump = (e) => {
+        e.preventDefault();
+        this.controls.setJump(false);
+      };
+
+      btnJump.addEventListener('touchstart', startJump);
+      btnJump.addEventListener('touchend', stopJump);
+      btnJump.addEventListener('touchcancel', stopJump);
+      btnJump.addEventListener('mousedown', startJump);
+      btnJump.addEventListener('mouseup', stopJump);
     }
   }
 
@@ -292,7 +473,7 @@ export class UIManager {
     // Pointer lock listener to toggle pause menu
     this.controls.onLockChange = (isLocked) => {
       const isInGame = this.lobbyOverlay.classList.contains('hidden');
-      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && isInGame) {
+      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && isInGame && !this.controls.isMobile) {
         this.pauseMenu.classList.remove('hidden');
       } else {
         this.pauseMenu.classList.add('hidden');
@@ -302,31 +483,41 @@ export class UIManager {
 
   initChat() {
     const chatInput = document.getElementById('chat-input-field');
-    const chatFeed = document.getElementById('chat-feed');
+    const sendBtn = document.getElementById('chat-send-btn');
 
     window.addEventListener('keydown', (e) => {
-      if ((e.code === 'KeyT' || e.code === 'Enter') && !this.isChatOpen && this.controls.isLocked) {
+      if ((e.code === 'KeyT' || e.code === 'Enter') && !this.isChatOpen && (this.controls.isLocked || this.controls.isMobile)) {
         e.preventDefault();
-        this.controls.unlock();
-        this.isChatOpen = true;
-        this.chatInput.classList.remove('hidden');
-        chatInput.focus();
+        this.openChat();
       } else if (e.code === 'Escape' && this.isChatOpen) {
         this.closeChat();
       }
     });
 
+    const sendCurrentText = () => {
+      if (!chatInput) return;
+      const text = chatInput.value.trim();
+      if (text) {
+        this.multiplayer.sendChat(text);
+      }
+      chatInput.value = '';
+      this.closeChat();
+      if (!this.controls.isMobile) {
+        this.controls.lock();
+      }
+    };
+
     if (chatInput) {
       chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-          const text = chatInput.value.trim();
-          if (text) {
-            this.multiplayer.sendChat(text);
-          }
-          chatInput.value = '';
-          this.closeChat();
-          this.controls.lock();
+          sendCurrentText();
         }
+      });
+    }
+
+    if (sendBtn) {
+      sendBtn.addEventListener('click', () => {
+        sendCurrentText();
       });
     }
 
@@ -337,6 +528,16 @@ export class UIManager {
     this.multiplayer.onNotification = (text) => {
       this.addSystemNotification(text);
     };
+  }
+
+  openChat() {
+    this.controls.unlock();
+    this.isChatOpen = true;
+    if (this.chatInput) {
+      this.chatInput.classList.remove('hidden');
+      const inputField = document.getElementById('chat-input-field');
+      if (inputField) inputField.focus();
+    }
   }
 
   closeChat() {
@@ -438,7 +639,8 @@ export class UIManager {
       const bx = Math.floor(pos.x);
       const by = Math.floor(pos.y);
       const bz = Math.floor(pos.z);
-      const biome = (by >= 42) ? 'Montañas Nevadas' : ((by <= 19) ? 'Costa / Playa' : 'Bosque y Pradera');
+      const distCenter = Math.hypot(bx, bz);
+      const biome = (distCenter <= 16) ? '🏰 Descampado Central' : ((by >= 42) ? 'Montañas Nevadas' : ((by <= 19) ? 'Costa / Playa' : 'Bosque y Pradera'));
       coordsElem.textContent = `XYZ: ${bx} / ${by} / ${bz} | ${biome} | ${fps} FPS`;
     }
 

@@ -1,5 +1,5 @@
 // public/src/controls.js
-// First-person pointer lock controls, input handling, and 3D voxel DDA raycasting
+// First-person pointer lock controls, mobile touch/joystick input, and 3D voxel DDA raycasting
 import * as THREE from 'three';
 import { BLOCKS, BLOCK_DEFS } from './blocks.js';
 
@@ -11,6 +11,7 @@ export class Controls {
     this.world = world;
 
     this.isLocked = false;
+    this.isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     this.sensitivity = 0.0022;
 
     this.pitch = 0; // vertical camera rotation
@@ -25,10 +26,22 @@ export class Controls {
       sprint: false
     };
 
+    // Virtual mobile joystick state (-1 to 1)
+    this.joystick = { x: 0, y: 0 };
+
+    // Mobile touch look tracking
+    this.lookTouchId = null;
+    this.lastTouchX = 0;
+    this.lastTouchY = 0;
+
     this.reachDistance = 6.0;
     this.targetedVoxel = null; // { x, y, z, type, normal: [nx, ny, nz], place: { x, y, z } }
 
     this.selectedHotbarIndex = 0;
+
+    // View bobbing camera dynamics
+    this.bobTimer = 0;
+    this.bobAmount = 0;
 
     // Callbacks
     this.onBreakBlock = null;
@@ -37,6 +50,7 @@ export class Controls {
     this.onLockChange = null;
 
     this.setupListeners();
+    this.setupTouchControls();
   }
 
   setupListeners() {
@@ -77,14 +91,10 @@ export class Controls {
 
       if (e.button === 0) {
         // Left click: Break targeted block
-        if (this.targetedVoxel && this.onBreakBlock) {
-          this.onBreakBlock(this.targetedVoxel);
-        }
+        this.triggerBreak();
       } else if (e.button === 2) {
         // Right click: Place selected block
-        if (this.targetedVoxel && this.onPlaceBlock) {
-          this.onPlaceBlock(this.targetedVoxel.place);
-        }
+        this.triggerPlace();
       }
     });
 
@@ -105,8 +115,76 @@ export class Controls {
     this.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
+  setupTouchControls() {
+    // Touch drag for looking around (right portion of screen)
+    window.addEventListener('touchstart', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        // If touch is on right half and not interacting with a button
+        if (touch.clientX > window.innerWidth * 0.35 && this.lookTouchId === null) {
+          const target = document.elementFromPoint(touch.clientX, touch.clientY);
+          if (target && (target.closest('.touch-btn') || target.closest('#chat-container') || target.closest('.modal-card') || target.closest('#hotbar-wrapper'))) {
+            continue;
+          }
+          this.lookTouchId = touch.identifier;
+          this.lastTouchX = touch.clientX;
+          this.lastTouchY = touch.clientY;
+        }
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (this.lookTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === this.lookTouchId) {
+          const dx = touch.clientX - this.lastTouchX;
+          const dy = touch.clientY - this.lastTouchY;
+          this.lastTouchX = touch.clientX;
+          this.lastTouchY = touch.clientY;
+
+          this.yaw -= dx * this.sensitivity * 1.6;
+          this.pitch -= dy * this.sensitivity * 1.6;
+
+          const maxPitch = Math.PI / 2 - 0.02;
+          this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
+          break;
+        }
+      }
+    }, { passive: true });
+
+    const endTouchLook = (e) => {
+      if (this.lookTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === this.lookTouchId) {
+          this.lookTouchId = null;
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('touchend', endTouchLook, { passive: true });
+    window.addEventListener('touchcancel', endTouchLook, { passive: true });
+  }
+
+  triggerBreak() {
+    if (this.targetedVoxel && this.onBreakBlock) {
+      this.onBreakBlock(this.targetedVoxel);
+    }
+  }
+
+  triggerPlace() {
+    if (this.targetedVoxel && this.onPlaceBlock) {
+      this.onPlaceBlock(this.targetedVoxel.place);
+    }
+  }
+
+  setJump(isDown) {
+    this.keys.jump = isDown;
+  }
+
   handleKeyDown(e) {
-    if (!this.isLocked) return;
+    if (!this.isLocked && !this.isMobile) return;
 
     switch (e.code) {
       case 'KeyW':
@@ -173,7 +251,9 @@ export class Controls {
   }
 
   lock() {
-    this.domElement.requestPointerLock();
+    if (!this.isMobile && this.domElement.requestPointerLock) {
+      this.domElement.requestPointerLock();
+    }
   }
 
   unlock() {
@@ -271,14 +351,15 @@ export class Controls {
   }
 
   update(dt) {
-    // Calculate world movement vector relative to player yaw
-    let forward = 0;
-    let strafe = 0;
+    // Calculate world movement vector from keyboard keys and virtual joystick
+    let forward = (this.keys.forward ? 1 : 0) - (this.keys.backward ? 1 : 0) + this.joystick.y;
+    let strafe = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0) + this.joystick.x;
 
-    if (this.keys.forward) forward += 1;
-    if (this.keys.backward) forward -= 1;
-    if (this.keys.right) strafe += 1;
-    if (this.keys.left) strafe -= 1;
+    const mag = Math.hypot(forward, strafe);
+    if (mag > 1) {
+      forward /= mag;
+      strafe /= mag;
+    }
 
     const sinY = Math.sin(this.yaw);
     const cosY = Math.cos(this.yaw);
@@ -295,10 +376,27 @@ export class Controls {
       sprint: this.keys.sprint
     });
 
-    // Sync camera position to eye level
+    // Minecraft View bobbing calculation when walking or running on ground
+    const isMoving = this.physics.onGround && (this.physics.action === 'walking' || this.physics.action === 'running');
+    if (isMoving) {
+      const bobSpeed = (this.physics.action === 'running') ? 14.0 : 9.5;
+      this.bobTimer += dt * bobSpeed;
+      this.bobAmount += (1.0 - this.bobAmount) * Math.min(1.0, dt * 8.0);
+    } else {
+      this.bobAmount += (0.0 - this.bobAmount) * Math.min(1.0, dt * 8.0);
+      if (this.bobAmount < 0.001) {
+        this.bobAmount = 0;
+        this.bobTimer = 0;
+      }
+    }
+
+    const bobY = Math.sin(this.bobTimer) * 0.045 * this.bobAmount;
+    const bobRoll = Math.cos(this.bobTimer * 0.5) * 0.012 * this.bobAmount;
+
+    // Sync camera position to eye level + bobbing
     const eye = this.physics.getEyePosition();
-    this.camera.position.set(eye.x, eye.y, eye.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.position.set(eye.x, eye.y + bobY, eye.z);
+    this.camera.rotation.set(this.pitch, this.yaw, bobRoll, 'YXZ');
 
     // Update raycast
     this.raycastVoxel();

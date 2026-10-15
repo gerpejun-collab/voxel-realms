@@ -9,6 +9,7 @@ import { PlayerPhysics } from './physics.js';
 import { Controls } from './controls.js';
 import { MultiplayerClient } from './multiplayer.js';
 import { UIManager } from './ui.js';
+import { AnimalManager } from './animals.js';
 
 class VoxelRealmsApp {
   constructor() {
@@ -48,6 +49,9 @@ class VoxelRealmsApp {
       this.world,
       this.multiplayer
     );
+
+    // 7. Initialize Ambient Voxel Animals (Minecraft Sheep & Pigs)
+    this.animalManager = new AnimalManager(this.world, this.sceneManager.scene);
 
     // Setup Block Interaction Events
     this.setupInteractions();
@@ -133,13 +137,16 @@ class VoxelRealmsApp {
 
     // 5. Multiplayer Movement & Remote Avatars
     this.multiplayer.sendMove(
-      this.physics.pos,
-      { yaw: this.controls.yaw, pitch: this.controls.pitch },
-      this.physics.action
-    );
+       this.physics.pos,
+       { yaw: this.controls.yaw, pitch: this.controls.pitch },
+       this.physics.action
+     );
     this.multiplayer.update(dt);
 
-    // 6. Day/Night Atmosphere & Sun Orbit
+    // 6. Ambient Voxel Animals
+    this.animalManager.update(dt);
+
+    // 7. Day/Night Atmosphere & Sun Orbit (Perpetual Bright Day)
     this.sceneManager.updateDayNightCycle(this.multiplayer.timeOfDay, this.physics.pos);
 
     // 7. HUD & Target Highlight

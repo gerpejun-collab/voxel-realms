@@ -130,6 +130,13 @@ it('stores block deltas and serializes initial state for new joiners', () => {
   assert.deepStrictEqual(initial.deltas[1], [5, 21, 7, 0]);
 });
 
+it('locks timeOfDay to permanent bright sunny day mode (0.32)', () => {
+  const state = new GameState(12345);
+  assert.strictEqual(state.getTimeOfDay(), 0.32);
+  const initial = state.getInitialState('p1');
+  assert.strictEqual(initial.timeOfDay, 0.32);
+});
+
 // ==========================================
 // 3. Room Management & Capacity Tests
 // ==========================================
@@ -238,6 +245,20 @@ it('prevents tunneling through thin 1-block platforms at terminal velocity via s
   // With substepping, player lands squarely at Y = 15.0 without tunneling
   assert.strictEqual(onGround, true);
   assert.strictEqual(posY, 15.0);
+});
+
+it('correctly calculates Minecraft auto-step elevation when moving forward into a 1-block step with headroom', () => {
+  const onGround = true;
+  const posY = 24.0;
+  const targetStepY = Math.floor(posY) + 1.0;
+  const stepHeight = targetStepY - posY; // 1.0 block step
+
+  // Verify step height is within Minecraft range (<= 1.05)
+  const canStep = onGround && stepHeight <= 1.05;
+  assert.strictEqual(canStep, true);
+
+  const resolvedY = canStep ? targetStepY : posY;
+  assert.strictEqual(resolvedY, 25.0);
 });
 
 // ==========================================

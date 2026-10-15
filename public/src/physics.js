@@ -27,6 +27,10 @@ export class PlayerPhysics {
     this.inWater = false;
     this.action = 'idle';
 
+    // Speed multiplier & Flight Mode
+    this.speedMultiplier = 1.0;
+    this.flightMode = false;
+
     // Step height (allows stepping over 0.5 unit obstacles smoothly)
     this.stepHeight = 0.5;
   }
@@ -40,6 +44,18 @@ export class PlayerPhysics {
 
   isWater(x, y, z) {
     return this.world.getBlock(x, y, z) === BLOCKS.WATER;
+  }
+
+  /**
+   * Teleports player instantly to specific coordinates
+   */
+  teleport(x, y, z) {
+    this.pos.x = x;
+    this.pos.y = y;
+    this.pos.z = z;
+    this.vel.x = 0;
+    this.vel.y = 0;
+    this.vel.z = 0;
   }
 
   /**
@@ -69,8 +85,9 @@ export class PlayerPhysics {
     this.inWater = this.isWater(feetBlockX, feetBlockY, feetBlockZ) ||
                    this.isWater(feetBlockX, Math.floor(this.pos.y + 1), feetBlockZ);
 
-    // Apply movement acceleration
-    const speed = input.sprint ? this.sprintSpeed : this.walkSpeed;
+    // Apply movement acceleration with user speed multiplier
+    const baseSpeed = input.sprint ? this.sprintSpeed : this.walkSpeed;
+    const speed = baseSpeed * this.speedMultiplier;
     const moveX = input.moveX;
     const moveZ = input.moveZ;
 
@@ -89,7 +106,13 @@ export class PlayerPhysics {
     this.vel.z += (targetVz - this.vel.z) * Math.min(1.0, accel * dt);
 
     // Vertical physics
-    if (this.inWater) {
+    if (this.flightMode) {
+      // Flight mode: jump ascends, sprint/crouch descends, zero gravity
+      let targetVy = 0;
+      if (input.jump) targetVy = 8.0 * this.speedMultiplier;
+      else if (input.sprint) targetVy = -8.0 * this.speedMultiplier;
+      this.vel.y += (targetVy - this.vel.y) * Math.min(1.0, 15.0 * dt);
+    } else if (this.inWater) {
       // Water buoyancy and swimming
       this.vel.y += this.gravity * 0.25 * dt;
       if (input.jump) {
@@ -106,7 +129,7 @@ export class PlayerPhysics {
     }
 
     // Prevent excessive velocities
-    this.vel.y = Math.max(-40, Math.min(25, this.vel.y));
+    this.vel.y = Math.max(-40, Math.min(35, this.vel.y));
 
     // Axis-aligned collision resolution
     this.resolveCollision(dt);
@@ -221,8 +244,13 @@ export class PlayerPhysics {
         if (hit) break;
       }
       if (hit) {
-        this.pos.x = checkX - halfW;
-        this.vel.x = 0;
+        // Minecraft Auto-step assist
+        if (this.canStepUp(this.pos.x, this.pos.z)) {
+          this.pos.y = Math.floor(this.pos.y) + 1.0;
+        } else {
+          this.pos.x = checkX - halfW;
+          this.vel.x = 0;
+        }
       }
     } else if (this.vel.x < 0) {
       const checkX = Math.floor(this.pos.x - halfW);
@@ -237,8 +265,13 @@ export class PlayerPhysics {
         if (hit) break;
       }
       if (hit) {
-        this.pos.x = checkX + 1.0 + halfW;
-        this.vel.x = 0;
+        // Minecraft Auto-step assist
+        if (this.canStepUp(this.pos.x, this.pos.z)) {
+          this.pos.y = Math.floor(this.pos.y) + 1.0;
+        } else {
+          this.pos.x = checkX + 1.0 + halfW;
+          this.vel.x = 0;
+        }
       }
     }
 
@@ -262,8 +295,13 @@ export class PlayerPhysics {
         if (hit) break;
       }
       if (hit) {
-        this.pos.z = checkZ - halfD;
-        this.vel.z = 0;
+        // Minecraft Auto-step assist
+        if (this.canStepUp(this.pos.x, this.pos.z)) {
+          this.pos.y = Math.floor(this.pos.y) + 1.0;
+        } else {
+          this.pos.z = checkZ - halfD;
+          this.vel.z = 0;
+        }
       }
     } else if (this.vel.z < 0) {
       const checkZ = Math.floor(this.pos.z - halfD);
@@ -278,10 +316,45 @@ export class PlayerPhysics {
         if (hit) break;
       }
       if (hit) {
-        this.pos.z = checkZ + 1.0 + halfD;
-        this.vel.z = 0;
+        // Minecraft Auto-step assist
+        if (this.canStepUp(this.pos.x, this.pos.z)) {
+          this.pos.y = Math.floor(this.pos.y) + 1.0;
+        } else {
+          this.pos.z = checkZ + 1.0 + halfD;
+          this.vel.z = 0;
+        }
       }
     }
+  }
+
+  /**
+   * Checks if an obstacle can be stepped up smoothly (0.5 to 1.0 block height)
+   */
+  canStepUp(targetX, targetZ) {
+    if (!this.onGround) return false;
+    const halfW = this.width * 0.5;
+    const halfD = this.depth * 0.5;
+    const targetY = Math.floor(this.pos.y) + 1.0;
+    if (targetY - this.pos.y > 1.05) return false;
+
+    // Check headroom clearance at the elevated position
+    const minX = Math.floor(targetX - halfW + 0.001);
+    const maxX = Math.floor(targetX + halfW - 0.001);
+    const minZ = Math.floor(targetZ - halfD + 0.001);
+    const maxZ = Math.floor(targetZ + halfD - 0.001);
+    const minY = Math.floor(targetY);
+    const maxY = Math.floor(targetY + this.height - 0.05);
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (this.isSolid(x, y, z)) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
   }
 
   getEyePosition() {

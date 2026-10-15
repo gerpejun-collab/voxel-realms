@@ -118,6 +118,14 @@ class GameState {
   }
 
   /**
+   * Get delta block at coordinate if present
+   */
+  getBlock(x, y, z) {
+    const key = `${x},${y},${z}`;
+    return this.blockDeltas.has(key) ? this.blockDeltas.get(key) : null;
+  }
+
+  /**
    * Snapshot for a newly connecting client
    */
   getInitialState(forPlayerId) {

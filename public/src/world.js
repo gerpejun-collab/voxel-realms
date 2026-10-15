@@ -165,8 +165,9 @@ export class World {
         const surfaceY = this.getHeightAt(wx, wz);
 
         if (surfaceY > WATER_LEVEL + 2 && surfaceY < 38) {
-          // Tree density hash
-          const treeVal = (Math.sin(wx * 12.9898 + wz * 78.233 + this.seed) * 43758.5453) % 1;
+          // Tree density hash (positive in all quadrants)
+          const rawHash = (Math.sin(wx * 12.9898 + wz * 78.233 + this.seed) * 43758.5453);
+          const treeVal = Math.abs(rawHash - Math.floor(rawHash));
           if (treeVal > 0.965) {
             this.buildTreeInChunk(chunk, lx, surfaceY + 1, lz);
           }

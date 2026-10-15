@@ -186,6 +186,16 @@ class RoomManager {
       this.broadcast(room, MSG.BLOCK_UPDATE, result.delta);
     } else {
       // Revert / inform sender if modification was invalid
+      const currentBlock = room.gameState.getBlock(data.x, data.y, data.z);
+      if (currentBlock !== null) {
+        this.send(ws, MSG.BLOCK_UPDATE, {
+          x: data.x,
+          y: data.y,
+          z: data.z,
+          blockType: currentBlock,
+          playerId: 'server'
+        });
+      }
       this.send(ws, MSG.ERROR, { message: result.reason || 'Modificación inválida' });
     }
   }

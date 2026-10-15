@@ -258,7 +258,10 @@ export class Chunk {
         return null;
       }
 
-      const geom = existingMesh ? existingMesh.geometry : new THREE.BufferGeometry();
+      if (existingMesh && existingMesh.geometry) {
+        existingMesh.geometry.dispose();
+      }
+      const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
       geom.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
       geom.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
@@ -275,6 +278,8 @@ export class Chunk {
         mesh.matrixAutoUpdate = false;
         mesh.updateMatrix();
         this.world.scene.add(mesh);
+      } else {
+        mesh.geometry = geom;
       }
       return mesh;
     };

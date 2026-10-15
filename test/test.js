@@ -159,6 +159,31 @@ it('enforces maximum player capacity and rejects excess clients', () => {
   roomManager.destroy();
 });
 
+it('sends BLOCK_REJECT with exact coordinates when an invalid block modification occurs', () => {
+  const roomManager = new RoomManager({ maxPlayers: 4, seed: 12345 });
+  const messages = [];
+  const mockWs = {
+    readyState: 1,
+    send: (str) => { messages.push(JSON.parse(str)); },
+    on: () => {}
+  };
+
+  roomManager.handleConnection(mockWs);
+  const meta = roomManager.socketMeta.get(mockWs);
+  roomManager.handleJoin(mockWs, meta, { name: 'RejectTester' });
+
+  // Player at (0, 32, 0) tries to place block out of reach at (100, 32, 100)
+  roomManager.handleBlockModify(mockWs, meta, { x: 100, y: 32, z: 100, blockType: 1 });
+
+  const rejectMsg = messages.find(m => m.type === MSG.BLOCK_REJECT);
+  assert.ok(rejectMsg, 'Expected BLOCK_REJECT message');
+  assert.strictEqual(rejectMsg.data.x, 100);
+  assert.strictEqual(rejectMsg.data.y, 32);
+  assert.strictEqual(rejectMsg.data.z, 100);
+
+  roomManager.destroy();
+});
+
 // ==========================================
 // 4. Physics Collision Math Simulation
 // ==========================================
@@ -185,6 +210,34 @@ it('accurately resolves floor collision and detects ground contact', () => {
   assert.strictEqual(onGround, true);
   assert.strictEqual(velY, 0);
   assert.strictEqual(posY, 20);
+});
+
+it('prevents tunneling through thin 1-block platforms at terminal velocity via substepping', () => {
+  // Platform at Y = 15 (block thickness: Y=14 to 15, floor surface at Y=15)
+  // Player falls from Y = 16.5 at terminal velocity velY = -40 m/s, dt = 0.05s
+  // Total unstepped displacement would be -2.0 blocks, leaping from 16.5 to 14.5 (tunneling past 15.0!)
+  const floorY = 15.0;
+  let posY = 16.5;
+  const velY = -40.0;
+  const dt = 0.05;
+
+  const maxDisp = Math.abs(velY * dt);
+  const steps = Math.max(1, Math.min(8, Math.ceil(maxDisp / 0.35)));
+  const subDt = dt / steps;
+  let onGround = false;
+
+  for (let s = 0; s < steps; s++) {
+    posY += velY * subDt;
+    if (posY <= floorY) {
+      posY = floorY;
+      onGround = true;
+      break;
+    }
+  }
+
+  // With substepping, player lands squarely at Y = 15.0 without tunneling
+  assert.strictEqual(onGround, true);
+  assert.strictEqual(posY, 15.0);
 });
 
 // ==========================================

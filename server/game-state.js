@@ -91,9 +91,9 @@ class GameState {
         const px = player.pos[0];
         const py = player.pos[1];
         const pz = player.pos[2];
-        const pMinX = px - 0.35, pMaxX = px + 0.35;
+        const pMinX = px - 0.3, pMaxX = px + 0.3;
         const pMinY = py, pMaxY = py + 1.8;
-        const pMinZ = pz - 0.35, pMaxZ = pz + 0.35;
+        const pMinZ = pz - 0.3, pMaxZ = pz + 0.3;
 
         const bMinX = x, bMaxX = x + 1;
         const bMinY = y, bMaxY = y + 1;

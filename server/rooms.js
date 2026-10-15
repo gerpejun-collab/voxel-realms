@@ -185,17 +185,13 @@ class RoomManager {
       // Broadcast validated block change to all players in the room including sender
       this.broadcast(room, MSG.BLOCK_UPDATE, result.delta);
     } else {
-      // Revert / inform sender if modification was invalid
-      const currentBlock = room.gameState.getBlock(data.x, data.y, data.z);
-      if (currentBlock !== null) {
-        this.send(ws, MSG.BLOCK_UPDATE, {
-          x: data.x,
-          y: data.y,
-          z: data.z,
-          blockType: currentBlock,
-          playerId: 'server'
-        });
-      }
+      // Inform sender of block rejection with exact coordinates so client rolls back
+      this.send(ws, MSG.BLOCK_REJECT, {
+        x: data.x,
+        y: data.y,
+        z: data.z,
+        reason: result.reason || 'Modificación inválida'
+      });
       this.send(ws, MSG.ERROR, { message: result.reason || 'Modificación inválida' });
     }
   }

@@ -219,7 +219,7 @@ export class UIManager {
       closeBtn.addEventListener('click', () => this.toggleInventory(false));
     }
 
-    // Toggle on 'E' key
+    // Toggle on 'E' key or close on 'Escape'
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyE' && !this.isChatOpen) {
         if (this.controls.isLocked) {
@@ -229,6 +229,9 @@ export class UIManager {
           this.toggleInventory(false);
           this.controls.lock();
         }
+      } else if (e.code === 'Escape' && this.isInventoryOpen) {
+        this.toggleInventory(false);
+        this.controls.lock();
       }
     });
   }
@@ -288,7 +291,8 @@ export class UIManager {
 
     // Pointer lock listener to toggle pause menu
     this.controls.onLockChange = (isLocked) => {
-      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && !this.lobbyOverlay.classList.contains('hidden') === false) {
+      const isInGame = this.lobbyOverlay.classList.contains('hidden');
+      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && isInGame) {
         this.pauseMenu.classList.remove('hidden');
       } else {
         this.pauseMenu.classList.add('hidden');

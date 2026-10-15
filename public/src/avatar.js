@@ -15,6 +15,7 @@ export class Avatar {
     this.action = 'idle';
 
     this.animTime = 0;
+    this.swingProgress = 0;
     this.buildModel();
     this.createNameTag();
 
@@ -104,10 +105,14 @@ export class Avatar {
     canvas.height = 64;
     const ctx = canvas.getContext('2d');
 
-    // Rounded background pill
+    // Rounded background pill (with fallback for browsers lacking roundRect)
     ctx.fillStyle = 'rgba(10, 15, 25, 0.75)';
     ctx.beginPath();
-    ctx.roundRect(10, 8, 236, 48, 16);
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(10, 8, 236, 48, 16);
+    } else {
+      ctx.rect(10, 8, 236, 48);
+    }
     ctx.fill();
 
     // Border
@@ -156,6 +161,10 @@ export class Avatar {
     }
   }
 
+  triggerSwing() {
+    this.swingProgress = 1.0;
+  }
+
   update(dt) {
     // Distance snap if teleported/respawned
     const distSq = this.group.position.distanceToSquared(this.targetPos);
@@ -181,7 +190,18 @@ export class Avatar {
     const animSpeed = (this.action === 'running') ? 14.0 : 8.0;
     const swingAmp = (this.action === 'running') ? 0.75 : 0.45;
 
-    if (isMoving) {
+    if (this.action === 'swimming') {
+      this.animTime += dt * 6.0;
+      const stroke = Math.sin(this.animTime);
+      this.leftArmPivot.rotation.x = -1.2 + stroke * 0.4;
+      this.rightArmPivot.rotation.x = -1.2 - stroke * 0.4;
+      this.leftArmPivot.rotation.z = -0.3 + stroke * 0.2;
+      this.rightArmPivot.rotation.z = 0.3 - stroke * 0.2;
+      this.leftLegPivot.rotation.x = stroke * 0.35;
+      this.rightLegPivot.rotation.x = -stroke * 0.35;
+    } else if (isMoving) {
+      this.leftArmPivot.rotation.z = 0;
+      this.rightArmPivot.rotation.z = 0;
       this.animTime += dt * animSpeed;
       const swing = Math.sin(this.animTime) * swingAmp;
 
@@ -190,24 +210,46 @@ export class Avatar {
       this.leftLegPivot.rotation.x = -swing;
       this.rightLegPivot.rotation.x = swing;
     } else if (this.action === 'jumping') {
+      this.leftArmPivot.rotation.z = 0;
+      this.rightArmPivot.rotation.z = 0;
       this.leftArmPivot.rotation.x = -0.5;
       this.rightArmPivot.rotation.x = -0.5;
       this.leftLegPivot.rotation.x = 0.3;
       this.rightLegPivot.rotation.x = -0.3;
     } else {
       // Idle: smoothly return to neutral
+      this.leftArmPivot.rotation.z = 0;
+      this.rightArmPivot.rotation.z = 0;
       this.leftArmPivot.rotation.x *= Math.max(0, 1.0 - dt * 10);
       this.rightArmPivot.rotation.x *= Math.max(0, 1.0 - dt * 10);
       this.leftLegPivot.rotation.x *= Math.max(0, 1.0 - dt * 10);
       this.rightLegPivot.rotation.x *= Math.max(0, 1.0 - dt * 10);
     }
+
+    // Apply punch / block interaction swing to right arm
+    if (this.swingProgress > 0) {
+      this.swingProgress -= dt * 5.0;
+      if (this.swingProgress < 0) this.swingProgress = 0;
+      const punch = Math.sin((1.0 - this.swingProgress) * Math.PI) * 1.3;
+      this.rightArmPivot.rotation.x -= punch;
+    }
   }
 
   dispose() {
     this.scene.remove(this.group);
-    if (this.nameSprite && this.nameSprite.material.map) {
-      this.nameSprite.material.map.dispose();
-      this.nameSprite.material.dispose();
-    }
+    this.group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => {
+            if (m.map) m.map.dispose();
+            m.dispose();
+          });
+        } else {
+          if (obj.material.map) obj.material.map.dispose();
+          obj.material.dispose();
+        }
+      }
+    });
   }
 }

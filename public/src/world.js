@@ -77,8 +77,11 @@ export class World {
   }
 
   queueRemesh(chunk) {
-    if (chunk && !this.remeshQueue.includes(chunk)) {
-      this.remeshQueue.push(chunk);
+    if (chunk) {
+      chunk.isDirty = true;
+      if (!this.remeshQueue.includes(chunk)) {
+        this.remeshQueue.push(chunk);
+      }
     }
   }
 

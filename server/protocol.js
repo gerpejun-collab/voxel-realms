@@ -15,6 +15,7 @@ const MSG = {
   PLAYER_LEFT: 'player_left',
   PLAYERS_UPDATE: 'players_update',
   BLOCK_UPDATE: 'block_update',
+  BLOCK_REJECT: 'block_reject',
   CHAT_BROADCAST: 'chat_broadcast',
   PONG: 'pong',
   ERROR: 'error'

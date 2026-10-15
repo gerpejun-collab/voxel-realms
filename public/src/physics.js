@@ -46,9 +46,12 @@ export class PlayerPhysics {
    * Respawns the player safely on top of the terrain
    */
   respawn(spawnX = 0, spawnZ = 0) {
-    const surfaceY = this.world.getHeightAt(spawnX, spawnZ);
+    let surfaceY = this.world.getHeightAt(spawnX, spawnZ);
+    while (surfaceY < 60 && this.isSolid(spawnX, surfaceY + 1, spawnZ)) {
+      surfaceY++;
+    }
     this.pos.x = spawnX + 0.5;
-    this.pos.y = surfaceY + 2.0;
+    this.pos.y = surfaceY + 1.0;
     this.pos.z = spawnZ + 0.5;
     this.vel.x = 0;
     this.vel.y = 0;
@@ -130,8 +133,23 @@ export class PlayerPhysics {
 
   /**
    * Resolves collision with the voxel world along X, Y, and Z axes
+   * Uses continuous substepping when moving fast to guarantee zero tunneling
    */
   resolveCollision(dt) {
+    const maxDisp = Math.max(
+      Math.abs(this.vel.x * dt),
+      Math.abs(this.vel.y * dt),
+      Math.abs(this.vel.z * dt)
+    );
+    const steps = Math.max(1, Math.min(8, Math.ceil(maxDisp / 0.35)));
+    const subDt = dt / steps;
+
+    for (let s = 0; s < steps; s++) {
+      this.resolveCollisionStep(subDt);
+    }
+  }
+
+  resolveCollisionStep(dt) {
     const halfW = this.width * 0.5;
     const halfD = this.depth * 0.5;
 
@@ -139,10 +157,10 @@ export class PlayerPhysics {
     this.pos.y += this.vel.y * dt;
     this.onGround = false;
 
-    let minX = Math.floor(this.pos.x - halfW);
-    let maxX = Math.floor(this.pos.x + halfW);
-    let minZ = Math.floor(this.pos.z - halfD);
-    let maxZ = Math.floor(this.pos.z + halfD);
+    let minX = Math.floor(this.pos.x - halfW + 0.001);
+    let maxX = Math.floor(this.pos.x + halfW - 0.001);
+    let minZ = Math.floor(this.pos.z - halfD + 0.001);
+    let maxZ = Math.floor(this.pos.z + halfD - 0.001);
 
     if (this.vel.y <= 0) {
       // Moving down: check floor beneath feet
@@ -187,8 +205,8 @@ export class PlayerPhysics {
     this.pos.x += this.vel.x * dt;
     let minY = Math.floor(this.pos.y);
     let maxY = Math.floor(this.pos.y + this.height - 0.05);
-    minZ = Math.floor(this.pos.z - halfD);
-    maxZ = Math.floor(this.pos.z + halfD);
+    minZ = Math.floor(this.pos.z - halfD + 0.001);
+    maxZ = Math.floor(this.pos.z + halfD - 0.001);
 
     if (this.vel.x > 0) {
       const checkX = Math.floor(this.pos.x + halfW);
@@ -226,8 +244,8 @@ export class PlayerPhysics {
 
     // --- Z AXIS ---
     this.pos.z += this.vel.z * dt;
-    minX = Math.floor(this.pos.x - halfW);
-    maxX = Math.floor(this.pos.x + halfW);
+    minX = Math.floor(this.pos.x - halfW + 0.001);
+    maxX = Math.floor(this.pos.x + halfW - 0.001);
     minY = Math.floor(this.pos.y);
     maxY = Math.floor(this.pos.y + this.height - 0.05);
 

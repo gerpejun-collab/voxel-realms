@@ -16,6 +16,7 @@ export class MultiplayerClient {
     this.reconnectAttempts = 0;
 
     this.remoteAvatars = new Map(); // id -> Avatar
+    this.pendingModifications = new Map(); // "x,y,z" -> originalBlock (for rollback on rejection)
     this.timeOfDay = 0.35; // Default morning
 
     // Throttled movement packets
@@ -182,6 +183,9 @@ export class MultiplayerClient {
       case 'block_update':
         // Synchronized block change
         const { x, y, z, blockType, playerId } = data;
+        const key = `${x},${y},${z}`;
+        this.pendingModifications.delete(key);
+
         const previousBlock = this.world.getBlock(x, y, z);
 
         // Spawn debris particles if block was destroyed
@@ -189,7 +193,26 @@ export class MultiplayerClient {
           this.particles.spawnBlockDebris(x, y, z);
         }
 
+        // Trigger arm swing on the avatar who modified the block
+        if (playerId && playerId !== this.myId) {
+          const remote = this.remoteAvatars.get(playerId);
+          if (remote) remote.triggerSwing();
+        }
+
         this.world.setBlock(x, y, z, blockType, true);
+        break;
+
+      case 'block_reject':
+        // Rollback optimistic modification on server rejection
+        const rejKey = `${data.x},${data.y},${data.z}`;
+        if (this.pendingModifications.has(rejKey)) {
+          const original = this.pendingModifications.get(rejKey);
+          this.pendingModifications.delete(rejKey);
+          this.world.setBlock(data.x, data.y, data.z, original, true);
+        }
+        if (this.onError) {
+          this.onError(data.reason || 'Modificación no permitida');
+        }
         break;
 
       case 'chat_broadcast':
@@ -258,6 +281,9 @@ export class MultiplayerClient {
   sendBlockModify(x, y, z, blockType) {
     // Optimistic local update
     const previous = this.world.getBlock(x, y, z);
+    const key = `${x},${y},${z}`;
+    this.pendingModifications.set(key, previous);
+
     if (blockType === 0 && previous !== 0) {
       this.particles.spawnBlockDebris(x, y, z);
     }

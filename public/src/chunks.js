@@ -38,11 +38,11 @@ const FACE_VERTICES = [
   ],
   // 4: Z+ (north)
   [
-    [1, 0, 1], [0, 0, 1], [0, 1, 1], [1, 1, 1]
+    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
   ],
   // 5: Z- (south)
   [
-    [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]
+    [1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]
   ]
 ];
 
@@ -142,17 +142,17 @@ export class Chunk {
     }
     // North face (Z+)
     else if (faceIdx === 4) {
-      if (vertIdx === 0) { s1 = isSolid(1, 0, 1);  s2 = isSolid(0, -1, 1); c = isSolid(1, -1, 1); }
-      if (vertIdx === 1) { s1 = isSolid(-1, 0, 1); s2 = isSolid(0, -1, 1); c = isSolid(-1, -1, 1); }
-      if (vertIdx === 2) { s1 = isSolid(-1, 0, 1); s2 = isSolid(0, 1, 1);  c = isSolid(-1, 1, 1); }
-      if (vertIdx === 3) { s1 = isSolid(1, 0, 1);  s2 = isSolid(0, 1, 1);  c = isSolid(1, 1, 1); }
+      if (vertIdx === 0) { s1 = isSolid(-1, 0, 1); s2 = isSolid(0, -1, 1); c = isSolid(-1, -1, 1); }
+      if (vertIdx === 1) { s1 = isSolid(1, 0, 1);  s2 = isSolid(0, -1, 1); c = isSolid(1, -1, 1); }
+      if (vertIdx === 2) { s1 = isSolid(1, 0, 1);  s2 = isSolid(0, 1, 1);  c = isSolid(1, 1, 1); }
+      if (vertIdx === 3) { s1 = isSolid(-1, 0, 1); s2 = isSolid(0, 1, 1);  c = isSolid(-1, 1, 1); }
     }
     // South face (Z-)
     else if (faceIdx === 5) {
-      if (vertIdx === 0) { s1 = isSolid(-1, 0, -1); s2 = isSolid(0, -1, -1); c = isSolid(-1, -1, -1); }
-      if (vertIdx === 1) { s1 = isSolid(1, 0, -1);  s2 = isSolid(0, -1, -1); c = isSolid(1, -1, -1); }
-      if (vertIdx === 2) { s1 = isSolid(1, 0, -1);  s2 = isSolid(0, 1, -1);  c = isSolid(1, 1, -1); }
-      if (vertIdx === 3) { s1 = isSolid(-1, 0, -1); s2 = isSolid(0, 1, -1);  c = isSolid(-1, 1, -1); }
+      if (vertIdx === 0) { s1 = isSolid(1, 0, -1);  s2 = isSolid(0, -1, -1); c = isSolid(1, -1, -1); }
+      if (vertIdx === 1) { s1 = isSolid(-1, 0, -1); s2 = isSolid(0, -1, -1); c = isSolid(-1, -1, -1); }
+      if (vertIdx === 2) { s1 = isSolid(-1, 0, -1); s2 = isSolid(0, 1, -1);  c = isSolid(-1, 1, -1); }
+      if (vertIdx === 3) { s1 = isSolid(1, 0, -1);  s2 = isSolid(0, 1, -1);  c = isSolid(1, 1, -1); }
     }
 
     const aoScore = this.calculateAO(s1, s2, c);
@@ -197,8 +197,8 @@ export class Chunk {
             let drawFace = false;
 
             if (isWater) {
-              // Only draw water surface faces if neighbor is air (or top face)
-              if (neighbor === BLOCKS.AIR && f === 0) {
+              // Draw water faces if neighbor is air
+              if (neighbor === BLOCKS.AIR) {
                 drawFace = true;
               }
             } else if (!def.transparent) {

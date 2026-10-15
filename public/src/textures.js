@@ -791,6 +791,7 @@ export class TextureAtlasManager {
     this.roughnessTexture = null;
 
     this.tileCanvases = new Map(); // slot -> tileCanvas
+    this.tileDataURLs = new Map(); // slot -> base64 data URL cache
     this.build();
   }
 
@@ -867,7 +868,13 @@ export class TextureAtlasManager {
   }
 
   getTileDataURL(slot) {
+    if (this.tileDataURLs.has(slot)) {
+      return this.tileDataURLs.get(slot);
+    }
     const tile = this.tileCanvases.get(slot);
-    return tile ? tile.toDataURL() : '';
+    if (!tile) return '';
+    const url = tile.toDataURL();
+    this.tileDataURLs.set(slot, url);
+    return url;
   }
 }

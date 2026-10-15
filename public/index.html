@@ -76,32 +76,34 @@
 
     <!-- Mobile Touch Controls Overlay -->
     <div id="mobile-touch-overlay" class="hidden">
-      <!-- Left Virtual Joystick Zone -->
-      <div id="joystick-zone">
-        <div id="joystick-base">
-          <div id="joystick-knob"></div>
+      <!-- Left Virtual Joystick Zone (#virtual-joystick) -->
+      <div id="virtual-joystick" class="virtual-joystick-container">
+        <div id="joystick-zone">
+          <div id="joystick-base">
+            <div id="joystick-knob"></div>
+          </div>
         </div>
       </div>
 
-      <!-- Right Touch Action Buttons -->
-      <div id="mobile-action-buttons">
-        <button id="mobile-btn-break" class="mobile-action-btn break-btn" title="Romper Bloque">
-          <span class="btn-icon">⛏️</span>
-          <span class="btn-label">ROMPER</span>
-        </button>
-        <button id="mobile-btn-place" class="mobile-action-btn place-btn" title="Colocar Bloque">
-          <span class="btn-icon">🧱</span>
-          <span class="btn-label">COLOCAR</span>
-        </button>
-        <button id="mobile-btn-cam" class="mobile-action-btn cam-btn" title="Alternar Cámara">
+      <!-- Right Touch Action Fan Arc (#mobile-action-buttons) -->
+      <div id="mobile-action-buttons" class="action-fan-arc">
+        <button id="mobile-btn-cam" class="mobile-action-btn cam-btn mc-action-btn" title="Alternar Cámara">
           <span class="btn-icon">📷</span>
           <span class="btn-label">VISTA</span>
         </button>
-        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn" title="Alternar Correr">
+        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn" title="Alternar Correr">
           <span class="btn-icon">⚡</span>
           <span class="btn-label">CORRER</span>
         </button>
-        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn" title="Saltar">
+        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn" title="Romper Bloque (Ataque)">
+          <span class="btn-icon">⛏️</span>
+          <span class="btn-label">ROMPER</span>
+        </button>
+        <button id="mobile-btn-place" class="mobile-action-btn place-btn mc-action-btn" title="Colocar Bloque">
+          <span class="btn-icon">🧱</span>
+          <span class="btn-label">COLOCAR</span>
+        </button>
+        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn mc-action-btn" title="Saltar">
           <span class="btn-icon">🦘</span>
           <span class="btn-label">SALTAR</span>
         </button>

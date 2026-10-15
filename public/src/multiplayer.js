@@ -116,7 +116,7 @@ export class MultiplayerClient {
     switch (type) {
       case 'init':
         this.myId = data.id;
-        this.timeOfDay = data.timeOfDay || 0.35;
+        this.timeOfDay = data.timeOfDay ?? 0.32;
 
         // Apply world seed if different
         if (data.seed && this.world.seed !== data.seed) {

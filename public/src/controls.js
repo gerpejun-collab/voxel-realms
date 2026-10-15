@@ -220,13 +220,32 @@ export class Controls {
   }
 
   setupTouchControls() {
+    this.initTouchLook();
+    this.initVirtualJoystick();
+    this.initActionFan();
+    this.initHotbarIsolation();
+  }
+
+  initTouchLook() {
     // Touch drag for looking around (right portion of screen)
     window.addEventListener('touchstart', (e) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
-        if (touch.clientX > window.innerWidth * 0.35 && this.lookTouchId === null) {
+        if (touch.clientX > window.innerWidth * 0.40 && this.lookTouchId === null) {
           const target = document.elementFromPoint(touch.clientX, touch.clientY);
-          if (target && (target.closest('.touch-btn') || target.closest('.mobile-action-btn') || target.closest('#chat-container') || target.closest('.modal-card') || target.closest('#hotbar-wrapper'))) {
+          if (target && (
+            target.closest('.touch-btn') ||
+            target.closest('.mobile-action-btn') ||
+            target.closest('#mobile-action-buttons') ||
+            target.closest('#virtual-joystick') ||
+            target.closest('#joystick-zone') ||
+            target.closest('#chat-container') ||
+            target.closest('.modal-card') ||
+            target.closest('#hotbar-wrapper') ||
+            target.closest('#hotbar') ||
+            target.closest('.hud-action-pill') ||
+            target.closest('#hud-top-bar')
+          )) {
             continue;
           }
           this.lookTouchId = touch.identifier;
@@ -270,6 +289,186 @@ export class Controls {
     window.addEventListener('touchcancel', endTouchLook, { passive: true });
   }
 
+  initVirtualJoystick() {
+    const vJoy = document.getElementById('virtual-joystick') || document.getElementById('joystick-zone');
+    const joystickBase = document.getElementById('joystick-base');
+    const joystickKnob = document.getElementById('joystick-knob');
+    if (!vJoy || !joystickBase || !joystickKnob) return;
+
+    let activeTouchId = null;
+
+    const updateKnob = (touch) => {
+      const rect = joystickBase.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const maxRadius = (rect.width / 2) - 8;
+
+      let dx = touch.clientX - centerX;
+      let dy = touch.clientY - centerY;
+      const distance = Math.hypot(dx, dy);
+
+      if (distance > maxRadius && distance > 0) {
+        dx = (dx / distance) * maxRadius;
+        dy = (dy / distance) * maxRadius;
+      }
+
+      joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+      // Normalize -1 to 1 (screen Y down is backward, so negate dy for forward)
+      this.joystick.x = maxRadius > 0 ? (dx / maxRadius) : 0;
+      this.joystick.y = maxRadius > 0 ? -(dy / maxRadius) : 0;
+    };
+
+    vJoy.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+      if (activeTouchId !== null) return;
+      const touch = e.changedTouches[0];
+      activeTouchId = touch.identifier;
+      updateKnob(touch);
+    }, { passive: false });
+
+    vJoy.addEventListener('touchmove', (e) => {
+      e.stopPropagation();
+      if (activeTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === activeTouchId) {
+          updateKnob(e.changedTouches[i]);
+          break;
+        }
+      }
+    }, { passive: false });
+
+    const endJoystick = (e) => {
+      e.stopPropagation();
+      if (activeTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === activeTouchId) {
+          activeTouchId = null;
+          joystickKnob.style.transform = 'translate(0px, 0px)';
+          this.joystick.x = 0;
+          this.joystick.y = 0;
+          break;
+        }
+      }
+    };
+
+    vJoy.addEventListener('touchend', endJoystick, { passive: false });
+    vJoy.addEventListener('touchcancel', endJoystick, { passive: false });
+  }
+
+  initActionFan() {
+    const actionContainer = document.getElementById('mobile-action-buttons');
+    if (actionContainer) {
+      actionContainer.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: false });
+      actionContainer.addEventListener('touchend', (e) => e.stopPropagation(), { passive: false });
+    }
+
+    const actionButtons = document.querySelectorAll('.mobile-action-btn');
+    actionButtons.forEach((btn) => {
+      btn.addEventListener('touchstart', () => {
+        btn.classList.add('active-press');
+      }, { passive: true });
+
+      const removePress = () => {
+        btn.classList.remove('active-press');
+      };
+      btn.addEventListener('touchend', removePress, { passive: true });
+      btn.addEventListener('touchcancel', removePress, { passive: true });
+    });
+
+    const btnJump = document.getElementById('mobile-btn-jump');
+    if (btnJump && !btnJump.__fanBound) {
+      btnJump.__fanBound = true;
+      btnJump.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setJump(true);
+      }, { passive: false });
+      const endJump = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setJump(false);
+      };
+      btnJump.addEventListener('touchend', endJump, { passive: false });
+      btnJump.addEventListener('touchcancel', endJump, { passive: false });
+    }
+
+    const btnPlace = document.getElementById('mobile-btn-place');
+    if (btnPlace && !btnPlace.__fanBound) {
+      btnPlace.__fanBound = true;
+      btnPlace.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerPlace();
+      }, { passive: false });
+    }
+
+    const btnBreak = document.getElementById('mobile-btn-break');
+    if (btnBreak && !btnBreak.__fanBound) {
+      btnBreak.__fanBound = true;
+      btnBreak.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerBreak();
+      }, { passive: false });
+    }
+
+    const btnCam = document.getElementById('mobile-btn-cam');
+    if (btnCam && !btnCam.__fanBound) {
+      btnCam.__fanBound = true;
+      btnCam.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.togglePerspective();
+      }, { passive: false });
+    }
+
+    const btnSprint = document.getElementById('mobile-btn-sprint');
+    if (btnSprint && !btnSprint.__fanBound) {
+      btnSprint.__fanBound = true;
+      let sprintState = false;
+      btnSprint.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sprintState = !sprintState;
+        this.setSprint(sprintState);
+        btnSprint.classList.toggle('active', sprintState);
+      }, { passive: false });
+    }
+  }
+
+  initHotbarIsolation() {
+    const hotbar = document.getElementById('hotbar');
+    const hotbarWrapper = document.getElementById('hotbar-wrapper');
+
+    const isolate = (e) => {
+      e.stopPropagation();
+    };
+
+    [hotbar, hotbarWrapper].forEach((elem) => {
+      if (!elem) return;
+      elem.addEventListener('touchstart', isolate, { passive: false });
+      elem.addEventListener('touchmove', isolate, { passive: false });
+      elem.addEventListener('touchend', isolate, { passive: false });
+      elem.addEventListener('touchcancel', isolate, { passive: false });
+    });
+
+    if (hotbar) {
+      hotbar.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        const slot = e.target.closest('.hotbar-slot');
+        if (slot && slot.dataset.index !== undefined) {
+          const idx = parseInt(slot.dataset.index, 10);
+          if (!isNaN(idx)) {
+            this.selectedHotbarIndex = idx;
+            if (this.onSelectHotbar) {
+              this.onSelectHotbar(idx);
+            }
+          }
+        }
+      }, { passive: false });
+    }
+  }
+
   triggerPunch() {
     this.punchProgress = 1.0;
     if (this.localAvatar) {
@@ -278,6 +477,10 @@ export class Controls {
   }
 
   triggerBreak() {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (this.lastBreakTime && (now - this.lastBreakTime < 80)) return;
+    this.lastBreakTime = now;
+
     this.triggerPunch();
     if (this.targetedVoxel && this.onBreakBlock) {
       this.onBreakBlock(this.targetedVoxel);
@@ -285,6 +488,10 @@ export class Controls {
   }
 
   triggerPlace() {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (this.lastPlaceTime && (now - this.lastPlaceTime < 80)) return;
+    this.lastPlaceTime = now;
+
     this.triggerPunch();
     if (this.targetedVoxel && this.onPlaceBlock) {
       this.onPlaceBlock(this.targetedVoxel.place);

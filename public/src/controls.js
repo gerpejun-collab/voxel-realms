@@ -466,6 +466,47 @@ export class Controls {
     return null;
   }
 
+  /**
+   * Raycasts from eye position to target camera offset to prevent clipping through solid blocks in 3rd person
+   */
+  getSafeCameraPosition(eye, ox, oy, oz) {
+    if (!this.world || typeof this.world.getBlock !== 'function') {
+      return { x: eye.x + ox, y: eye.y + oy, z: eye.z + oz };
+    }
+    const len = Math.hypot(ox, oy, oz);
+    if (len < 0.001) return { x: eye.x, y: eye.y, z: eye.z };
+
+    const dx = ox / len;
+    const dy = oy / len;
+    const dz = oz / len;
+
+    // Raycast outward from eye in fine steps
+    const step = 0.2;
+    let safeLen = len;
+
+    for (let cur = 0.4; cur <= len; cur += step) {
+      const cx = eye.x + dx * cur;
+      const cy = eye.y + dy * cur;
+      const cz = eye.z + dz * cur;
+
+      const bx = Math.floor(cx);
+      const by = Math.floor(cy);
+      const bz = Math.floor(cz);
+
+      const block = this.world.getBlock(bx, by, bz);
+      if (block !== BLOCKS.AIR && block !== BLOCKS.WATER && BLOCK_DEFS[block]?.solid) {
+        safeLen = Math.max(0.35, cur - 0.25);
+        break;
+      }
+    }
+
+    return {
+      x: eye.x + dx * safeLen,
+      y: eye.y + dy * safeLen,
+      z: eye.z + dz * safeLen
+    };
+  }
+
   update(dt) {
     // Calculate world movement vector from keyboard keys and virtual joystick
     let forward = (this.keys.forward ? 1 : 0) - (this.keys.backward ? 1 : 0) + this.joystick.y;
@@ -547,7 +588,8 @@ export class Controls {
       const backY = -sinPitch * dist + 0.35;
       const backZ = cosYaw * cosPitch * dist;
 
-      this.camera.position.set(eye.x + backX, eye.y + backY, eye.z + backZ);
+      const safePos = this.getSafeCameraPosition(eye, backX, backY, backZ);
+      this.camera.position.set(safePos.x, safePos.y, safePos.z);
       this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
       if (this.firstPersonArm) this.firstPersonArm.visible = false;
       if (this.localAvatar && this.localAvatar.group) this.localAvatar.group.visible = true;
@@ -562,7 +604,8 @@ export class Controls {
       const frontY = -sinPitch * dist + 0.35;
       const frontZ = -cosYaw * cosPitch * dist;
 
-      this.camera.position.set(eye.x + frontX, eye.y + frontY, eye.z + frontZ);
+      const safePos = this.getSafeCameraPosition(eye, frontX, frontY, frontZ);
+      this.camera.position.set(safePos.x, safePos.y, safePos.z);
       this.camera.rotation.set(-this.pitch, this.yaw + Math.PI, 0, 'YXZ');
       if (this.firstPersonArm) this.firstPersonArm.visible = false;
       if (this.localAvatar && this.localAvatar.group) this.localAvatar.group.visible = true;

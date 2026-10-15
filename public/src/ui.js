@@ -509,12 +509,12 @@ export class UIManager {
 
   getSectorName(x, z) {
     const distCenter = Math.hypot(x, z);
-    if (distCenter <= 16) return '🏰 Descampado Central';
-    if (z >= 140 && z <= 220 && Math.abs(x) <= 45) return '🇳🇴 Fiordos de Noruega';
-    if (x > 15 && z > 15) return '🇯🇵 Japón';
-    if (x < -15 && z > 15) return '🇨🇳 Shanghai';
-    if (x > 15 && z < -15) return '🇫🇷 París';
-    if (x < -15 && z < -15) return '🇺🇸 Nueva York';
+    if (distCenter <= 24) return '🏰 Descampado Central';
+    if (z >= 440 && z <= 560 && Math.abs(x) <= 55) return '🇳🇴 Fiordos de Noruega';
+    if (Math.hypot(x - 250, z - 250) <= 60) return '🇯🇵 Japón Imperial';
+    if (Math.hypot(x + 250, z - 250) <= 60) return '🇨🇳 China & Shanghai';
+    if (Math.hypot(x - 250, z + 250) <= 60) return '🇫🇷 París';
+    if (Math.hypot(x + 250, z + 250) <= 60) return '🇺🇸 Nueva York';
     return '🌲 Bosque y Llanuras';
   }
 

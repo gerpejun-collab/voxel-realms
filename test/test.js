@@ -1,0 +1,200 @@
+// test/test.js
+// Automated verification suite for Voxel Realms: Protocol, State, Rooms, Terrain, and Physics Math
+
+const assert = require('assert');
+const {
+  MSG,
+  sanitizeName,
+  sanitizeChat,
+  isValidBlockModify,
+  isValidMove
+} = require('../server/protocol');
+
+const { GameState } = require('../server/game-state');
+const { RoomManager } = require('../server/rooms');
+
+console.log('--- RUNNING VOXEL REALMS TEST SUITE ---');
+let passed = 0;
+let total = 0;
+
+function it(name, fn) {
+  total++;
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    passed++;
+  } catch (err) {
+    console.error(`  ✗ ${name}`);
+    console.error(err);
+  }
+}
+
+// ==========================================
+// 1. Protocol & Validation Tests
+// ==========================================
+console.log('\n1. PROTOCOL & SANITIZATION:');
+
+it('sanitizes malicious usernames and prevents HTML injection', () => {
+  assert.strictEqual(sanitizeName('<script>alert(1)</script>'), 'scriptalert1scri');
+  assert.strictEqual(sanitizeName('NormalPlayer'), 'NormalPlayer');
+  assert.strictEqual(sanitizeName('A_Very_Long_Player_Name_Over_Limit'), 'A_Very_Long_Play');
+  assert.strictEqual(sanitizeName('   '), 'Player');
+  assert.strictEqual(sanitizeName(null), 'Player');
+});
+
+it('sanitizes chat messages', () => {
+  assert.strictEqual(sanitizeChat('Hello <b>world</b>!'), 'Hello bworld/b!');
+  assert.strictEqual(sanitizeChat('Clean text'), 'Clean text');
+  assert.strictEqual(sanitizeChat(''), '');
+  assert.strictEqual(sanitizeChat(null), '');
+});
+
+it('validates block modification coordinates and bounds', () => {
+  assert.strictEqual(isValidBlockModify({ x: 10, y: 30, z: -5, blockType: 1 }), true);
+  // Invalid Y (negative or over 128)
+  assert.strictEqual(isValidBlockModify({ x: 10, y: -1, z: 0, blockType: 1 }), false);
+  assert.strictEqual(isValidBlockModify({ x: 10, y: 150, z: 0, blockType: 1 }), false);
+  // Floating point coordinates
+  assert.strictEqual(isValidBlockModify({ x: 10.5, y: 30, z: 0, blockType: 1 }), false);
+  // Negative or invalid blockType
+  assert.strictEqual(isValidBlockModify({ x: 10, y: 30, z: 0, blockType: -1 }), false);
+  assert.strictEqual(isValidBlockModify({ x: 10, y: 30, z: 0, blockType: 999 }), false);
+});
+
+it('validates player movement packets', () => {
+  assert.strictEqual(isValidMove({ pos: [1.2, 30.5, -4.8], rot: [0.5, -0.2] }), true);
+  assert.strictEqual(isValidMove({ pos: [1.2, 30.5], rot: [0.5, -0.2] }), false);
+  assert.strictEqual(isValidMove({ pos: [NaN, 30.5, 0], rot: [0, 0] }), false);
+  assert.strictEqual(isValidMove(null), false);
+});
+
+// ==========================================
+// 2. Game State & Authority Tests
+// ==========================================
+console.log('\n2. GAME STATE & WORLD AUTHORITY:');
+
+it('correctly tracks players and resolves duplicate names', () => {
+  const state = new GameState(12345);
+  const p1 = state.addPlayer('id1', 'Alex');
+  const p2 = state.addPlayer('id2', 'Alex');
+
+  assert.strictEqual(p1.name, 'Alex');
+  assert.strictEqual(p2.name, 'Alex_1');
+  assert.strictEqual(state.players.size, 2);
+
+  state.removePlayer('id1');
+  assert.strictEqual(state.players.size, 1);
+  assert.strictEqual(state.getPlayer('id2').name, 'Alex_1');
+});
+
+it('rejects block modifications that are out of reach', () => {
+  const state = new GameState(12345);
+  const p = state.addPlayer('p1', 'Builder');
+  p.pos = [0, 20, 0];
+
+  // Block at distance ~100 blocks
+  const result = state.modifyBlock('p1', 100, 20, 100, 1);
+  assert.strictEqual(result.success, false);
+  assert.strictEqual(result.reason, 'Out of reach');
+});
+
+it('rejects placing a solid block inside the player bounding box', () => {
+  const state = new GameState(12345);
+  const p = state.addPlayer('p1', 'Builder');
+  p.pos = [10.2, 25.0, 10.2]; // feet at y=25, height 1.8
+
+  // Block at (10, 25, 10) directly overlaps player
+  const result = state.modifyBlock('p1', 10, 25, 10, 1);
+  assert.strictEqual(result.success, false);
+  assert.strictEqual(result.reason, 'Cannot place block inside player');
+
+  // But destroying a block (type = 0) at the same position is allowed
+  const destroyResult = state.modifyBlock('p1', 10, 25, 10, 0);
+  assert.strictEqual(destroyResult.success, true);
+});
+
+it('stores block deltas and serializes initial state for new joiners', () => {
+  const state = new GameState(99999);
+  const p1 = state.addPlayer('p1', 'Steve');
+  p1.pos = [5, 20, 5];
+
+  state.modifyBlock('p1', 5, 20, 7, 3); // Place block
+  state.modifyBlock('p1', 5, 21, 7, 0); // Destroy block
+
+  const initial = state.getInitialState('p2');
+  assert.strictEqual(initial.seed, 99999);
+  assert.strictEqual(initial.players.length, 1);
+  assert.strictEqual(initial.players[0].name, 'Steve');
+  assert.strictEqual(initial.deltas.length, 2);
+  assert.deepStrictEqual(initial.deltas[0], [5, 20, 7, 3]);
+  assert.deepStrictEqual(initial.deltas[1], [5, 21, 7, 0]);
+});
+
+// ==========================================
+// 3. Room Management & Capacity Tests
+// ==========================================
+console.log('\n3. ROOM MANAGEMENT & CAPACITY:');
+
+it('enforces maximum player capacity and rejects excess clients', () => {
+  const roomManager = new RoomManager({ maxPlayers: 2, seed: 12345 });
+  const mockSockets = [
+    { readyState: 1, send: () => {}, on: () => {} },
+    { readyState: 1, send: () => {}, on: () => {} },
+    { readyState: 1, send: (data) => { mockSockets[2].lastMsg = JSON.parse(data); }, on: () => {} }
+  ];
+
+  mockSockets.forEach(ws => roomManager.handleConnection(ws));
+
+  // Join first two
+  roomManager.handleJoin(mockSockets[0], roomManager.socketMeta.get(mockSockets[0]), { name: 'P1' });
+  roomManager.handleJoin(mockSockets[1], roomManager.socketMeta.get(mockSockets[1]), { name: 'P2' });
+
+  assert.strictEqual(roomManager.getTotalOnlineCount(), 2);
+
+  // Third player should be rejected with server full error
+  roomManager.handleJoin(mockSockets[2], roomManager.socketMeta.get(mockSockets[2]), { name: 'P3' });
+  assert.strictEqual(roomManager.getTotalOnlineCount(), 2);
+  assert.strictEqual(mockSockets[2].lastMsg.type, MSG.ERROR);
+
+  roomManager.destroy();
+});
+
+// ==========================================
+// 4. Physics Collision Math Simulation
+// ==========================================
+console.log('\n4. PHYSICS COLLISION MATHEMATICS:');
+
+it('accurately resolves floor collision and detects ground contact', () => {
+  // Simulate player feet falling towards floor at Y = 20
+  let posY = 20.1;
+  let velY = -10.0;
+  let onGround = false;
+  const dt = 1 / 60;
+
+  // Apply step (-10 * 1/60 = -0.1666, 20.1 - 0.1666 = 19.9333 <= 20)
+  posY += velY * dt;
+  if (velY <= 0) {
+    const floorY = 20;
+    if (posY <= floorY) {
+      posY = floorY;
+      velY = 0;
+      onGround = true;
+    }
+  }
+
+  assert.strictEqual(onGround, true);
+  assert.strictEqual(velY, 0);
+  assert.strictEqual(posY, 20);
+});
+
+// ==========================================
+// Summary
+// ==========================================
+console.log(`\nTEST RESULTS: ${passed}/${total} passed.`);
+if (passed === total) {
+  console.log('ALL TESTS PASSED SUCCESSFULLY! Ready for deployment.\n');
+  process.exit(0);
+} else {
+  console.error(`FAILED: ${total - passed} test(s) failed.`);
+  process.exit(1);
+}

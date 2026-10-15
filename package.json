@@ -1,0 +1,29 @@
+{
+  "name": "voxel-realms",
+  "version": "1.0.0",
+  "description": "Hyperrealistic 3D Multiplayer Voxel Sandbox for Web Browsers",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test/test.js"
+  },
+  "keywords": [
+    "voxel",
+    "threejs",
+    "webgl",
+    "multiplayer",
+    "game",
+    "pbr",
+    "minecraft"
+  ],
+  "author": "gerpejun",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}

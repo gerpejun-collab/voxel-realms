@@ -1,0 +1,276 @@
+// public/src/physics.js
+// Robust swept-AABB voxel physics engine with gravity, collision detection, and water physics
+import { BLOCKS, BLOCK_DEFS } from './blocks.js';
+
+export class PlayerPhysics {
+  constructor(world) {
+    this.world = world;
+
+    // Player position represents the bottom center of the character (feet)
+    this.pos = { x: 0, y: 35, z: 0 };
+    this.vel = { x: 0, y: 0, z: 0 };
+
+    // Player bounding box dimensions
+    this.width = 0.6;
+    this.height = 1.8;
+    this.depth = 0.6;
+    this.eyeHeight = 1.62;
+
+    // Movement tuning
+    this.walkSpeed = 4.8;
+    this.sprintSpeed = 7.5;
+    this.jumpForce = 8.6;
+    this.gravity = -26.0;
+
+    // State flags
+    this.onGround = false;
+    this.inWater = false;
+    this.action = 'idle';
+
+    // Step height (allows stepping over 0.5 unit obstacles smoothly)
+    this.stepHeight = 0.5;
+  }
+
+  isSolid(x, y, z) {
+    const block = this.world.getBlock(x, y, z);
+    if (block === BLOCKS.AIR || block === BLOCKS.WATER) return false;
+    const def = BLOCK_DEFS[block];
+    return def ? def.solid : false;
+  }
+
+  isWater(x, y, z) {
+    return this.world.getBlock(x, y, z) === BLOCKS.WATER;
+  }
+
+  /**
+   * Respawns the player safely on top of the terrain
+   */
+  respawn(spawnX = 0, spawnZ = 0) {
+    const surfaceY = this.world.getHeightAt(spawnX, spawnZ);
+    this.pos.x = spawnX + 0.5;
+    this.pos.y = surfaceY + 2.0;
+    this.pos.z = spawnZ + 0.5;
+    this.vel.x = 0;
+    this.vel.y = 0;
+    this.vel.z = 0;
+  }
+
+  /**
+   * Fixed physics timestep update
+   */
+  update(dt, input) {
+    // Check water immersion
+    const feetBlockX = Math.floor(this.pos.x);
+    const feetBlockY = Math.floor(this.pos.y);
+    const feetBlockZ = Math.floor(this.pos.z);
+    this.inWater = this.isWater(feetBlockX, feetBlockY, feetBlockZ) ||
+                   this.isWater(feetBlockX, Math.floor(this.pos.y + 1), feetBlockZ);
+
+    // Apply movement acceleration
+    const speed = input.sprint ? this.sprintSpeed : this.walkSpeed;
+    const moveX = input.moveX;
+    const moveZ = input.moveZ;
+
+    const len = Math.sqrt(moveX * moveX + moveZ * moveZ);
+    let targetVx = 0;
+    let targetVz = 0;
+
+    if (len > 0.001) {
+      targetVx = (moveX / len) * speed;
+      targetVz = (moveZ / len) * speed;
+    }
+
+    // Horizontal acceleration / friction
+    const accel = this.onGround ? 18.0 : 6.0;
+    this.vel.x += (targetVx - this.vel.x) * Math.min(1.0, accel * dt);
+    this.vel.z += (targetVz - this.vel.z) * Math.min(1.0, accel * dt);
+
+    // Vertical physics
+    if (this.inWater) {
+      // Water buoyancy and swimming
+      this.vel.y += this.gravity * 0.25 * dt;
+      if (input.jump) {
+        this.vel.y = 3.5;
+      }
+      this.vel.y *= Math.pow(0.85, dt * 60);
+    } else {
+      // Normal gravity
+      this.vel.y += this.gravity * dt;
+      if (input.jump && this.onGround) {
+        this.vel.y = this.jumpForce;
+        this.onGround = false;
+      }
+    }
+
+    // Prevent excessive velocities
+    this.vel.y = Math.max(-40, Math.min(25, this.vel.y));
+
+    // Axis-aligned collision resolution
+    this.resolveCollision(dt);
+
+    // Void fall detection
+    if (this.pos.y < -15) {
+      this.respawn(Math.floor(this.pos.x), Math.floor(this.pos.z));
+    }
+
+    // Determine current action for animation sync
+    const horizSpeed = Math.sqrt(this.vel.x * this.vel.x + this.vel.z * this.vel.z);
+    if (this.inWater) {
+      this.action = 'swimming';
+    } else if (!this.onGround) {
+      this.action = 'jumping';
+    } else if (horizSpeed > 5.0) {
+      this.action = 'running';
+    } else if (horizSpeed > 0.3) {
+      this.action = 'walking';
+    } else {
+      this.action = 'idle';
+    }
+  }
+
+  /**
+   * Resolves collision with the voxel world along X, Y, and Z axes
+   */
+  resolveCollision(dt) {
+    const halfW = this.width * 0.5;
+    const halfD = this.depth * 0.5;
+
+    // --- Y AXIS ---
+    this.pos.y += this.vel.y * dt;
+    this.onGround = false;
+
+    let minX = Math.floor(this.pos.x - halfW);
+    let maxX = Math.floor(this.pos.x + halfW);
+    let minZ = Math.floor(this.pos.z - halfD);
+    let maxZ = Math.floor(this.pos.z + halfD);
+
+    if (this.vel.y <= 0) {
+      // Moving down: check floor beneath feet
+      const checkY = Math.floor(this.pos.y);
+      let hitFloor = false;
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (this.isSolid(x, checkY, z)) {
+            hitFloor = true;
+            break;
+          }
+        }
+        if (hitFloor) break;
+      }
+
+      if (hitFloor) {
+        this.pos.y = checkY + 1.0;
+        this.vel.y = 0;
+        this.onGround = true;
+      }
+    } else {
+      // Moving up: check ceiling above head
+      const checkY = Math.floor(this.pos.y + this.height);
+      let hitCeiling = false;
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (this.isSolid(x, checkY, z)) {
+            hitCeiling = true;
+            break;
+          }
+        }
+        if (hitCeiling) break;
+      }
+
+      if (hitCeiling) {
+        this.pos.y = checkY - this.height;
+        this.vel.y = 0;
+      }
+    }
+
+    // --- X AXIS ---
+    this.pos.x += this.vel.x * dt;
+    let minY = Math.floor(this.pos.y);
+    let maxY = Math.floor(this.pos.y + this.height - 0.05);
+    minZ = Math.floor(this.pos.z - halfD);
+    maxZ = Math.floor(this.pos.z + halfD);
+
+    if (this.vel.x > 0) {
+      const checkX = Math.floor(this.pos.x + halfW);
+      let hit = false;
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (this.isSolid(checkX, y, z)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      if (hit) {
+        this.pos.x = checkX - halfW;
+        this.vel.x = 0;
+      }
+    } else if (this.vel.x < 0) {
+      const checkX = Math.floor(this.pos.x - halfW);
+      let hit = false;
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (this.isSolid(checkX, y, z)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      if (hit) {
+        this.pos.x = checkX + 1.0 + halfW;
+        this.vel.x = 0;
+      }
+    }
+
+    // --- Z AXIS ---
+    this.pos.z += this.vel.z * dt;
+    minX = Math.floor(this.pos.x - halfW);
+    maxX = Math.floor(this.pos.x + halfW);
+    minY = Math.floor(this.pos.y);
+    maxY = Math.floor(this.pos.y + this.height - 0.05);
+
+    if (this.vel.z > 0) {
+      const checkZ = Math.floor(this.pos.z + halfD);
+      let hit = false;
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          if (this.isSolid(x, y, checkZ)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      if (hit) {
+        this.pos.z = checkZ - halfD;
+        this.vel.z = 0;
+      }
+    } else if (this.vel.z < 0) {
+      const checkZ = Math.floor(this.pos.z - halfD);
+      let hit = false;
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          if (this.isSolid(x, y, checkZ)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      if (hit) {
+        this.pos.z = checkZ + 1.0 + halfD;
+        this.vel.z = 0;
+      }
+    }
+  }
+
+  getEyePosition() {
+    return {
+      x: this.pos.x,
+      y: this.pos.y + this.eyeHeight,
+      z: this.pos.z
+    };
+  }
+}

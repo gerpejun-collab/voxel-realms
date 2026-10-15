@@ -896,6 +896,157 @@ export class World {
   }
 
   /**
+   * SECTOR 5: NORWAY FJORDS & NATURE (Z = 140..220)
+   * Colossal granite cliffs, deep water gorges, roaring waterfalls, Nordic spruce taiga, and viking timber cabin
+   */
+  buildNorwaySector(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+    if (ox + 16 < -45 || ox > 45 || oz + 16 < 140 || oz > 220) return;
+
+    // 1. Water filling inside the deep fjord gorge (Z in 140..220, X in -7..7, Y: 14..18)
+    for (let x = Math.max(ox, -7); x <= Math.min(ox + 15, 7); x++) {
+      for (let z = Math.max(oz, 140); z <= Math.min(oz + 15, 220); z++) {
+        for (let y = 14; y <= WATER_LEVEL; y++) {
+          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.WATER);
+        }
+      }
+    }
+
+    // 2. Roaring Waterfall at eastern cliff face (wx = 8..9, wz = 175..177)
+    // Water flows from Y = 48 on top down into the fjord water at Y = 18
+    for (let z = 175; z <= 177; z++) {
+      for (let y = 18; y <= 48; y++) {
+        this.setVoxelInWorld(chunk, 8, y, z, BLOCKS.WATER);
+        // Backing stone/cobblestone spray wall
+        this.setVoxelInWorld(chunk, 9, y, z, (y % 3 === 0) ? BLOCKS.COBBLESTONE : BLOCKS.STONE);
+      }
+      // Top spring source
+      this.setVoxelInWorld(chunk, 9, 49, z, BLOCKS.WATER);
+      this.setVoxelInWorld(chunk, 10, 49, z, BLOCKS.WATER);
+      this.setVoxelInWorld(chunk, 11, 49, z, BLOCKS.WATER);
+    }
+    // Froth and spray at bottom of waterfall
+    for (let z = 174; z <= 178; z++) {
+      this.setVoxelInWorld(chunk, 7, 19, z, BLOCKS.SNOW); // White foam
+    }
+
+    // 3. Viking Longhouse / Timber Cabin atop Eastern Cliff (wx: 17..25, wz: 160..168, Y: 50)
+    const cabX = 21;
+    const cabZ = 164;
+    const cabY = 50;
+    // Foundation & Wooden Floor
+    for (let x = cabX - 4; x <= cabX + 4; x++) {
+      for (let z = cabZ - 4; z <= cabZ + 4; z++) {
+        this.setVoxelInWorld(chunk, x, cabY, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, cabY + 1, z, BLOCKS.WOOD_PLANK);
+      }
+    }
+    // Wooden Walls & Corner Oak Logs (Y: 52..54)
+    for (let y = cabY + 2; y <= cabY + 4; y++) {
+      for (let x = cabX - 4; x <= cabX + 4; x++) {
+        for (let z = cabZ - 4; z <= cabZ + 4; z++) {
+          const isCorner = (x === cabX - 4 || x === cabX + 4) && (z === cabZ - 4 || z === cabZ + 4);
+          const isEdge = (x === cabX - 4 || x === cabX + 4 || z === cabZ - 4 || z === cabZ + 4);
+          const isDoor = (x === cabX - 4 && z === cabZ && y <= cabY + 3);
+          const isWindow = ((x === cabX || z === cabZ) && isEdge && y === cabY + 3);
+
+          if (isCorner) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          } else if (isDoor) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+          } else if (isWindow) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.GLASS);
+          } else if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.WOOD_PLANK);
+          }
+        }
+      }
+    }
+    // Stone Hearth & Viking Fireplace Chimney
+    for (let y = cabY + 1; y <= cabY + 7; y++) {
+      this.setVoxelInWorld(chunk, cabX + 3, y, cabZ + 3, BLOCKS.BRICK);
+    }
+    this.setVoxelInWorld(chunk, cabX + 2, cabY + 2, cabZ + 3, BLOCKS.COBBLESTONE);
+
+    // Nordic A-Frame Peaked Timber Roof (Y: 55..58)
+    for (let z = cabZ - 5; z <= cabZ + 5; z++) {
+      // Tier 1 (overhang)
+      for (let x of [cabX - 4, cabX + 4]) {
+        this.setVoxelInWorld(chunk, x, cabY + 5, z, BLOCKS.WOOD_PLANK);
+      }
+      // Tier 2
+      for (let x of [cabX - 3, cabX + 3]) {
+        this.setVoxelInWorld(chunk, x, cabY + 6, z, BLOCKS.WOOD_PLANK);
+      }
+      // Tier 3
+      for (let x of [cabX - 2, cabX - 1, cabX, cabX + 1, cabX + 2]) {
+        this.setVoxelInWorld(chunk, x, cabY + 7, z, BLOCKS.WOOD_PLANK);
+      }
+      // Ridge cap with snow
+      this.setVoxelInWorld(chunk, cabX, cabY + 8, z, BLOCKS.SNOW);
+    }
+
+    // 4. Wooden Pier / Fjord Dock at water edge (wx = 7, wz: 165..172, Y = 18)
+    for (let z = 165; z <= 172; z++) {
+      this.setVoxelInWorld(chunk, 7, 18, z, BLOCKS.WOOD_PLANK);
+      this.setVoxelInWorld(chunk, 6, 18, z, BLOCKS.WOOD_PLANK);
+      // Piling pillars down to seabed
+      if (z % 3 === 0) {
+        for (let y = 13; y <= 17; y++) {
+          this.setVoxelInWorld(chunk, 6, y, z, BLOCKS.OAK_LOG);
+        }
+      }
+    }
+
+    // 5. Nordic Spruce Taiga Forest Grove on Cliff Tops
+    const spruceSites = [
+      [22, 150], [28, 158], [24, 178], [30, 186], [22, 198], [28, 206],
+      [-22, 150], [-28, 158], [-24, 172], [-30, 182], [-22, 196], [-28, 208]
+    ];
+    for (const [sx, sz] of spruceSites) {
+      const surfaceH = this.getHeightAt(sx, sz);
+      this.buildNordicSpruceTree(chunk, sx, surfaceH, sz);
+    }
+  }
+
+  /**
+   * Helper to build tall conical Nordic spruce taiga trees
+   */
+  buildNordicSpruceTree(chunk, wx, baseY, wz) {
+    const trunkH = 8;
+    // Dark trunk
+    for (let y = baseY + 1; y <= baseY + trunkH; y++) {
+      this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.OAK_LOG);
+    }
+
+    // Lower tier canopy (5x5 cross at baseY + 4)
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        if (Math.abs(dx) === 2 && Math.abs(dz) === 2) continue; // Cut corners
+        this.setVoxelInWorld(chunk, wx + dx, baseY + 4, wz + dz, BLOCKS.OAK_LEAVES);
+      }
+    }
+
+    // Mid tier canopy (3x3 at baseY + 6)
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        this.setVoxelInWorld(chunk, wx + dx, baseY + 6, wz + dz, BLOCKS.OAK_LEAVES);
+      }
+    }
+
+    // High tier canopy (cross at baseY + 8)
+    this.setVoxelInWorld(chunk, wx + 1, baseY + 8, wz, BLOCKS.OAK_LEAVES);
+    this.setVoxelInWorld(chunk, wx - 1, baseY + 8, wz, BLOCKS.OAK_LEAVES);
+    this.setVoxelInWorld(chunk, wx, baseY + 8, wz + 1, BLOCKS.OAK_LEAVES);
+    this.setVoxelInWorld(chunk, wx, baseY + 8, wz - 1, BLOCKS.OAK_LEAVES);
+
+    // Conical pointed peak with snow dusting
+    this.setVoxelInWorld(chunk, wx, baseY + 9, wz, BLOCKS.OAK_LEAVES);
+    this.setVoxelInWorld(chunk, wx, baseY + 10, wz, BLOCKS.SNOW);
+  }
+
+  /**
    * Updates chunks around player position
    */
   updateStreaming(playerX, playerZ) {

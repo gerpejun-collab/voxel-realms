@@ -95,10 +95,14 @@ body, html {
   left: 16px;
   z-index: 10;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 #hud-coords {
-  background: rgba(10, 15, 26, 0.65);
+  background: rgba(10, 15, 26, 0.75);
   backdrop-filter: blur(8px);
   padding: 6px 14px;
   border-radius: 8px;
@@ -106,6 +110,21 @@ body, html {
   font-weight: 500;
   letter-spacing: 0.5px;
   border: 1px solid var(--border-glow);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.hud-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 15, 26, 0.75);
+  backdrop-filter: blur(8px);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
 }
 
@@ -1129,4 +1148,207 @@ body, html {
     display: none;
   }
 }
+
+/* ==========================================================================
+   AUTHENTIC MINECRAFT UI & BEVELED BUTTONS
+   ========================================================================== */
+.mc-btn, .mc-button {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  color: #f1f5f9;
+  text-shadow: 1px 1px 0 #000, 2px 2px 0 rgba(0, 0, 0, 0.7);
+  background: linear-gradient(180deg, #6b7280 0%, #4b5563 100%);
+  border-top: 2px solid #9ca3af;
+  border-left: 2px solid #9ca3af;
+  border-bottom: 2px solid #1f2937;
+  border-right: 2px solid #1f2937;
+  outline: 2px solid #111827;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: filter 0.1s ease, transform 0.05s ease;
+  user-select: none;
+}
+
+.mc-btn:hover, .mc-button:hover {
+  filter: brightness(1.15);
+}
+
+.mc-btn:active, .mc-button:active, .mc-btn.active {
+  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+  border-top: 2px solid #111827;
+  border-left: 2px solid #111827;
+  border-bottom: 2px solid #9ca3af;
+  border-right: 2px solid #9ca3af;
+  transform: translateY(1px);
+}
+
+.hud-action-pill.mc-pill {
+  border-radius: 4px;
+  border-top: 2px solid rgba(255, 255, 255, 0.25);
+  border-left: 2px solid rgba(255, 255, 255, 0.25);
+  border-bottom: 2px solid #000;
+  border-right: 2px solid #000;
+  outline: 1px solid rgba(0, 0, 0, 0.8);
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* ==========================================================================
+   WORLD MAP & FAST TRAVEL MODAL
+   ========================================================================== */
+#world-map-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(5, 8, 17, 0.75);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.world-map-card {
+  width: 680px;
+  max-width: 94vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: rgba(17, 24, 39, 0.95);
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(245, 158, 11, 0.12);
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.world-map-card .modal-desc {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.map-sectors-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 580px) {
+  .map-sectors-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.map-dest-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.map-dest-btn .dest-icon {
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.map-dest-btn .dest-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.map-dest-btn .dest-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.map-dest-btn .dest-coords {
+  font-size: 11px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.map-speed-control {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.speed-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fbbf24;
+}
+
+.speed-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.speed-opt-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.speed-opt-btn.active {
+  background: linear-gradient(180deg, #d97706 0%, #b45309 100%) !important;
+  border-top: 2px solid #fde68a !important;
+  border-left: 2px solid #fde68a !important;
+  border-bottom: 2px solid #78350f !important;
+  border-right: 2px solid #78350f !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.4) !important;
+}
+
+/* ==========================================================================
+   PLAYER LIST ENHANCEMENTS
+   ========================================================================== */
+.location-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+.self-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.tp-friend-btn {
+  padding: 5px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%) !important;
+  border-top: 2px solid #93c5fd !important;
+  border-left: 2px solid #93c5fd !important;
+  border-bottom: 2px solid #1e3a8a !important;
+  border-right: 2px solid #1e3a8a !important;
+}
+
 

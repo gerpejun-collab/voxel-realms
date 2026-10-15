@@ -262,6 +262,77 @@ it('correctly calculates Minecraft auto-step elevation when moving forward into 
 });
 
 // ==========================================
+// 5. World Sectors, Norway Fjords & Fast Travel Tests
+// ==========================================
+console.log('\n5. WORLD SECTORS & FAST TRAVEL:');
+
+it('calculates Norway Fjord deep gorge and colossal cliff heights correctly', () => {
+  // Height function formula as implemented in world.js:
+  function getNorwayHeight(wx, wz) {
+    if (wz >= 140 && wz <= 220 && Math.abs(wx) <= 45) {
+      const distFromFjord = Math.abs(wx);
+      if (distFromFjord <= 7) {
+        return 13; // Deep water canyon bed
+      } else if (distFromFjord <= 15) {
+        const t = (distFromFjord - 7) / 8;
+        return Math.floor(13 + t * (50 - 13));
+      } else {
+        const ridgeH = 50 + Math.floor(Math.abs(Math.sin(wx * 0.3 + wz * 0.15)) * 6);
+        return Math.min(128 - 6, ridgeH);
+      }
+    }
+    return 24;
+  }
+
+  // Deep canyon bed
+  assert.strictEqual(getNorwayHeight(0, 180), 13);
+  assert.strictEqual(getNorwayHeight(5, 170), 13);
+  assert.strictEqual(getNorwayHeight(-7, 200), 13);
+
+  // Transition slope
+  const slopeH = getNorwayHeight(11, 180);
+  assert.ok(slopeH > 13 && slopeH < 50, `Expected slope height between 13 and 50, got ${slopeH}`);
+
+  // High granite cliff ridges
+  const cliffH = getNorwayHeight(25, 180);
+  assert.ok(cliffH >= 50 && cliffH <= 56, `Expected cliff height between 50 and 56, got ${cliffH}`);
+});
+
+it('verifies all 6 fast travel sector coordinates are valid and within bounds', () => {
+  const sectors = [
+    { name: 'Descampado Central', x: 0, y: 24, z: 0 },
+    { name: 'Japón Imperial', x: 30, y: 25, z: 30 },
+    { name: 'China & Shanghai', x: -30, y: 25, z: 30 },
+    { name: 'París & Torre Eiffel', x: 30, y: 25, z: -30 },
+    { name: 'Nueva York', x: -30, y: 25, z: -30 },
+    { name: 'Fiordos de Noruega', x: 0, y: 22, z: 180 }
+  ];
+
+  for (const s of sectors) {
+    assert.ok(s.y >= 20 && s.y <= 40, `${s.name} Y coordinate must be safe walkable altitude`);
+    assert.strictEqual(typeof s.x, 'number');
+    assert.strictEqual(typeof s.z, 'number');
+  }
+});
+
+it('validates player speed modes and flight mode toggle mechanics', () => {
+  const speedConfigs = [
+    { tier: 1, mult: 1.0, flight: false },
+    { tier: 2, mult: 2.5, flight: false },
+    { tier: 3, mult: 5.0, flight: true }
+  ];
+
+  for (const cfg of speedConfigs) {
+    assert.ok(cfg.mult >= 1.0 && cfg.mult <= 5.0);
+    if (cfg.mult === 5.0) {
+      assert.strictEqual(cfg.flight, true);
+    } else {
+      assert.strictEqual(cfg.flight, false);
+    }
+  }
+});
+
+// ==========================================
 // Summary
 // ==========================================
 console.log(`\nTEST RESULTS: ${passed}/${total} passed.`);

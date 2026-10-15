@@ -2,6 +2,7 @@
 // Modern game UI: Lobby, HUD, Hotbar, Inventory, Pause menu, Chat, Mobile Virtual Controls & Interactive Tutorial
 import * as THREE from 'three';
 import { BLOCKS, BLOCK_DEFS, HOTBAR_BLOCKS } from './blocks.js';
+import { sound } from './audio.js';
 
 export class UIManager {
   constructor(materialManager, controls, sceneManager, world, multiplayer) {
@@ -17,6 +18,8 @@ export class UIManager {
     this.pauseMenu = document.getElementById('pause-menu');
     this.inventoryModal = document.getElementById('inventory-modal');
     this.guideModal = document.getElementById('guide-modal');
+    this.worldMapModal = document.getElementById('world-map-modal');
+    this.hudOnlineCount = document.getElementById('hud-online-count');
     this.mobileOverlay = document.getElementById('mobile-touch-overlay');
     this.chatContainer = document.getElementById('chat-container');
     this.chatInput = document.getElementById('chat-input');
@@ -27,6 +30,8 @@ export class UIManager {
     this.isChatOpen = false;
     this.isInventoryOpen = false;
     this.isGuideOpen = false;
+    this.isMapOpen = false;
+    this.currentSpeedTier = 1; // 1: 1x, 2: 2.5x, 3: 5x flight
 
     // 3D wireframe box for highlighting targeted voxel
     this.buildHighlightBox();
@@ -37,6 +42,7 @@ export class UIManager {
     this.initPauseMenu();
     this.initChat();
     this.initQuickActions();
+    this.initWorldMap();
     this.initGuide();
     this.initMobileControls();
     this.initPlayerList();
@@ -262,25 +268,201 @@ export class UIManager {
     const btnChat = document.getElementById('btn-open-chat');
     const btnGuide = document.getElementById('btn-open-guide');
     const btnInv = document.getElementById('btn-open-inv');
+    const btnMap = document.getElementById('btn-open-map');
+    const btnShareLoc = document.getElementById('btn-share-loc');
+    const btnSpeedToggle = document.getElementById('btn-speed-toggle');
 
     if (btnChat) {
       btnChat.addEventListener('click', () => {
+        sound.playButtonClick();
         this.openChat();
       });
     }
 
     if (btnGuide) {
       btnGuide.addEventListener('click', () => {
+        sound.playButtonClick();
         this.toggleGuide(true);
       });
     }
 
     if (btnInv) {
       btnInv.addEventListener('click', () => {
+        sound.playButtonClick();
         this.controls.unlock();
         this.toggleInventory(true);
       });
     }
+
+    if (btnMap) {
+      btnMap.addEventListener('click', () => {
+        sound.playButtonClick();
+        this.toggleMap(true);
+      });
+    }
+
+    if (btnShareLoc) {
+      btnShareLoc.addEventListener('click', () => {
+        sound.playButtonClick();
+        this.shareLocation();
+      });
+    }
+
+    if (btnSpeedToggle) {
+      btnSpeedToggle.addEventListener('click', () => {
+        sound.playButtonClick();
+        this.cycleSpeed();
+      });
+    }
+  }
+
+  initWorldMap() {
+    const closeBtn = document.getElementById('close-map-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        sound.playButtonClick();
+        this.toggleMap(false);
+      });
+    }
+
+    // Fast travel destination buttons
+    const destButtons = document.querySelectorAll('.map-dest-btn');
+    destButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        sound.playButtonClick();
+        const tx = parseFloat(btn.dataset.x);
+        const ty = parseFloat(btn.dataset.y);
+        const tz = parseFloat(btn.dataset.z);
+        const titleElem = btn.querySelector('.dest-title');
+        const title = titleElem ? titleElem.textContent : 'Monumento';
+
+        this.controls.physics.teleport(tx, ty, tz);
+        this.world.updateStreaming(tx, tz);
+        sound.playTeleport();
+
+        this.toggleMap(false);
+        this.addSystemNotification(`Has viajado a [${title}] XYZ (${tx}, ${ty}, ${tz})`);
+      });
+    });
+
+    // Speed options buttons inside World Map modal
+    const speedOpt1 = document.getElementById('speed-btn-1');
+    const speedOpt2 = document.getElementById('speed-btn-2');
+    const speedOpt5 = document.getElementById('speed-btn-5');
+
+    const setSpeedOption = (tier, mult, flight) => {
+      this.currentSpeedTier = tier;
+      this.controls.physics.speedMultiplier = mult;
+      this.controls.physics.flightMode = flight;
+
+      [speedOpt1, speedOpt2, speedOpt5].forEach((b, idx) => {
+        if (b) b.classList.toggle('active', idx + 1 === tier);
+      });
+
+      const speedBtn = document.getElementById('btn-speed-toggle');
+      if (speedBtn) {
+        speedBtn.textContent = (tier === 1) ? '⚡ 1x' : ((tier === 2) ? '⚡ 2.5x' : '🦅 5x');
+      }
+
+      const modeName = (tier === 1) ? 'Normal (1x)' : ((tier === 2) ? 'Rápido (2.5x)' : 'Vuelo / Modo Dios (5x)');
+      this.addSystemNotification(`Velocidad ajustada a: ${modeName}`);
+    };
+
+    if (speedOpt1) {
+      speedOpt1.addEventListener('click', () => {
+        sound.playButtonClick();
+        setSpeedOption(1, 1.0, false);
+      });
+    }
+    if (speedOpt2) {
+      speedOpt2.addEventListener('click', () => {
+        sound.playButtonClick();
+        setSpeedOption(2, 2.5, false);
+      });
+    }
+    if (speedOpt5) {
+      speedOpt5.addEventListener('click', () => {
+        sound.playButtonClick();
+        setSpeedOption(3, 5.0, true);
+      });
+    }
+
+    // Hotkey 'KeyM'
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyM' && !this.isChatOpen) {
+        sound.playButtonClick();
+        this.toggleMap(!this.isMapOpen);
+      }
+      if (e.code === 'Escape' && this.isMapOpen) {
+        this.toggleMap(false);
+      }
+    });
+  }
+
+  toggleMap(open) {
+    this.isMapOpen = open;
+    if (this.worldMapModal) {
+      this.worldMapModal.classList.toggle('hidden', !open);
+    }
+    if (open) {
+      this.controls.unlock();
+    } else {
+      this.controls.lock();
+    }
+  }
+
+  cycleSpeed() {
+    this.currentSpeedTier = (this.currentSpeedTier % 3) + 1;
+    let mult = 1.0;
+    let flight = false;
+    let label = '⚡ 1x';
+
+    if (this.currentSpeedTier === 2) {
+      mult = 2.5;
+      flight = false;
+      label = '⚡ 2.5x';
+    } else if (this.currentSpeedTier === 3) {
+      mult = 5.0;
+      flight = true;
+      label = '🦅 5x';
+    }
+
+    this.controls.physics.speedMultiplier = mult;
+    this.controls.physics.flightMode = flight;
+
+    const speedBtn = document.getElementById('btn-speed-toggle');
+    if (speedBtn) speedBtn.textContent = label;
+
+    const speedOpt1 = document.getElementById('speed-btn-1');
+    const speedOpt2 = document.getElementById('speed-btn-2');
+    const speedOpt5 = document.getElementById('speed-btn-5');
+    [speedOpt1, speedOpt2, speedOpt5].forEach((b, idx) => {
+      if (b) b.classList.toggle('active', idx + 1 === this.currentSpeedTier);
+    });
+
+    const modeName = (this.currentSpeedTier === 1) ? 'Normal (1x)' : ((this.currentSpeedTier === 2) ? 'Rápido (2.5x)' : 'Vuelo / Modo Dios (5x)');
+    this.addSystemNotification(`Velocidad: ${modeName}`);
+  }
+
+  getSectorName(x, z) {
+    const distCenter = Math.hypot(x, z);
+    if (distCenter <= 16) return '🏰 Descampado Central';
+    if (z >= 140 && z <= 220 && Math.abs(x) <= 45) return '🇳🇴 Fiordos de Noruega';
+    if (x > 15 && z > 15) return '🇯🇵 Japón';
+    if (x < -15 && z > 15) return '🇨🇳 Shanghai';
+    if (x > 15 && z < -15) return '🇫🇷 París';
+    if (x < -15 && z < -15) return '🇺🇸 Nueva York';
+    return '🌲 Bosque y Llanuras';
+  }
+
+  shareLocation() {
+    const pos = this.controls.physics.pos;
+    const bx = Math.floor(pos.x);
+    const by = Math.floor(pos.y);
+    const bz = Math.floor(pos.z);
+    const sector = this.getSectorName(bx, bz);
+    const msg = `📍 Estoy en [${sector}] XYZ (${bx}, ${by}, ${bz}). ¡Venid a visitarme!`;
+    this.multiplayer.sendChat(msg);
   }
 
   initGuide() {
@@ -288,10 +470,16 @@ export class UIManager {
     const understandBtn = document.getElementById('guide-understand-btn');
 
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => this.toggleGuide(false));
+      closeBtn.addEventListener('click', () => {
+        sound.playButtonClick();
+        this.toggleGuide(false);
+      });
     }
     if (understandBtn) {
-      understandBtn.addEventListener('click', () => this.toggleGuide(false));
+      understandBtn.addEventListener('click', () => {
+        sound.playButtonClick();
+        this.toggleGuide(false);
+      });
     }
 
     window.addEventListener('keydown', (e) => {
@@ -604,6 +792,14 @@ export class UIManager {
         this.updatePlayerListModal(false);
       }
     });
+
+    const closeBtn = document.getElementById('close-player-list-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        sound.playButtonClick();
+        this.updatePlayerListModal(false);
+      });
+    }
   }
 
   updatePlayerListModal(show) {
@@ -620,28 +816,61 @@ export class UIManager {
     tableBody.innerHTML = '';
 
     // Local player
+    const pos = this.controls.physics.pos;
+    const mySector = this.getSectorName(pos.x, pos.z);
     const myRow = document.createElement('tr');
-    myRow.innerHTML = `<td><strong>${this.multiplayer.myName} (Tú)</strong></td><td><span class="ping-badge">Activo</span></td>`;
+    myRow.innerHTML = `
+      <td><strong>${this.multiplayer.myName} (Tú)</strong></td>
+      <td><span class="location-badge">${mySector}</span></td>
+      <td><span class="self-badge">Tú</span></td>
+    `;
     tableBody.appendChild(myRow);
 
     // Remote players
     for (const [id, avatar] of this.multiplayer.remoteAvatars.entries()) {
+      const ax = avatar.targetPos ? Math.floor(avatar.targetPos.x) : 0;
+      const ay = avatar.targetPos ? Math.floor(avatar.targetPos.y) : 24;
+      const az = avatar.targetPos ? Math.floor(avatar.targetPos.z) : 0;
+      const remoteSector = this.getSectorName(ax, az);
+
       const row = document.createElement('tr');
-      row.innerHTML = `<td>${avatar.name}</td><td><span class="ping-badge">Conectado</span></td>`;
+      row.innerHTML = `
+        <td>${avatar.name}</td>
+        <td><span class="location-badge">${remoteSector} (${ax}, ${az})</span></td>
+        <td><button class="tp-friend-btn mc-btn" title="Teletransportarte a ${avatar.name}">🚀 Ir a él</button></td>
+      `;
+
+      const tpBtn = row.querySelector('.tp-friend-btn');
+      if (tpBtn) {
+        tpBtn.addEventListener('click', () => {
+          sound.playButtonClick();
+          this.controls.physics.teleport(ax, ay + 1, az);
+          this.world.updateStreaming(ax, az);
+          sound.playTeleport();
+          this.updatePlayerListModal(false);
+          this.addSystemNotification(`Te has teletransportado junto a ${avatar.name}`);
+        });
+      }
+
       tableBody.appendChild(row);
     }
   }
 
   updateHUD(fps, pos) {
-    // Update coordinates & biome
+    // Update live connected count badge
+    if (this.hudOnlineCount) {
+      const total = 1 + this.multiplayer.remoteAvatars.size;
+      this.hudOnlineCount.textContent = `${total} Conectado${total > 1 ? 's' : ''}`;
+    }
+
+    // Update coordinates & sector
     const coordsElem = document.getElementById('hud-coords');
     if (coordsElem && pos) {
       const bx = Math.floor(pos.x);
       const by = Math.floor(pos.y);
       const bz = Math.floor(pos.z);
-      const distCenter = Math.hypot(bx, bz);
-      const biome = (distCenter <= 16) ? '🏰 Descampado Central' : ((by >= 42) ? 'Montañas Nevadas' : ((by <= 19) ? 'Costa / Playa' : 'Bosque y Pradera'));
-      coordsElem.textContent = `XYZ: ${bx} / ${by} / ${bz} | ${biome} | ${fps} FPS`;
+      const sector = this.getSectorName(bx, bz);
+      coordsElem.textContent = `XYZ: ${bx} / ${by} / ${bz} | ${sector} | ${fps} FPS`;
     }
 
     // Update targeted voxel highlight wireframe

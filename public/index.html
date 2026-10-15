@@ -47,9 +47,9 @@
     <!-- Top Right Quick Access Pill Actions -->
     <div id="hud-quick-actions">
       <button id="btn-toggle-cam" class="hud-action-pill mc-pill" title="Alternar Vista de Cámara (F5)">📷 1ª Persona</button>
-      <button id="btn-open-map" class="hud-action-pill mc-pill" title="Mapa del Mundo y Teletransporte (M)">🗺️ Mapa</button>
+      <button id="btn-map" class="hud-action-pill mc-pill" title="Mapa del Mundo y Viaje Rápido (M)">🗺️ Mapa</button>
       <button id="btn-share-loc" class="hud-action-pill mc-pill" title="Compartir mi Ubicación en el Chat">📍 Mi Ubicación</button>
-      <button id="btn-speed-toggle" class="hud-action-pill mc-pill" title="Velocidad: 1x / 2.5x / 5x Vuelo">⚡ 1x</button>
+      <button id="hud-speed-btn" class="hud-action-pill mc-pill hud-speed-pill" title="Velocidad (V): 1x / 2.5x / 5x Vuelo">⚡ 1x Caminar</button>
       <button id="btn-open-chat" class="hud-action-pill mc-pill" title="Abrir Chat (T)">💬 Chat</button>
       <button id="btn-open-guide" class="hud-action-pill mc-pill" title="Cómo Jugar y Controles">❓ Guía</button>
       <button id="btn-open-inv" class="hud-action-pill mc-pill" title="Inventario de Bloques (E)">🎒 Bloques</button>
@@ -109,8 +109,8 @@
   </div>
 
   <!-- World Map & Fast Travel Modal ('M' Key) -->
-  <div id="world-map-modal" class="hidden">
-    <div class="world-map-card">
+  <div id="map-modal" class="hidden">
+    <div class="map-modal-card world-map-card">
       <div class="modal-header">
         <h2>🗺️ Mapa del Mundo y Viaje Rápido</h2>
         <button id="close-map-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
@@ -118,93 +118,61 @@
       <p class="modal-desc">Selecciona un monumento o sector para viajar al instante:</p>
 
       <div class="map-sectors-grid">
-        <button class="map-dest-btn mc-btn" data-x="0" data-y="24" data-z="0">
+        <button class="map-dest-btn mc-btn" data-x="0" data-y="25" data-z="0" data-landmark="spawn">
           <span class="dest-icon">🏰</span>
           <div class="dest-info">
-            <span class="dest-title">Descampado Central</span>
-            <span class="dest-coords">XYZ (0, 24, 0) • Plaza & Guardianes</span>
+            <span class="dest-title">Plaza Central (0, 0)</span>
+            <span class="dest-coords">XYZ (0, 25, 0) • Altar Dorado & Guardianes</span>
           </div>
         </button>
 
-        <button class="map-dest-btn mc-btn" data-x="250" data-y="25" data-z="250">
-          <span class="dest-icon">🇯🇵</span>
-          <div class="dest-info">
-            <span class="dest-title">Japón Imperial</span>
-            <span class="dest-coords">XYZ (250, 25, 250) • Gran Pagoda & Torii</span>
-          </div>
-        </button>
-
-        <button class="map-dest-btn mc-btn" data-x="250" data-y="25" data-z="262">
+        <button class="map-dest-btn mc-btn" data-x="250" data-y="25" data-z="250" data-landmark="japan">
           <span class="dest-icon">⛩️</span>
           <div class="dest-info">
-            <span class="dest-title">Santuario Shinto & Zen</span>
-            <span class="dest-coords">XYZ (250, 25, 262) • Haiden, Rocas & Bambú</span>
+            <span class="dest-title">Japón Imperial (+250, +250)</span>
+            <span class="dest-coords">XYZ (+250, 25, +250) • Gran Pagoda, Torii & Sakura</span>
           </div>
         </button>
 
-        <button class="map-dest-btn mc-btn" data-x="-250" data-y="25" data-z="250">
-          <span class="dest-icon">🇨🇳</span>
+        <button class="map-dest-btn mc-btn" data-x="-250" data-y="25" data-z="250" data-landmark="china">
+          <span class="dest-icon">🏮</span>
           <div class="dest-info">
-            <span class="dest-title">China & Shanghai</span>
-            <span class="dest-coords">XYZ (-250, 25, 250) • Rascacielos & Núcleo</span>
+            <span class="dest-title">China y Shanghai (-250, +250)</span>
+            <span class="dest-coords">XYZ (-250, 25, +250) • Torre Spire & Linternas</span>
           </div>
         </button>
 
-        <button class="map-dest-btn mc-btn" data-x="-260" data-y="25" data-z="260">
+        <button class="map-dest-btn mc-btn" data-x="250" data-y="25" data-z="-250" data-landmark="paris">
           <span class="dest-icon">🗼</span>
           <div class="dest-info">
-            <span class="dest-title">Torre Perla Oriental</span>
-            <span class="dest-coords">XYZ (-260, 25, 260) • Esferas & Antena</span>
+            <span class="dest-title">París y Torre Eiffel (+250, -250)</span>
+            <span class="dest-coords">XYZ (+250, 25, -250) • Réplica Torre Eiffel 3 Niveles</span>
           </div>
         </button>
 
-        <button class="map-dest-btn mc-btn" data-x="250" data-y="25" data-z="-250">
-          <span class="dest-icon">🇫🇷</span>
-          <div class="dest-info">
-            <span class="dest-title">París & Torre Eiffel</span>
-            <span class="dest-coords">XYZ (250, 25, -250) • Réplica a Escala & Arcos</span>
-          </div>
-        </button>
-
-        <button class="map-dest-btn mc-btn" data-x="262" data-y="25" data-z="-240">
-          <span class="dest-icon">🏛️</span>
-          <div class="dest-info">
-            <span class="dest-title">Arco de Triunfo</span>
-            <span class="dest-coords">XYZ (262, 25, -240) • Campos Elíseos</span>
-          </div>
-        </button>
-
-        <button class="map-dest-btn mc-btn" data-x="-250" data-y="25" data-z="-250">
-          <span class="dest-icon">🇺🇸</span>
-          <div class="dest-info">
-            <span class="dest-title">Nueva York</span>
-            <span class="dest-coords">XYZ (-250, 25, -250) • Empire State Art Déco</span>
-          </div>
-        </button>
-
-        <button class="map-dest-btn mc-btn" data-x="-262" data-y="25" data-z="-262">
+        <button class="map-dest-btn mc-btn" data-x="-250" data-y="25" data-z="-250" data-landmark="newyork">
           <span class="dest-icon">🗽</span>
           <div class="dest-info">
-            <span class="dest-title">Estatua de la Libertad</span>
-            <span class="dest-coords">XYZ (-262, 25, -262) • Pedestal & Antorcha</span>
+            <span class="dest-title">Nueva York (-250, -250)</span>
+            <span class="dest-coords">XYZ (-250, 25, -250) • Rascacielos Empire Art Déco</span>
           </div>
         </button>
 
-        <button class="map-dest-btn mc-btn" data-x="0" data-y="22" data-z="500">
-          <span class="dest-icon">🇳🇴</span>
+        <button class="map-dest-btn mc-btn" data-x="0" data-y="50" data-z="500" data-landmark="norway">
+          <span class="dest-icon">🏔️</span>
           <div class="dest-info">
-            <span class="dest-title">Fiordos de Noruega</span>
-            <span class="dest-coords">XYZ (0, 22, 500) • Cañón, Cascadas & Acantilados</span>
+            <span class="dest-title">Fiordos de Noruega (0, +500)</span>
+            <span class="dest-coords">XYZ (0, 50, +500) • Acantilados, Cascadas & Taiga</span>
           </div>
         </button>
       </div>
 
       <div class="map-speed-control">
-        <label class="speed-label">Modo de Velocidad y Movimiento:</label>
+        <label class="speed-label">Modo de Velocidad y Movimiento (Tecla V):</label>
         <div class="speed-options">
-          <button id="speed-btn-1" class="speed-opt-btn mc-btn active" data-speed="1.0" data-flight="false">🚶 Normal (1x)</button>
-          <button id="speed-btn-2" class="speed-opt-btn mc-btn" data-speed="2.5" data-flight="false">🏃 Rápido (2.5x)</button>
-          <button id="speed-btn-5" class="speed-opt-btn mc-btn" data-speed="5.0" data-flight="true">🦅 Vuelo / Dios (5x)</button>
+          <button id="speed-btn-1" class="speed-opt-btn mc-btn active" data-speed="1.0" data-flight="false">⚡ 1x Caminar</button>
+          <button id="speed-btn-2" class="speed-opt-btn mc-btn" data-speed="2.5" data-flight="false">⚡ 2.5x Explorar</button>
+          <button id="speed-btn-5" class="speed-opt-btn mc-btn" data-speed="5.0" data-flight="true">🕊️ 5x Volar</button>
         </div>
       </div>
     </div>
@@ -379,6 +347,7 @@
         <div class="guide-item"><span class="key">CLICK DER</span> Colocar Bloque</div>
         <div class="guide-item"><span class="key">1 - 9 / E</span> Barra & Catálogo</div>
         <div class="guide-item"><span class="key">M / MAPA</span> Viaje Rápido</div>
+        <div class="guide-item"><span class="key">V / VEL</span> 1x / 2.5x / 5x</div>
         <div class="guide-item"><span class="key">TAB</span> Exploradores</div>
         <div class="guide-item"><span class="key">T / CHAT</span> Chat & Ubicación</div>
         <div class="guide-item"><span class="key">MÓVIL</span> Joystick y Botones</div>

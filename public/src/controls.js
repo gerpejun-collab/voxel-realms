@@ -3,6 +3,7 @@
 // articulated 1st-person arm punch animations, mobile touch/joystick input, and 3D voxel DDA raycasting
 import * as THREE from 'three';
 import { BLOCKS, BLOCK_DEFS } from './blocks.js';
+import { sound } from './audio.js';
 
 export class Controls {
   constructor(camera, domElement, physics, world) {
@@ -55,6 +56,9 @@ export class Controls {
     this.onSelectHotbar = null;
     this.onLockChange = null;
     this.onPerspectiveChange = null;
+    this.onToggleMap = null;
+    this.onCycleSpeed = null;
+    this.onSpeedChange = null;
 
     // Build first person arm & tool attached to camera
     this.buildFirstPersonArm();
@@ -295,6 +299,56 @@ export class Controls {
     this.keys.sprint = isSprint;
   }
 
+  /**
+   * 3-way speed selector (R3):
+   * 1x (Normal Walk): speedMultiplier = 1.0, flightMode = false
+   * 2.5x (Fast Exploration): speedMultiplier = 2.5, flightMode = false
+   * 5x (Flight / God Mode): speedMultiplier = 5.0, flightMode = true
+   */
+  cycleSpeed() {
+    const current = this.physics ? (this.physics.speedMultiplier || 1.0) : 1.0;
+    let nextMultiplier = 1.0;
+    let nextFlight = false;
+
+    if (Math.abs(current - 1.0) < 0.05) {
+      nextMultiplier = 2.5;
+      nextFlight = false;
+    } else if (Math.abs(current - 2.5) < 0.05) {
+      nextMultiplier = 5.0;
+      nextFlight = true;
+    } else {
+      nextMultiplier = 1.0;
+      nextFlight = false;
+    }
+
+    this.setSpeed(nextMultiplier, nextFlight);
+
+    if (sound && typeof sound.playClick === 'function') {
+      sound.playClick();
+    }
+
+    if (this.onCycleSpeed) {
+      this.onCycleSpeed(nextMultiplier, nextFlight);
+    }
+    return { speedMultiplier: nextMultiplier, flightMode: nextFlight };
+  }
+
+  setSpeed(multiplier, flight = (multiplier === 5.0)) {
+    if (this.physics) {
+      this.physics.speedMultiplier = multiplier;
+      this.physics.flightMode = flight;
+      if (!this.physics.setSpeedMultiplier) {
+        this.physics.setSpeedMultiplier = (m) => {
+          this.physics.speedMultiplier = m;
+          this.physics.flightMode = (m === 5.0);
+        };
+      }
+    }
+    if (this.onSpeedChange) {
+      this.onSpeedChange(multiplier, flight);
+    }
+  }
+
   handleKeyDown(e) {
     if (!this.isLocked && !this.isMobile) return;
 
@@ -321,6 +375,18 @@ export class Controls {
       case 'ShiftLeft':
       case 'ShiftRight':
         this.keys.sprint = true;
+        break;
+      case 'KeyM':
+        e.preventDefault();
+        e.__vrHandled = true;
+        if (this.onToggleMap) {
+          this.onToggleMap();
+        }
+        break;
+      case 'KeyV':
+        e.preventDefault();
+        e.__vrHandled = true;
+        this.cycleSpeed();
         break;
       case 'F5':
         e.preventDefault();

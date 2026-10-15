@@ -13,7 +13,10 @@ export class Controls {
     this.world = world;
 
     this.isLocked = false;
-    this.isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const hasFinePointer = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+    const hasCoarsePointer = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    this.isMobile = isMobileUA || (hasCoarsePointer && !hasFinePointer);
     this.sensitivity = 0.0022;
 
     this.pitch = 0; // vertical camera rotation
@@ -212,6 +215,13 @@ export class Controls {
       }
       if (this.onSelectHotbar) {
         this.onSelectHotbar(this.selectedHotbarIndex);
+      }
+    });
+
+    // Click on canvas to lock pointer (PC mouse look)
+    this.domElement.addEventListener('click', () => {
+      if (!this.isLocked && !this.isMobile) {
+        this.lock();
       }
     });
 
@@ -640,8 +650,13 @@ export class Controls {
   }
 
   lock() {
-    if (!this.isMobile && this.domElement.requestPointerLock) {
-      this.domElement.requestPointerLock();
+    if (!this.isMobile && this.domElement && this.domElement.requestPointerLock) {
+      try {
+        const res = this.domElement.requestPointerLock();
+        if (res && typeof res.catch === 'function') {
+          res.catch(() => {});
+        }
+      } catch (_) {}
     }
   }
 

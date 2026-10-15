@@ -478,6 +478,29 @@ export class UIManager {
         this.cycleSpeed();
       });
     }
+
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+    if (btnFullscreen) {
+      btnFullscreen.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleFullscreen();
+      });
+    }
+
+    const btnMenuToggle = document.getElementById('btn-menu-toggle');
+    if (btnMenuToggle) {
+      btnMenuToggle.addEventListener('click', () => {
+        sound.playClick();
+        const isOpen = !this.pauseMenu.classList.contains('hidden');
+        if (isOpen) {
+          this.pauseMenu.classList.add('hidden');
+          if (!this.controls.isMobile) this.controls.lock();
+        } else {
+          this.controls.unlock();
+          this.pauseMenu.classList.remove('hidden');
+        }
+      });
+    }
   }
 
   initWorldMap() {
@@ -957,15 +980,99 @@ export class UIManager {
       });
     }
 
-    // Pointer lock listener to toggle pause menu
+    // Fast action grid inside Pause Menu
+    const menuMapBtn = document.getElementById('menu-btn-map');
+    if (menuMapBtn) {
+      menuMapBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.pauseMenu.classList.add('hidden');
+        this.toggleMap(true);
+      });
+    }
+
+    const menuSpeedBtn = document.getElementById('menu-btn-speed');
+    if (menuSpeedBtn) {
+      menuSpeedBtn.addEventListener('click', () => {
+        const res = this.cycleSpeed();
+        const mult = res?.speedMultiplier || 1.0;
+        menuSpeedBtn.textContent = `⚡ Velocidad: ${mult}x${res?.flightMode ? ' (Vuelo)' : ''}`;
+      });
+    }
+
+    const menuCamBtn = document.getElementById('menu-btn-cam');
+    if (menuCamBtn) {
+      menuCamBtn.addEventListener('click', () => {
+        sound.playClick();
+        const mode = this.controls.togglePerspective();
+        const names = { 'first': '1ª Persona', 'third-back': '3ª Persona', 'third-front': 'Frontal' };
+        menuCamBtn.textContent = `📷 Cámara: ${names[mode] || mode}`;
+      });
+    }
+
+    const menuShareLocBtn = document.getElementById('menu-btn-share-loc');
+    if (menuShareLocBtn) {
+      menuShareLocBtn.addEventListener('click', () => {
+        this.shareLocation();
+      });
+    }
+
+    const menuInvBtn = document.getElementById('menu-btn-inv');
+    if (menuInvBtn) {
+      menuInvBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.pauseMenu.classList.add('hidden');
+        this.toggleInventory(true);
+      });
+    }
+
+    const menuGuideBtn = document.getElementById('menu-btn-guide');
+    if (menuGuideBtn) {
+      menuGuideBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.pauseMenu.classList.add('hidden');
+        this.toggleGuide(true);
+      });
+    }
+
+    const menuFullscreenBtn = document.getElementById('menu-btn-fullscreen');
+    if (menuFullscreenBtn) {
+      menuFullscreenBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleFullscreen();
+      });
+    }
+
+    // Pointer lock listener to toggle pause menu & desktop click prompt
     this.controls.onLockChange = (isLocked) => {
       const isInGame = this.lobbyOverlay.classList.contains('hidden');
-      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && isInGame && !this.controls.isMobile) {
+      const clickPrompt = document.getElementById('click-to-lock-prompt');
+
+      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && !this.isMapOpen && isInGame && !this.controls.isMobile) {
         this.pauseMenu.classList.remove('hidden');
+        if (clickPrompt) clickPrompt.classList.add('hidden');
       } else {
         this.pauseMenu.classList.add('hidden');
+        if (!isLocked && isInGame && !this.controls.isMobile && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && !this.isMapOpen) {
+          if (clickPrompt) clickPrompt.classList.remove('hidden');
+        } else {
+          if (clickPrompt) clickPrompt.classList.add('hidden');
+        }
       }
     };
+  }
+
+  toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else if (document.documentElement.webkitRequestFullscreen) {
+        document.documentElement.webkitRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
   }
 
   initChat() {
@@ -1232,6 +1339,12 @@ export class UIManager {
   updateHUD(fps, pos) {
     // Update live connected count badge
     this.updatePlayerCountBadge();
+
+    // Update corner FPS element
+    const fpsElem = document.getElementById('hud-fps-val');
+    if (fpsElem) {
+      fpsElem.textContent = `${fps} FPS`;
+    }
 
     // Update coordinates & sector
     const coordsElem = document.getElementById('hud-coords');

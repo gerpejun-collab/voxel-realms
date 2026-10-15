@@ -58,15 +58,40 @@ export class Avatar {
     hair.position.y = 0.42;
     this.headGroup.add(hair);
 
-    // Subtle eye accents on face front (+Z)
-    const eyeGeom = new THREE.BoxGeometry(0.08, 0.06, 0.02);
+    // Authentic Minecraft Face details on front face (-Z)
+    const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2563eb }); // Classic blue eyes
-    const eyeLeft = new THREE.Mesh(eyeGeom, eyeMat);
-    eyeLeft.position.set(-0.14, 0.24, 0.252);
-    const eyeRight = new THREE.Mesh(eyeGeom, eyeMat);
-    eyeRight.position.set(0.14, 0.24, 0.252);
-    this.headGroup.add(eyeLeft);
-    this.headGroup.add(eyeRight);
+    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x7c2d12 });
+
+    // Eye Whites
+    const scleraGeom = new THREE.BoxGeometry(0.08, 0.06, 0.02);
+    const scleraL = new THREE.Mesh(scleraGeom, whiteMat);
+    scleraL.position.set(-0.13, 0.24, -0.252);
+    const scleraR = new THREE.Mesh(scleraGeom, whiteMat);
+    scleraR.position.set(0.13, 0.24, -0.252);
+    this.headGroup.add(scleraL);
+    this.headGroup.add(scleraR);
+
+    // Blue Pupils
+    const pupilGeom = new THREE.BoxGeometry(0.045, 0.06, 0.022);
+    const pupilL = new THREE.Mesh(pupilGeom, eyeMat);
+    pupilL.position.set(-0.15, 0.24, -0.253);
+    const pupilR = new THREE.Mesh(pupilGeom, eyeMat);
+    pupilR.position.set(0.11, 0.24, -0.253);
+    this.headGroup.add(pupilL);
+    this.headGroup.add(pupilR);
+
+    // Mouth
+    const mouthGeom = new THREE.BoxGeometry(0.14, 0.035, 0.02);
+    const mouth = new THREE.Mesh(mouthGeom, mouthMat);
+    mouth.position.set(0, 0.10, -0.252);
+    this.headGroup.add(mouth);
+
+    // Front Hair Bangs
+    const bangsGeom = new THREE.BoxGeometry(0.50, 0.08, 0.04);
+    const bangs = new THREE.Mesh(bangsGeom, hairMat);
+    bangs.position.set(0, 0.44, -0.245);
+    this.headGroup.add(bangs);
 
     this.group.add(this.headGroup);
 

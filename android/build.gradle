@@ -1,0 +1,16 @@
+// android/build.gradle
+// Top-level build file for Voxel Realms Android APK Project
+plugins {
+    id 'com.android.application' version '8.4.0' apply false
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}

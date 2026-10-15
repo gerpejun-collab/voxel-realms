@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Voxel Realms</string>
+    <string name="server_url">https://voxel-realms.onrender.com</string>
+    <string name="local_dev_url">http://10.0.2.2:3000</string>
+</resources>

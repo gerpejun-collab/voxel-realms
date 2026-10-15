@@ -353,21 +353,65 @@ const TextureGenerators = {
     const img = ctx.createImageData(w, h);
     const d = img.data;
 
+    // Define 16 cobblestone cells with irregular organic boundaries
+    const gridDim = 4;
+    const cellW = w / gridDim;
+    const cellH = h / gridDim;
+    const seeds = [];
+    const seedColors = [];
+
+    for (let gy = 0; gy < gridDim; gy++) {
+      for (let gx = 0; gx < gridDim; gx++) {
+        const jx = (noise.noise2D(gx * 2.3 + 1.1, gy * 2.7 + 0.4) * 0.35 + 0.5) * cellW;
+        const jy = (noise.noise2D(gx * 2.7 + 4.2, gy * 2.1 + 3.1) * 0.35 + 0.5) * cellH;
+        seeds.push({ x: gx * cellW + jx, y: gy * cellH + jy });
+        const shade = Math.floor(noise.noise2D(gx * 1.7 + 9, gy * 1.7 + 9) * 26);
+        seedColors.push(shade);
+      }
+    }
+
+    const numSeeds = seeds.length;
+
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        // Voronoi/cellular mortar grid
-        const cellX = (x % 64) - 32;
-        const cellY = (y % 64) - 32;
-        const dist = Math.sqrt(cellX * cellX + cellY * cellY) / 32.0;
-        const mortar = Math.min(1.0, Math.max(0, (dist - 0.75) * 5.0));
+        // Organic noise warp on coordinates for chiseled rock borders
+        const wx = (x + noise.noise2D(x / 14, y / 14) * 4.5 + w) % w;
+        const wy = (y + noise.noise2D(x / 14 + 10, y / 14 + 10) * 4.5 + h) % h;
 
-        const n = noise.fbm(x / 16, y / 16, 4);
-        const stoneVal = 130 + Math.floor(n * 35);
-        const mortarVal = 70 + Math.floor(n * 15);
+        let d1 = 999999;
+        let d2 = 999999;
+        let closestIdx = 0;
 
-        const val = Math.floor(stoneVal * (1 - mortar) + mortarVal * mortar);
+        for (let i = 0; i < numSeeds; i++) {
+          const s = seeds[i];
+          let dx = Math.abs(wx - s.x);
+          if (dx > w / 2) dx = w - dx;
+          let dy = Math.abs(wy - s.y);
+          if (dy > h / 2) dy = h - dy;
+          const dist = Math.hypot(dx, dy);
+          if (dist < d1) {
+            d2 = d1;
+            d1 = dist;
+            closestIdx = i;
+          } else if (dist < d2) {
+            d2 = dist;
+          }
+        }
+
+        // Mortar channel at cell boundary (d2 - d1)
+        const edgeDist = d2 - d1;
+        const mortarThreshold = 3.2;
+        const mortarFactor = Math.min(1.0, Math.max(0, edgeDist / mortarThreshold));
+
+        // Stone texture, grain and edge bevel
+        const grain = noise.fbm(x / 8, y / 8, 3) * 18;
+        const speck = Math.abs(noise.noise2D(x / 2.5, y / 2.5)) > 0.65 ? 16 : 0;
+        const stoneBase = 126 + seedColors[closestIdx] + grain + speck;
+        const mortarBase = 50 + noise.fbm(x / 4, y / 4, 2) * 10;
+
+        const val = Math.floor(stoneBase * (0.7 + 0.3 * mortarFactor) * mortarFactor + mortarBase * (1.0 - mortarFactor));
         const idx = (y * w + x) * 4;
-        d[idx] = Math.min(255, Math.max(0, val));
+        d[idx]     = Math.min(255, Math.max(0, val));
         d[idx + 1] = Math.min(255, Math.max(0, val - 3));
         d[idx + 2] = Math.min(255, Math.max(0, val - 2));
         d[idx + 3] = 255;

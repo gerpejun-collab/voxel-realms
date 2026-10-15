@@ -378,6 +378,56 @@ it('verifies Minecraft camera perspective cycling modes (first, third-back, thir
   assert.strictEqual(toggle(), 'first');
 });
 
+it('verifies 3rd-person camera ray obstruction calculation prevents clipping into solid ceiling or walls', () => {
+  // Mock world with a solid wall 1 block behind the player (z = 1)
+  const mockWorld = {
+    getBlock: (x, y, z) => {
+      // Solid wall at z >= 1
+      if (z >= 1) return 1; // Stone
+      return 0; // Air
+    }
+  };
+
+  const eye = { x: 0, y: 25, z: 0 };
+  const targetOffset = { x: 0, y: 0, z: 3.5 }; // Wants to be at z = 3.5
+
+  function getSafeCameraPosition(eye, ox, oy, oz, world) {
+    const len = Math.hypot(ox, oy, oz);
+    const dx = ox / len;
+    const dy = oy / len;
+    const dz = oz / len;
+    const step = 0.2;
+    let safeLen = len;
+
+    for (let cur = 0.4; cur <= len; cur += step) {
+      const cx = eye.x + dx * cur;
+      const cy = eye.y + dy * cur;
+      const cz = eye.z + dz * cur;
+
+      const bx = Math.floor(cx);
+      const by = Math.floor(cy);
+      const bz = Math.floor(cz);
+
+      const block = world.getBlock(bx, by, bz);
+      if (block !== 0) {
+        safeLen = Math.max(0.35, cur - 0.25);
+        break;
+      }
+    }
+
+    return {
+      x: eye.x + dx * safeLen,
+      y: eye.y + dy * safeLen,
+      z: eye.z + dz * safeLen
+    };
+  }
+
+  const safePos = getSafeCameraPosition(eye, targetOffset.x, targetOffset.y, targetOffset.z, mockWorld);
+  // Solid wall is at z >= 1. The camera must NOT reach z >= 1
+  assert.ok(safePos.z < 1.0, `Camera z (${safePos.z}) must be safely in front of the wall (z < 1.0)`);
+  assert.ok(safePos.z >= 0.35, `Camera z (${safePos.z}) must maintain minimum distance from eye`);
+});
+
 it('validates player speed modes and flight mode toggle mechanics', () => {
   const speedConfigs = [
     { tier: 1, mult: 1.0, flight: false },

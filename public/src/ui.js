@@ -66,7 +66,7 @@ export const LANDMARKS = [
     x: 0,
     y: 20,
     z: -500,
-    desc: 'XYZ (0, 20, -500) • Resort de Lujo, Yate & Palmeras'
+    desc: 'XYZ (0, 20, -500) • Resort de Lujo, Gran Faro, Yate & Arrecife'
   }
 ];
 

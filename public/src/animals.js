@@ -532,8 +532,8 @@ class RareNonHumanNpc {
       core.position.set(0, 1.65, 0);
       const head = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.85, 0.75), stoneMat);
       head.position.set(0, 2.65, 0.1);
-      constvisor = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.8), runeMat);
-      constvisor.position.set(0, 2.7, 0.12);
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.8), runeMat);
+      visor.position.set(0, 2.7, 0.12);
 
       const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.65, 0.5), mossMat);
       leftArm.position.set(-1.05, 1.45, 0);
@@ -548,7 +548,7 @@ class RareNonHumanNpc {
       this.parts.leftArm = leftArm;
       this.parts.rightArm = rightArm;
       this.parts.core = core;
-      this.group.add(torso, core, head, constvisor, leftArm, rightArm, lLeg, rLeg);
+      this.group.add(torso, core, head, visor, leftArm, rightArm, lLeg, rLeg);
     } else if (kind === 'jade_spirit') {
       // Floating Serpentine Jade Dragon Spirit
       const jadeMat = mat(0x10b981, 0x064e3b);

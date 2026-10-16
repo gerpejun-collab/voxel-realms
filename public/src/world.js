@@ -2594,6 +2594,104 @@ export class World {
     }
     this.setVoxelInWorld(chunk, yX, 24, yZ, BLOCKS.IRON_ORE);
     this.setVoxelInWorld(chunk, yX, 25, yZ, BLOCKS.GOLD_ORE);
+
+    // 10. Grand Maritime Lighthouse of Playa Paraíso at (36, -515, Y = 18..45)
+    const lhX = 36, lhZ = -515, lhBaseY = 18;
+    // Octagonal stone breakwater pier around lighthouse
+    for (let x = lhX - 5; x <= lhX + 5; x++) {
+      for (let z = lhZ - 5; z <= lhZ + 5; z++) {
+        if (Math.hypot(x - lhX, z - lhZ) <= 5.2) {
+          for (let y = 14; y <= lhBaseY; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
+          }
+          this.setVoxelInWorld(chunk, x, lhBaseY + 1, z, (Math.hypot(x - lhX, z - lhZ) > 4.2) ? BLOCKS.STONE : BLOCKS.BRICK);
+        }
+      }
+    }
+    // Cylindrical tower with 2-block red/white stripes tapering upward
+    for (let y = lhBaseY + 2; y <= lhBaseY + 20; y++) {
+      const r = (y <= lhBaseY + 8) ? 3 : ((y <= lhBaseY + 14) ? 2 : 2);
+      const isRedStripe = (Math.floor((y - (lhBaseY + 2)) / 3) % 2 === 0);
+      const stripeBlk = isRedStripe ? BLOCKS.BRICK : BLOCKS.SNOW;
+      for (let x = lhX - r; x <= lhX + r; x++) {
+        for (let z = lhZ - r; z <= lhZ + r; z++) {
+          if (Math.hypot(x - lhX, z - lhZ) <= r + 0.3) {
+            const isOuter = Math.hypot(x - lhX, z - lhZ) >= r - 0.7;
+            if (isOuter) {
+              this.setVoxelInWorld(chunk, x, y, z, stripeBlk);
+            } else if (x === lhX && z === lhZ) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.WOOD_PLANK);
+            } else {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            }
+          }
+        }
+      }
+    }
+    // Observation Gallery Catwalk at Y = lhBaseY + 21
+    const catY = lhBaseY + 21;
+    for (let x = lhX - 3; x <= lhX + 3; x++) {
+      for (let z = lhZ - 3; z <= lhZ + 3; z++) {
+        if (Math.hypot(x - lhX, z - lhZ) <= 3.4) {
+          const isRail = Math.hypot(x - lhX, z - lhZ) > 2.6;
+          this.setVoxelInWorld(chunk, x, catY, z, BLOCKS.STONE);
+          if (isRail) {
+            this.setVoxelInWorld(chunk, x, catY + 1, z, BLOCKS.IRON_ORE);
+          }
+        }
+      }
+    }
+    // Glass Lantern Room & Golden Rotary Beacon at Y = catY + 1 .. catY + 3
+    for (let y = catY + 1; y <= catY + 3; y++) {
+      for (let x = lhX - 2; x <= lhX + 2; x++) {
+        for (let z = lhZ - 2; z <= lhZ + 2; z++) {
+          if (Math.abs(x - lhX) <= 2 && Math.abs(z - lhZ) <= 2) {
+            const isBeacon = (x === lhX && z === lhZ);
+            const isGlass = (Math.abs(x - lhX) === 2 || Math.abs(z - lhZ) === 2);
+            if (isBeacon && y === catY + 2) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.GOLD_ORE);
+            } else if (isGlass) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.GLASS);
+            } else {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            }
+          }
+        }
+      }
+    }
+    // Conical roof & golden lightning finial at Y = catY + 4 .. catY + 7
+    for (let x = lhX - 2; x <= lhX + 2; x++) {
+      for (let z = lhZ - 2; z <= lhZ + 2; z++) {
+        this.setVoxelInWorld(chunk, x, catY + 4, z, BLOCKS.BRICK);
+      }
+    }
+    for (let x = lhX - 1; x <= lhX + 1; x++) {
+      for (let z = lhZ - 1; z <= lhZ + 1; z++) {
+        this.setVoxelInWorld(chunk, x, catY + 5, z, BLOCKS.BRICK);
+      }
+    }
+    this.setVoxelInWorld(chunk, lhX, catY + 6, lhZ, BLOCKS.GOLD_ORE);
+    this.setVoxelInWorld(chunk, lhX, catY + 7, lhZ, BLOCKS.IRON_ORE);
+
+    // 11. Underwater Coral Reef Sanctuary in the turquoise lagoon (Z: -520..-555, X: -36..36, Y: 14..17)
+    const reefCenters = [
+      [-14, -524], [6, -532], [22, -540], [-26, -544], [-4, -548], [16, -522]
+    ];
+    for (const [rcX, rcZ] of reefCenters) {
+      const coralTypes = [BLOCKS.BRICK, BLOCKS.GOLD_ORE, BLOCKS.CLAY, BLOCKS.SNOW];
+      const cType = coralTypes[(Math.abs(rcX * 7 + rcZ * 13)) % coralTypes.length];
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          const d = Math.hypot(dx, dz);
+          if (d <= 2.2) {
+            const h = (d <= 0.8) ? 3 : ((d <= 1.6) ? 2 : 1);
+            for (let y = 14; y < 14 + h && y <= 17; y++) {
+              this.setVoxelInWorld(chunk, rcX + dx, y, rcZ + dz, (y === 14) ? BLOCKS.SAND : cType);
+            }
+          }
+        }
+      }
+    }
   }
 
   /**

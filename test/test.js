@@ -1190,6 +1190,21 @@ it('verifies mobile controls layout: relocated camera button, 2x2 action cluster
   assert.ok(css.includes('#fps-telemetry-canvas'), 'CSS must style #fps-telemetry-canvas');
 });
 
+it('verifies animals.js rune_golem mesh visor fix and Playa Paraíso lighthouse/coral generation', () => {
+  const animalsPath = path.resolve(__dirname, '../public/src/animals.js');
+  const animalsCode = fs.readFileSync(animalsPath, 'utf8');
+
+  // Verify constvisor typo is fixed
+  assert.strictEqual(animalsCode.includes('constvisor'), false, 'animals.js must not contain misspelled constvisor identifier');
+  assert.ok(animalsCode.includes('const visor = new THREE.Mesh'), 'animals.js must properly declare const visor');
+
+  // Verify Lighthouse and Coral in world.js
+  const worldPath = path.resolve(__dirname, '../public/src/world.js');
+  const worldCode = fs.readFileSync(worldPath, 'utf8');
+  assert.ok(worldCode.includes('Grand Maritime Lighthouse of Playa Paraíso'), 'world.js must define Grand Maritime Lighthouse');
+  assert.ok(worldCode.includes('Underwater Coral Reef Sanctuary'), 'world.js must define Coral Reef in Playa Paraíso');
+});
+
 // =============================================================================
 // SUITE EXECUTION SUMMARY
 // =============================================================================

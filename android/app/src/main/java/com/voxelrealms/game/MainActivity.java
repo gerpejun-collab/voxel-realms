@@ -20,10 +20,10 @@ import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
 
     WebView webView;
-    static final String PREFS_NAME = "VoxelRealmsPrefs";
-    static final String KEY_SERVER_URL = "server_url";
+    static final String PREFS_NAME = "VoxelRealmsPrefsV2";
+    static final String KEY_SERVER_URL = "server_url_w9l3";
     // Public production server URL on Render
-    static final String DEFAULT_SERVER_URL = "https://voxel-realms.onrender.com";
+    static final String DEFAULT_SERVER_URL = "https://voxel-realms-w9l3.onrender.com";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -104,11 +104,10 @@ public class MainActivity extends Activity {
             + ".btn-sec{background:#3b4252;font-size:12px;padding:9px;}"
             + "</style></head><body><div class='card'>"
             + "<h1>VOXEL REALMS ONLINE</h1>"
-            + "<p>Conectando con el servidor multijugador en la nube.<br>Si el servidor gratuito de Render estaba en reposo, tarda ~25s en despertar. También puedes introducir el enlace de tu servidor Render:</p>"
-            + "<input id='srv' type='url' value='" + safeUrl + "' placeholder='https://tu-servidor.onrender.com' />"
+            + "<p>Conectando con tu servidor multijugador en Render.<br>Si el servidor gratuito estaba en reposo, tarda ~25s en despertar:</p>"
+            + "<input id='srv' type='url' value='" + safeUrl + "' placeholder='https://voxel-realms-w9l3.onrender.com' />"
             + "<button class='btn' onclick='connectNow()'>⚡ CONECTAR AL MUNDO MULTIJUGADOR</button>"
-            + "<button class='btn btn-sec' onclick='setPreset(\"https://voxel-realms.onrender.com\")'>🌐 Servidor Render (voxel-realms)</button>"
-            + "<button class='btn btn-sec' onclick='setPreset(\"https://minecraft-onrder.onrender.com\")'>🌐 Servidor Render (minecraft-onrder)</button>"
+            + "<button class='btn btn-sec' onclick='setPreset(\"https://voxel-realms-w9l3.onrender.com\")'>🌐 Servidor Oficial (voxel-realms-w9l3.onrender.com)</button>"
             + "</div><script>"
             + "function setPreset(u){document.getElementById('srv').value=u;connectNow();}"
             + "function connectNow(){var u=document.getElementById('srv').value.trim();if(!u)return;if(!u.startsWith('http'))u='https://'+u;if(window.VoxelAndroid){window.VoxelAndroid.saveAndConnect(u);}else{location.href=u;}}"

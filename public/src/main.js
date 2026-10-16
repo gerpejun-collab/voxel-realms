@@ -59,8 +59,11 @@ class VoxelRealmsApp {
     // Setup Block Interaction Events
     this.setupInteractions();
 
-    // Initial safe player spawn
-    this.physics.respawn(0, 0);
+    // Initial safe player spawn at open plaza viewpoint facing the Golden Altar & Statues
+    this.world.updateStreaming(0, 0);
+    this.physics.respawn(3, 6);
+    this.controls.yaw = 0.45;
+    this.controls.pitch = 0.06;
 
     // Game loop timing
     this.clock = new THREE.Clock();

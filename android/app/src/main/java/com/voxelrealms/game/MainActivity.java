@@ -2,31 +2,35 @@ package com.voxelrealms.game;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
-import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Toast;
 
 public class MainActivity extends Activity {
 
-    private WebView webView;
+    WebView webView;
+    static final String PREFS_NAME = "VoxelRealmsPrefs";
+    static final String KEY_SERVER_URL = "server_url";
     // Public production server URL on Render
-    private static final String DEFAULT_SERVER_URL = "https://voxel-realms.onrender.com";
+    static final String DEFAULT_SERVER_URL = "https://voxel-realms.onrender.com";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Keep screen awake and landscape
+        // Keep screen awake and lock sensor landscape
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
 
@@ -41,12 +45,13 @@ public class MainActivity extends Activity {
         // Load the live Voxel Realms multiplayer world
         String targetUrl = getIntent().getStringExtra("SERVER_URL");
         if (targetUrl == null || targetUrl.trim().isEmpty()) {
-            targetUrl = DEFAULT_SERVER_URL;
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            targetUrl = prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL);
         }
         webView.loadUrl(targetUrl);
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void configureWebView() {
         WebSettings settings = webView.getSettings();
 
@@ -80,18 +85,35 @@ public class MainActivity extends Activity {
         webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
+        webView.addJavascriptInterface(new VoxelAndroidBridge(this), "VoxelAndroid");
         webView.setWebChromeClient(new WebChromeClient());
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false; // Stay inside WebView
-            }
+        webView.setWebViewClient(new GameWebViewClient(this));
+    }
 
-            @Override
-            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                Toast.makeText(MainActivity.this, "Conectando al servidor: " + description, Toast.LENGTH_SHORT).show();
-            }
-        });
+    void showConnectionHub(String attemptedUrl) {
+        String safeUrl = attemptedUrl != null ? attemptedUrl.replace("\"", "&quot;") : DEFAULT_SERVER_URL;
+        String html = "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+            + "<meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'>"
+            + "<style>"
+            + "body{margin:0;padding:16px;background:#11141c;color:#f8fafc;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:92vh;}"
+            + ".card{background:#1e222d;border:2px solid #475569;padding:20px 24px;max-width:520px;width:100%;box-sizing:border-box;text-align:center;box-shadow:0 16px 40px rgba(0,0,0,0.8);}"
+            + "h1{margin:0 0 6px;color:#fbbf24;font-size:22px;letter-spacing:2px;}"
+            + "p{margin:6px 0 14px;color:#cbd5e1;font-size:13px;line-height:1.4;}"
+            + "input{width:100%;padding:10px 12px;box-sizing:border-box;background:#0f1319;border:2px solid #334155;color:#fff;font-size:14px;margin-bottom:12px;}"
+            + ".btn{display:block;width:100%;padding:12px;margin-top:8px;background:#2e6930;color:#fff;border:2px solid #000;font-weight:800;font-size:14px;cursor:pointer;}"
+            + ".btn-sec{background:#3b4252;font-size:12px;padding:9px;}"
+            + "</style></head><body><div class='card'>"
+            + "<h1>VOXEL REALMS ONLINE</h1>"
+            + "<p>Conectando con el servidor multijugador en la nube.<br>Si el servidor gratuito de Render estaba en reposo, tarda ~25s en despertar. También puedes introducir el enlace de tu servidor Render:</p>"
+            + "<input id='srv' type='url' value='" + safeUrl + "' placeholder='https://tu-servidor.onrender.com' />"
+            + "<button class='btn' onclick='connectNow()'>⚡ CONECTAR AL MUNDO MULTIJUGADOR</button>"
+            + "<button class='btn btn-sec' onclick='setPreset(\"https://voxel-realms.onrender.com\")'>🌐 Servidor Render (voxel-realms)</button>"
+            + "<button class='btn btn-sec' onclick='setPreset(\"https://minecraft-onrder.onrender.com\")'>🌐 Servidor Render (minecraft-onrder)</button>"
+            + "</div><script>"
+            + "function setPreset(u){document.getElementById('srv').value=u;connectNow();}"
+            + "function connectNow(){var u=document.getElementById('srv').value.trim();if(!u)return;if(!u.startsWith('http'))u='https://'+u;if(window.VoxelAndroid){window.VoxelAndroid.saveAndConnect(u);}else{location.href=u;}}"
+            + "</script></body></html>";
+        webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
 
     private void applyImmersiveSticky() {
@@ -115,8 +137,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        // Toggle in-game menu or exit
-        if (webView.canGoBack()) {
+        if (webView != null && webView.canGoBack()) {
             webView.goBack();
         } else {
             super.onBackPressed();
@@ -142,5 +163,63 @@ public class MainActivity extends Activity {
             webView.destroy();
         }
         super.onDestroy();
+    }
+}
+
+class GameWebViewClient extends WebViewClient {
+    private final MainActivity activity;
+
+    GameWebViewClient(MainActivity activity) {
+        this.activity = activity;
+    }
+
+    @Override
+    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+        return false; // Stay inside WebView
+    }
+
+    @Override
+    public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && request.isForMainFrame()) {
+            activity.showConnectionHub(request.getUrl().toString());
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+        activity.showConnectionHub(failingUrl);
+    }
+}
+
+class LoadUrlTask implements Runnable {
+    private final MainActivity activity;
+    private final String url;
+
+    LoadUrlTask(MainActivity activity, String url) {
+        this.activity = activity;
+        this.url = url;
+    }
+
+    @Override
+    public void run() {
+        if (activity.webView != null) {
+            activity.webView.loadUrl(url);
+        }
+    }
+}
+
+class VoxelAndroidBridge {
+    private final MainActivity activity;
+
+    VoxelAndroidBridge(MainActivity activity) {
+        this.activity = activity;
+    }
+
+    @JavascriptInterface
+    public void saveAndConnect(final String url) {
+        SharedPreferences prefs = activity.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit().putString(MainActivity.KEY_SERVER_URL, url).apply();
+        activity.runOnUiThread(new LoadUrlTask(activity, url));
     }
 }

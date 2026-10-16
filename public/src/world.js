@@ -228,15 +228,17 @@ export class World {
               // Japan Imperial Sector
               block = ((wx + wz) % 5 === 0) ? BLOCKS.GRAVEL : BLOCKS.GRASS;
             } else if (Math.hypot(wx + 250, wz - 250) <= 35) {
-              // China & Shanghai Sector
-              block = ((wx * wz) % 3 === 0) ? BLOCKS.STONE : BLOCKS.COBBLESTONE;
+              // China & Shanghai Sector: Lush green gardens with Imperial stone/brick avenues
+              const isAvenue = (Math.abs(wx + 250) <= 2 || Math.abs(wz - 250) <= 2 || Math.abs(wx + 242) <= 1);
+              block = isAvenue ? (((wx + wz) % 2 === 0) ? BLOCKS.STONE : BLOCKS.BRICK) : BLOCKS.GRASS;
             } else if (Math.hypot(wx - 250, wz + 250) <= 35) {
               // Paris & Eiffel Tower Sector
               block = (Math.abs(wz - -240) <= 2) ? BLOCKS.GRAVEL : BLOCKS.GRASS;
             } else if (Math.hypot(wx + 250, wz + 250) <= 35) {
-              // New York Sector
-              const isStreet = ((wx - -250) % 8 === 0 || (wz - -250) % 8 === 0);
-              block = isStreet ? BLOCKS.DIRT_DRY : BLOCKS.STONE;
+              // New York Sector: Central Park green lawns with Manhattan avenues & sidewalks
+              const isStreet = ((wx + 250) % 12 === 0 || (wz + 250) % 12 === 0);
+              const isSidewalk = (Math.abs((wx + 250) % 12) === 1 || Math.abs((wz + 250) % 12) === 1);
+              block = isStreet ? BLOCKS.DIRT_DRY : (isSidewalk ? BLOCKS.STONE : BLOCKS.GRASS);
             } else if (wz >= 440 && wz <= 560 && Math.abs(wx) <= 55) {
               // Norway Fjords
               if (Math.abs(wx) <= 8) {

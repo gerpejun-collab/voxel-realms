@@ -169,7 +169,10 @@ body, html {
   color: #e2e8f0;
 }
 
-/* Desktop-only pills hidden on mobile landscape */
+/* Desktop-only pills hidden on mobile landscape or mobile-mode */
+body.mobile-mode .desktop-only {
+  display: none !important;
+}
 @media (max-width: 1024px) and (orientation: landscape), (max-height: 600px), (hover: none) and (pointer: coarse) {
   .desktop-only {
     display: none !important;
@@ -1118,14 +1121,15 @@ body, html {
 #virtual-joystick,
 #joystick-zone {
   position: absolute;
-  bottom: 25px;
-  left: 25px;
-  width: 130px;
-  height: 130px;
+  bottom: 18px;
+  left: 18px;
+  width: 120px;
+  height: 120px;
   pointer-events: auto;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  z-index: 20;
 }
 
 .virtual-joystick-container {
@@ -1145,14 +1149,11 @@ body, html {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: rgba(18, 20, 26, 0.65);
-  border: none;
-  outline: 2px solid #000000;
-  box-shadow: 
-    inset 2px 2px 0px rgba(255, 255, 255, 0.25),
-    inset -2px -2px 0px rgba(0, 0, 0, 0.8),
-    0 4px 14px rgba(0, 0, 0, 0.6);
+  background: rgba(15, 20, 28, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1160,74 +1161,72 @@ body, html {
 }
 
 #joystick-knob {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #fde047 10%, #d97706 75%, #78350f 100%);
-  outline: 2px solid #000000;
-  box-shadow: 
-    inset 2px 2px 0px rgba(255, 255, 255, 0.7),
-    inset -2px -2px 0px rgba(0, 0, 0, 0.8),
-    0 0 14px rgba(245, 158, 11, 0.6);
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0.2) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   pointer-events: none;
   transform: translate(0px, 0px);
   transition: transform 0.04s ease-out;
   touch-action: none;
 }
 
-/* Mobile Action Buttons (Break, Place, Jump) */
+/* Mobile Action Buttons — Radial Fan Arc Layout & Frosted Glass */
 #mobile-action-buttons {
   position: absolute;
-  bottom: 25px;
-  right: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  pointer-events: auto;
+  bottom: 12px;
+  right: 12px;
+  width: 220px;
+  height: 210px;
+  display: block;
+  pointer-events: none;
   touch-action: none;
+  z-index: 20;
 }
 
 .mobile-action-btn {
+  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 50px;
-  min-height: 50px;
-  padding: 8px;
+  pointer-events: auto;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 6px;
   border-radius: 50%;
+  background: rgba(16, 20, 28, 0.42);
+  border: 1.5px solid rgba(255, 255, 255, 0.26);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   font-family: var(--font-title);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.5px;
   cursor: pointer;
-  border: none;
-  outline: 2px solid #000000;
-  box-shadow: 
-    inset 3px 3px 0px rgba(255, 255, 255, 0.6),
-    inset -3px -3px 0px rgba(0, 0, 0, 0.75),
-    0 4px 10px rgba(0, 0, 0, 0.6);
-  text-shadow: 1px 1px 0px #000000;
-  color: #ffffff;
+  text-shadow: 1px 1px 2px #000000;
+  color: rgba(255, 255, 255, 0.92);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 0.06s ease, filter 0.06s ease;
+  transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease;
 }
 
 .mobile-action-btn:active,
 .mobile-action-btn.active-press {
-  transform: scale(0.92) translate(1px, 1px);
-  box-shadow: 
-    inset 3px 3px 0px rgba(0, 0, 0, 0.85),
-    inset -3px -3px 0px rgba(255, 255, 255, 0.3),
-    0 2px 4px rgba(0, 0, 0, 0.5);
-  filter: brightness(0.85);
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.35);
 }
 
 .mobile-action-btn .btn-icon {
   font-size: 20px;
   line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
   pointer-events: none;
 }
 
@@ -1236,35 +1235,73 @@ body, html {
   letter-spacing: 0.5px;
   line-height: 1;
   margin-top: 2px;
+  color: rgba(255, 255, 255, 0.88);
   pointer-events: none;
 }
 
-.mobile-action-btn.break-btn {
-  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
-}
-
-.mobile-action-btn.place-btn {
-  background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
-}
-
+/* 🦘 Saltar (Jump): bottom-right thumb pivot */
 .mobile-action-btn.jump-btn {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  bottom: 8px;
+  right: 8px;
+  width: 58px;
+  height: 58px;
+  background: rgba(16, 24, 38, 0.44);
+  border-color: rgba(56, 189, 248, 0.5);
+  z-index: 5;
 }
 
+/* 🧱 Colocar (Place): center-left of radial arc */
+.mobile-action-btn.place-btn {
+  bottom: 66px;
+  right: 82px;
+  width: 52px;
+  height: 52px;
+  background: rgba(16, 28, 24, 0.44);
+  border-color: rgba(52, 211, 153, 0.5);
+  z-index: 4;
+}
+
+/* ⛏️ Romper (Break): top-right of radial arc */
+.mobile-action-btn.break-btn {
+  bottom: 140px;
+  right: 18px;
+  width: 52px;
+  height: 52px;
+  background: rgba(32, 16, 20, 0.44);
+  border-color: rgba(248, 113, 113, 0.5);
+  z-index: 4;
+}
+
+/* 📷 Vista (Camera): upper-left auxiliary arc */
 .mobile-action-btn.cam-btn {
-  background: linear-gradient(135deg, #64748b 0%, #334155 100%);
+  bottom: 135px;
+  right: 86px;
+  width: 44px;
+  height: 44px;
+  min-width: 40px;
+  min-height: 40px;
+  background: rgba(18, 22, 30, 0.4);
+  border-color: rgba(255, 255, 255, 0.28);
+  z-index: 3;
 }
 
+/* ⚡ Correr (Sprint): bottom-left auxiliary arc */
 .mobile-action-btn.sprint-btn {
-  background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+  bottom: 12px;
+  right: 86px;
+  width: 44px;
+  height: 44px;
+  min-width: 40px;
+  min-height: 40px;
+  background: rgba(28, 22, 14, 0.42);
+  border-color: rgba(251, 191, 36, 0.48);
+  z-index: 3;
 }
 
 .mobile-action-btn.sprint-btn.active {
-  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
-  box-shadow: 
-    inset 3px 3px 0px rgba(255, 255, 255, 0.7),
-    inset -3px -3px 0px rgba(0, 0, 0, 0.8),
-    0 0 12px rgba(16, 185, 129, 0.7);
+  background: rgba(16, 185, 129, 0.36);
+  border-color: rgba(52, 211, 153, 0.88);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
 }
 
 /* ==========================================================================

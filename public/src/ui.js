@@ -230,6 +230,7 @@ export class UIManager {
 
       if (this.controls.isMobile && this.mobileOverlay) {
         this.mobileOverlay.classList.remove('hidden');
+        document.body.classList.add('mobile-mode');
       }
 
       this.multiplayer.connect(name);
@@ -582,11 +583,54 @@ export class UIManager {
     const tz = typeof landmark.z === 'number' ? landmark.z : parseFloat(landmark.z);
     const title = landmark.name || 'Monumento';
 
+    // Determine scenic arrival viewpoint in front of the monument so player isn't buried inside walls
+    let vx = tx + 0.5;
+    let vy = ty;
+    let vz = tz + 0.5;
+    let targetYaw = null;
+    let targetPitch = null;
+
+    if (tx === 0 && tz === 0) {
+      // Spawn Plaza: stand on south plaza facing Golden Altar & Guardian Statues
+      vx = 3.5; vy = 25.0; vz = 6.5;
+      targetYaw = 0.45; targetPitch = 0.08;
+    } else if (tx === 250 && tz === 250) {
+      // Japan Imperial: stand at entrance of Crimson Torii Gate avenue facing the 4-tier Pagoda & Sakura trees
+      vx = 250.5; vy = 25.0; vz = 232.5;
+      targetYaw = Math.PI; targetPitch = 0.18;
+    } else if (tx === -250 && tz === 250) {
+      // China & Shanghai: stand on Imperial avenue facing Shanghai Tower, Jin Mao, Oriental Pearl & Paifang Arch
+      vx = -250.5; vy = 25.0; vz = 231.5;
+      targetYaw = Math.PI; targetPitch = 0.26;
+    } else if (tx === 250 && tz === -250) {
+      // Paris: stand on Champs-Élysées promenade facing the Reflecting Pool & Eiffel Tower
+      vx = 250.5; vy = 25.0; vz = -231.5;
+      targetYaw = 0; targetPitch = 0.26;
+    } else if (tx === -250 && tz === -250) {
+      // New York: stand on Manhattan avenue facing Empire State Building & Statue of Liberty
+      vx = -252.5; vy = 25.0; vz = -232.5;
+      targetYaw = 0.12; targetPitch = 0.26;
+    } else if (tx === 0 && tz === 500) {
+      // Norway Fjords: stand on scenic cliff overlook facing the fjord gorge, waterfalls & Viking cabin
+      vx = -16.5; vy = 51.0; vz = 492.5;
+      targetYaw = -1.45; targetPitch = -0.12;
+    }
+
+    // Stream chunks around new location first so terrain & monuments exist before physics step
+    if (this.world && typeof this.world.updateStreaming === 'function') {
+      this.world.updateStreaming(vx, vz);
+    }
+
     // Invoke physics.teleport(x, y, z)
     if (this.physics && typeof this.physics.teleport === 'function') {
-      this.physics.teleport(tx, ty, tz);
+      this.physics.teleport(vx, vy, vz);
     } else if (this.controls?.physics && typeof this.controls.physics.teleport === 'function') {
-      this.controls.physics.teleport(tx, ty, tz);
+      this.controls.physics.teleport(vx, vy, vz);
+    }
+
+    if (this.controls && targetYaw !== null) {
+      this.controls.yaw = targetYaw;
+      this.controls.pitch = targetPitch;
     }
 
     // Play click and teleport audio
@@ -595,19 +639,14 @@ export class UIManager {
       sound.playTeleport();
     }
 
-    // Stream chunks around new location
-    if (this.world && typeof this.world.updateStreaming === 'function') {
-      this.world.updateStreaming(tx, tz);
-    }
-
     // Update coordinates immediately
-    const pos = this.physics?.pos || this.controls?.physics?.pos || { x: tx, y: ty, z: tz };
+    const pos = this.physics?.pos || this.controls?.physics?.pos || { x: vx, y: vy, z: vz };
     this.updateHUD(60, pos);
 
     // Close modal
     this.toggleMap(false);
 
-    this.addSystemNotification(`⚡ Teletransportado con éxito a [${title}] XYZ (${tx}, ${ty}, ${tz})`);
+    this.addSystemNotification(`⚡ Teletransportado con éxito a [${title}]`);
   }
 
   toggleMap(open) {

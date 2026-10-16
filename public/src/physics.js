@@ -75,9 +75,78 @@ export class PlayerPhysics {
   }
 
   /**
+   * Checks whether the specified block coordinates lie directly beneath the player bounding box
+   */
+  isSupportedByBlock(x, y, z) {
+    const halfW = this.width * 0.5;
+    const halfD = this.depth * 0.5;
+    const minX = Math.floor(this.pos.x - halfW + 0.001);
+    const maxX = Math.floor(this.pos.x + halfW - 0.001);
+    const minZ = Math.floor(this.pos.z - halfD + 0.001);
+    const maxZ = Math.floor(this.pos.z + halfD - 0.001);
+
+    if (x < minX || x > maxX || z < minZ || z > maxZ) {
+      return false;
+    }
+
+    const feetY = Math.floor(this.pos.y - 0.05);
+    return Math.abs(y - feetY) <= 1 || (y < this.pos.y && y >= this.pos.y - 1.5);
+  }
+
+  /**
+   * Triggered immediately when a supporting block is broken
+   */
+  onBlockBroken(x, y, z) {
+    if (this.isSupportedByBlock(x, y, z)) {
+      this.onGround = false;
+      if (this.vel.y >= 0) {
+        this.vel.y = -1.5;
+      }
+      this.checkGroundSupport();
+    }
+  }
+
+  /**
+   * Validates supporting voxel directly beneath player feet
+   */
+  checkGroundSupport() {
+    if (this.flightMode) return;
+    const halfW = this.width * 0.5;
+    const halfD = this.depth * 0.5;
+    const minX = Math.floor(this.pos.x - halfW + 0.001);
+    const maxX = Math.floor(this.pos.x + halfW - 0.001);
+    const minZ = Math.floor(this.pos.z - halfD + 0.001);
+    const maxZ = Math.floor(this.pos.z + halfD - 0.001);
+    const checkY = Math.floor(this.pos.y - 0.05);
+
+    let supported = false;
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        if (this.isSolid(x, checkY, z)) {
+          supported = true;
+          break;
+        }
+      }
+      if (supported) break;
+    }
+
+    if (!supported) {
+      this.onGround = false;
+      if (this.vel.y >= 0) {
+        this.vel.y = -1.0;
+      }
+    }
+  }
+
+  /**
    * Fixed physics timestep update
    */
   update(dt, input) {
+    // Invalidate ground if supporting block beneath feet was removed
+    if (this.onGround && !this.flightMode) {
+      this.checkGroundSupport();
+    }
+
     // Check water immersion
     const feetBlockX = Math.floor(this.pos.x);
     const feetBlockY = Math.floor(this.pos.y);
@@ -203,6 +272,26 @@ export class PlayerPhysics {
         this.pos.y = checkY + 1.0;
         this.vel.y = 0;
         this.onGround = true;
+      } else {
+        // Prevent sinking: check if resting on top of solid block directly beneath feet
+        const belowY = Math.floor(this.pos.y - 0.05);
+        if (belowY !== checkY) {
+          let hitBelow = false;
+          for (let x = minX; x <= maxX; x++) {
+            for (let z = minZ; z <= maxZ; z++) {
+              if (this.isSolid(x, belowY, z)) {
+                hitBelow = true;
+                break;
+              }
+            }
+            if (hitBelow) break;
+          }
+          if (hitBelow && Math.abs(this.pos.y - (belowY + 1.0)) < 0.05) {
+            this.pos.y = belowY + 1.0;
+            this.vel.y = 0;
+            this.onGround = true;
+          }
+        }
       }
     } else {
       // Moving up: check ceiling above head

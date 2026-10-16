@@ -11,6 +11,8 @@ import { MultiplayerClient } from './multiplayer.js';
 import { UIManager } from './ui.js';
 import { AnimalManager } from './animals.js';
 import { Avatar } from './avatar.js';
+import { BLOCKS } from './blocks.js';
+import { sound } from './audio.js';
 
 class VoxelRealmsApp {
   constructor() {
@@ -34,7 +36,7 @@ class VoxelRealmsApp {
       this.physics,
       this.world
     );
-    this.localAvatar = new Avatar('local', 'Tú', this.sceneManager.scene);
+    this.localAvatar = new Avatar('local', 'Tú', this.sceneManager.scene, this.world);
     this.controls.setLocalAvatar(this.localAvatar);
 
     // 5. Initialize Multiplayer Client
@@ -43,6 +45,7 @@ class VoxelRealmsApp {
       this.sceneManager.scene,
       this.particleManager
     );
+    this.multiplayer.physics = this.physics;
 
     // 6. Initialize Ambient Voxel Animals, Rare NPCs & Highway Traffic
     this.animalManager = new AnimalManager(this.sceneManager.scene, this.world);
@@ -63,8 +66,14 @@ class VoxelRealmsApp {
         this.animalManager.syncAnimalsFromServer(animals);
       };
       this.multiplayer.onAnimalBurst = (burstData) => {
-        if (burstData && this.particleManager) {
-          this.particleManager.spawnAnimalBurst(burstData.x, burstData.y, burstData.z);
+        if (!burstData) return;
+        if (this.particleManager && typeof this.particleManager.spawnBloodImpact === 'function') {
+          this.particleManager.spawnBloodImpact(burstData.x, burstData.y, burstData.z, burstData.dir);
+        } else if (this.particleManager && typeof this.particleManager.spawnAnimalBurst === 'function') {
+          this.particleManager.spawnAnimalBurst(burstData.x, burstData.y, burstData.z, burstData.dir);
+        }
+        if (this.animalManager && typeof this.animalManager.triggerAnimalHit === 'function') {
+          this.animalManager.triggerAnimalHit(burstData.animalId, burstData.dir);
         }
       };
     }
@@ -125,14 +134,16 @@ class VoxelRealmsApp {
       this.multiplayer.sendBlockModify(placePos.x, placePos.y, placePos.z, selectedBlockId);
     };
 
-    // Rifle Shoot (Sniper / Non-lethal player hit & animal bursting)
-    this.controls.onWeaponShoot = ({ origin, dir, voxelHit }) => {
-      // 1. Particle muzzle flash & smoke
+    // Rifle Shoot (Authentic 3D rifle, luminous tracer, animal blood particles & shoot-to-detonate TNT)
+    this.controls.onWeaponShoot = ({ origin, dir, muzzlePos, voxelHit }) => {
+      const tracerStart = muzzlePos || origin;
+
+      // 1. Particle muzzle flash & smoke at gun barrel
       if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
-        this.particleManager.spawnMuzzleFlash(origin, dir);
+        this.particleManager.spawnMuzzleFlash(tracerStart, dir);
       }
 
-      // 2. Raycast remote player hit (friendly notification)
+      // 2. Raycast remote player hit
       let targetPlayerId = null;
       let targetPlayerHit = null;
       if (this.multiplayer && typeof this.multiplayer.getRaycastPlayerHit === 'function') {
@@ -143,27 +154,98 @@ class VoxelRealmsApp {
       }
 
       // 3. Raycast animal / rare NPC hit
-      let targetAnimalId = null;
+      let hitAnim = null;
       if (this.animalManager && typeof this.animalManager.getHitAnimal === 'function') {
-        const hitAnim = this.animalManager.getHitAnimal(origin, dir, 75);
-        if (hitAnim) {
-          targetAnimalId = hitAnim.id;
-          const burstPos = this.animalManager.burstAnimal(hitAnim.id, this.physics.pos);
-          if (burstPos && this.particleManager && typeof this.particleManager.spawnAnimalBurst === 'function') {
-            this.particleManager.spawnAnimalBurst(burstPos.x, burstPos.y, burstPos.z);
-          }
-        }
+        hitAnim = this.animalManager.getHitAnimal(origin, dir, 75);
       }
 
-      // 4. Send multiplayer packet
+      // 4. Raycast voxel block hit (check for BLOCKS.TNT)
+      const isTnt = voxelHit && (voxelHit.type === BLOCKS.TNT || voxelHit.type === 19);
+
+      // Distance arbitration: find closest impact target
+      const playerDist = targetPlayerHit ? targetPlayerHit.distance : Infinity;
+      const animalDist = hitAnim ? (hitAnim.distance || 75) : Infinity;
+      const voxelDist = voxelHit ? Math.hypot(voxelHit.x + 0.5 - origin.x, voxelHit.y + 0.5 - origin.y, voxelHit.z + 0.5 - origin.z) : Infinity;
+
+      let targetPoint = null;
+      let targetAnimalId = null;
+
+      if (hitAnim && animalDist <= playerDist && animalDist <= voxelDist) {
+        // Bullet hit an animal or NPC: spawn blood particles & trigger knockback animation
+        targetAnimalId = hitAnim.id;
+        targetPoint = { x: hitAnim.x, y: hitAnim.y, z: hitAnim.z };
+
+        if (this.particleManager && typeof this.particleManager.spawnBloodParticles === 'function') {
+          this.particleManager.spawnBloodParticles(hitAnim.x, hitAnim.y, hitAnim.z, dir);
+        } else if (this.particleManager && typeof this.particleManager.spawnBloodImpact === 'function') {
+          this.particleManager.spawnBloodImpact(hitAnim.x, hitAnim.y, hitAnim.z, dir);
+        } else if (this.particleManager && typeof this.particleManager.spawnAnimalBurst === 'function') {
+          this.particleManager.spawnAnimalBurst(hitAnim.x, hitAnim.y, hitAnim.z, dir);
+        }
+
+        if (this.animalManager && typeof this.animalManager.burstAnimal === 'function') {
+          this.animalManager.burstAnimal(hitAnim.id, this.physics.pos, dir);
+        } else if (this.animalManager && typeof this.animalManager.triggerAnimalHit === 'function') {
+          this.animalManager.triggerAnimalHit(hitAnim.id, dir);
+        }
+      } else if (targetPlayerHit && playerDist <= animalDist && playerDist <= voxelDist) {
+        // Bullet hit a remote player (friendly notification)
+        targetPoint = {
+          x: origin.x + dir.x * targetPlayerHit.distance,
+          y: origin.y + dir.y * targetPlayerHit.distance,
+          z: origin.z + dir.z * targetPlayerHit.distance
+        };
+      } else if (voxelHit && voxelDist < Infinity) {
+        targetPoint = { x: voxelHit.x + 0.5, y: voxelHit.y + 0.5, z: voxelHit.z + 0.5 };
+        if (isTnt) {
+          // Shoot-to-detonate TNT immediately with shockwave particles and sound
+          if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
+            this.multiplayer.sendTntTrigger(voxelHit.x, voxelHit.y, voxelHit.z, 0);
+          }
+          if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
+            this.particleManager.spawnExplosion(voxelHit.x, voxelHit.y, voxelHit.z);
+          }
+          if (sound && typeof sound.playExplosion === 'function') {
+            sound.playExplosion();
+          }
+        } else {
+          // NON-DESTRUCTIVE SHOOTING: Shooting MUST NEVER destroy terrain blocks!
+          if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
+            this.particleManager.spawnMuzzleFlash(targetPoint);
+          }
+        }
+      } else {
+        // No surface hit: tracer travels into the distance
+        targetPoint = {
+          x: origin.x + dir.x * 75,
+          y: origin.y + dir.y * 75,
+          z: origin.z + dir.z * 75
+        };
+      }
+
+      // 5. Render visible high-speed luminous 3D bullet tracer beam from gun barrel toward target
+      if (this.particleManager && typeof this.particleManager.spawnBulletTracer === 'function') {
+        this.particleManager.spawnBulletTracer(tracerStart, targetPoint);
+      }
+
+      // 6. Send multiplayer packet
       if (this.multiplayer && typeof this.multiplayer.sendWeaponShoot === 'function') {
         this.multiplayer.sendWeaponShoot({
-          origin: [origin.x, origin.y, origin.z],
+          origin: [tracerStart.x, tracerStart.y, tracerStart.z],
           dir: [dir.x, dir.y, dir.z],
           targetPlayerId,
           targetAnimalId,
-          hitPos: targetPlayerHit ? [origin.x + dir.x * targetPlayerHit.distance, origin.y + dir.y * targetPlayerHit.distance, origin.z + dir.z * targetPlayerHit.distance] : null
+          targetTnt: isTnt ? { x: voxelHit.x, y: voxelHit.y, z: voxelHit.z } : null,
+          hitPos: targetPoint ? [targetPoint.x, targetPoint.y, targetPoint.z] : null
         });
+      }
+    };
+
+    // Shoot-to-detonate TNT callback
+    this.controls.onShootTnt = (voxelHit) => {
+      if (!voxelHit) return;
+      if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
+        this.multiplayer.sendTntTrigger(voxelHit.x, voxelHit.y, voxelHit.z, 0);
       }
     };
 
@@ -174,6 +256,23 @@ class VoxelRealmsApp {
         this.multiplayer.sendTntTrigger(coords.x, coords.y, coords.z);
       }
     };
+
+    // Synchronized animal burst handler across clients
+    if (this.multiplayer) {
+      this.multiplayer.onAnimalBurst = (data) => {
+        if (!data) return;
+        const hitDir = data.dir || [0, 0, -1];
+        if (this.animalManager && typeof this.animalManager.burstAnimal === 'function') {
+          this.animalManager.burstAnimal(data.animalId, this.physics.pos, hitDir);
+        }
+        if (this.particleManager && typeof this.particleManager.spawnBloodParticles === 'function') {
+          const bx = data.x !== undefined ? data.x : 0;
+          const by = data.y !== undefined ? data.y : 25;
+          const bz = data.z !== undefined ? data.z : 0;
+          this.particleManager.spawnBloodParticles(bx, by, bz, hitDir);
+        }
+      };
+    }
   }
 
   animate() {

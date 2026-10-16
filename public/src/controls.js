@@ -71,12 +71,17 @@ export class Controls {
     this.onWeaponShoot = null;
     this.onPlaceTnt = null;
     this.onAimChange = null;
+    this.vehicleManager = null;
 
     // Build first person arm & tool attached to camera
     this.buildFirstPersonArm();
 
     this.setupListeners();
     this.setupTouchControls();
+  }
+
+  setVehicleManager(vm) {
+    this.vehicleManager = vm;
   }
 
   setLocalAvatar(avatar) {
@@ -87,6 +92,9 @@ export class Controls {
   }
 
   togglePerspective() {
+    if (this.vehicleManager && this.vehicleManager.isDriving()) {
+      return this.vehicleManager.toggleCameraMode();
+    }
     this.perspectiveIndex = (this.perspectiveIndex + 1) % 3;
     const modes = ['first', 'third-back', 'third-front'];
     this.perspective = modes[this.perspectiveIndex];
@@ -135,36 +143,90 @@ export class Controls {
     this.heldBlockMesh.position.set(0, -0.44, 0.12);
     this.armPivot.add(this.heldBlockMesh);
 
-    // 1st-Person Precision Voxel Sniper Rifle attached to hand
+    // 1st-Person Authentic Horizontal 3D Precision Tactical Rifle attached to hand
     this.rifleGroup = new THREE.Group();
-    this.rifleGroup.position.set(-0.04, -0.38, -0.12);
-    this.rifleGroup.rotation.set(Math.PI / 2 - 0.15, 0, 0);
+    this.rifleGroup.position.set(0, 0, 0);
+    this.rifleGroup.rotation.set(0, 0, 0);
 
-    const stockMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
-    const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.6 });
-    const barrelMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.35, metalness: 0.7 });
-    const lensMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, roughness: 0.2 });
-    const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.5, roughness: 0.3 });
+    const stockMat = new THREE.MeshStandardMaterial({ color: 0x4a2e18, roughness: 0.75 }); // Dark walnut wood stock
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.38, metalness: 0.75 }); // Gunmetal steel receiver
+    const barrelMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.32, metalness: 0.82 }); // Dark titanium barrel
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, roughness: 0.15 }); // Glowing cyan optical reticle
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.7, roughness: 0.28 }); // Polished brass muzzle brake
 
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.34), stockMat);
-    stock.position.set(0, -0.02, 0.16);
-    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.13, 0.38), metalMat);
-    receiver.position.set(0, 0.02, -0.12);
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.58), barrelMat);
-    barrel.position.set(0, 0.04, -0.52);
-    const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.09), goldMat);
-    muzzle.position.set(0, 0.04, -0.82);
-    const scopeBody = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.065, 0.32), metalMat);
-    scopeBody.position.set(0, 0.12, -0.16);
-    const scopeLens = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.02), lensMat);
-    scopeLens.position.set(0, 0.12, 0.01);
+    // 1. Stock: BoxGeometry(0.08, 0.13, 0.32) placed at (0, -0.03, 0.22)
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.13, 0.32), stockMat);
+    stock.position.set(0, -0.03, 0.22);
+    const buttPlate = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.13, 0.03), metalMat);
+    buttPlate.position.set(0, -0.03, 0.38);
 
-    this.rifleGroup.add(stock, receiver, barrel, muzzle, scopeBody, scopeLens);
+    // 2. Receiver & frame: BoxGeometry(0.09, 0.12, 0.34) at (0, 0.03, -0.10)
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.34), metalMat);
+    receiver.position.set(0, 0.03, -0.10);
+
+    // 3. Pistol Grip: BoxGeometry(0.07, 0.18, 0.09) rotated -22 deg at (0, -0.12, 0.06)
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.09), stockMat);
+    grip.position.set(0, -0.12, 0.06);
+    grip.rotation.x = -0.38;
+
+    // Trigger guard & trigger
+    const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.045, 0.07), metalMat);
+    triggerGuard.position.set(0, -0.05, -0.04);
+
+    // 4. Detachable Curved Magazine: BoxGeometry(0.065, 0.22, 0.12) at (0, -0.13, -0.08)
+    const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.22, 0.12), metalMat);
+    magazine.position.set(0, -0.13, -0.08);
+    magazine.rotation.x = 0.12;
+
+    // 5. Vented Handguard: BoxGeometry(0.08, 0.09, 0.42) at (0, 0.03, -0.42)
+    const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.09, 0.42), stockMat);
+    handguard.position.set(0, 0.03, -0.42);
+
+    // 6. Fluted Precision Barrel: BoxGeometry(0.045, 0.045, 0.65) at (0, 0.03, -0.72)
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.65), barrelMat);
+    barrel.position.set(0, 0.03, -0.72);
+
+    // 7. Tactical Muzzle Brake: BoxGeometry(0.065, 0.065, 0.10) at (0, 0.03, -1.06)
+    const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.065, 0.10), goldMat);
+    muzzle.position.set(0, 0.03, -1.06);
+    this.muzzleMesh = muzzle;
+
+    // 8. Elevated Optical Rail & Scope (optical center on Y=0.13)
+    const scopeRail = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.025, 0.26), metalMat);
+    scopeRail.position.set(0, 0.095, -0.10);
+    const scopeBody = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.36), metalMat);
+    scopeBody.position.set(0, 0.13, -0.14);
+    const scopeRings = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.06), metalMat);
+    scopeRings.position.set(0, 0.13, -0.14);
+    const scopeFront = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.05), metalMat);
+    scopeFront.position.set(0, 0.13, -0.32);
+    const scopeRear = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.04), metalMat);
+    scopeRear.position.set(0, 0.13, 0.04);
+    const scopeLens = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.01), lensMat);
+    scopeLens.position.set(0, 0.13, 0.06);
+
+    this.rifleGroup.add(
+      stock, buttPlate, receiver, grip, triggerGuard, magazine,
+      handguard, barrel, muzzle, scopeRail, scopeBody, scopeRings, scopeFront, scopeRear, scopeLens
+    );
     this.rifleGroup.visible = false;
     this.armPivot.add(this.rifleGroup);
 
     this.firstPersonArm.add(this.armPivot);
     this.punchProgress = 0;
+  }
+
+  getMuzzleWorldPosition(targetVec = new THREE.Vector3()) {
+    if (this.muzzleMesh) {
+      if (this.camera && typeof this.camera.updateMatrixWorld === 'function') {
+        this.camera.updateMatrixWorld(true);
+      }
+      return this.muzzleMesh.getWorldPosition(targetVec);
+    }
+    const eye = this.physics ? this.physics.getEyePosition() : this.camera.position;
+    const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, this.yaw, 0));
+    return targetVec.copy(eye).addScaledVector(forward, 0.8).addScaledVector(right, 0.25).add(new THREE.Vector3(0, -0.15, 0));
   }
 
   updateHeldBlock(blockId) {
@@ -216,12 +278,20 @@ export class Controls {
     if (this.heldBlockMesh) {
       this.heldBlockMesh.visible = !this.weaponsMode;
     }
+    if (!this.weaponsMode && typeof document !== 'undefined') {
+      const scopeOverlay = document.getElementById('rifle-scope-overlay');
+      if (scopeOverlay) scopeOverlay.classList.add('hidden');
+    }
   }
 
   setAiming(aiming) {
     const nextAim = Boolean(aiming) && this.weaponsMode;
     if (this.isAiming === nextAim) return this.isAiming;
     this.isAiming = nextAim;
+    if (!this.isAiming && typeof document !== 'undefined') {
+      const scopeOverlay = document.getElementById('rifle-scope-overlay');
+      if (scopeOverlay) scopeOverlay.classList.add('hidden');
+    }
     if (sound && typeof sound.playClick === 'function') {
       sound.playClick(this.isAiming ? 1.25 : 0.9);
     }
@@ -254,18 +324,29 @@ export class Controls {
     const dir = new THREE.Vector3(0, 0, -1);
     dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
 
-    // Long-range raycast for TNT blocks or distant surfaces (up to 75 blocks)
+    // Long-range raycast for TNT blocks or remote targets (up to 85 blocks)
+    // Non-destructive: Bullets NEVER destroy terrain blocks
     const savedReach = this.reachDistance;
-    this.reachDistance = 75.0;
+    this.reachDistance = 85.0;
     const longVoxelHit = this.raycastVoxel();
     this.reachDistance = savedReach;
     this.raycastVoxel();
 
+    const muzzleVec = this.getMuzzleWorldPosition(new THREE.Vector3());
+
     const shotData = {
       origin: { x: origin.x, y: origin.y, z: origin.z },
       dir: { x: dir.x, y: dir.y, z: dir.z },
+      muzzlePos: { x: muzzleVec.x, y: muzzleVec.y, z: muzzleVec.z },
       voxelHit: longVoxelHit ? { ...longVoxelHit } : null
     };
+
+    // Shoot-to-detonate TNT reactivity: if raycast struck a TNT block (BLOCKS.TNT = 19)
+    if (longVoxelHit && longVoxelHit.type === 19) {
+      if (this.onShootTnt) {
+        this.onShootTnt(longVoxelHit);
+      }
+    }
 
     if (this.onWeaponShoot) {
       this.onWeaponShoot(shotData);
@@ -398,6 +479,8 @@ export class Controls {
             target.closest('.mobile-action-btn') ||
             target.closest('#mobile-action-buttons') ||
             target.closest('#mobile-btn-cam') ||
+            target.closest('#mobile-btn-car') ||
+            target.closest('#btn-vehicle-action') ||
             target.closest('#weapons-hud-controls') ||
             target.closest('.weapon-hud-btn') ||
             target.closest('#virtual-joystick') ||
@@ -587,6 +670,18 @@ export class Controls {
         e.preventDefault();
         e.stopPropagation();
         this.togglePerspective();
+      }, { passive: false });
+    }
+
+    const btnCar = document.getElementById('mobile-btn-car');
+    if (btnCar && !btnCar.__fanBound) {
+      btnCar.__fanBound = true;
+      btnCar.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.vehicleManager) {
+          this.vehicleManager.handleInteract(this.physics);
+        }
       }, { passive: false });
     }
 
@@ -795,6 +890,10 @@ export class Controls {
         this.cycleSpeed();
         break;
       case 'KeyF':
+        if (this.vehicleManager && this.vehicleManager.handleInteract(this.physics)) {
+          e.preventDefault();
+          break;
+        }
         if (this.weaponsMode) {
           e.preventDefault();
           this.triggerShoot();
@@ -1005,6 +1104,37 @@ export class Controls {
   }
 
   update(dt) {
+    if (this.vehicleManager && this.vehicleManager.isDriving()) {
+      let forward = (this.keys.forward ? 1 : 0) - (this.keys.backward ? 1 : 0) + this.joystick.y;
+      let steer = (this.keys.left ? 1 : 0) - (this.keys.right ? 1 : 0) - this.joystick.x;
+      let brake = this.keys.jump;
+      let handbrake = this.keys.sprint;
+
+      this.vehicleManager.updateDriver(dt, {
+        forward,
+        steer,
+        brake,
+        handbrake
+      }, this.camera, this);
+
+      const car = this.vehicleManager.activeCar;
+      this.physics.pos.x = car.pos.x;
+      this.physics.pos.y = car.pos.y;
+      this.physics.pos.z = car.pos.z;
+      this.physics.vel.x = 0;
+      this.physics.vel.y = 0;
+      this.physics.vel.z = 0;
+      this.physics.action = 'driving';
+      this.yaw = car.yaw;
+
+      if (this.firstPersonArm) {
+        this.firstPersonArm.visible = false;
+      }
+
+      this.raycastVoxel();
+      return;
+    }
+
     // Calculate world movement vector from keyboard keys and virtual joystick
     let forward = (this.keys.forward ? 1 : 0) - (this.keys.backward ? 1 : 0) + this.joystick.y;
     let strafe = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0) + this.joystick.x;
@@ -1046,8 +1176,20 @@ export class Controls {
       }
     }
 
+    // Toggle #rifle-scope-overlay when aimBlend > 0.82
+    if (typeof document !== 'undefined') {
+      const scopeOverlay = document.getElementById('rifle-scope-overlay');
+      if (scopeOverlay) {
+        if (this.weaponsMode && this.aimBlend > 0.82) {
+          scopeOverlay.classList.remove('hidden');
+        } else {
+          scopeOverlay.classList.add('hidden');
+        }
+      }
+    }
+
     if (this.recoilProgress > 0) {
-      this.recoilProgress = Math.max(0, this.recoilProgress - dt * 6.0);
+      this.recoilProgress = Math.max(0, this.recoilProgress - dt * 6.5);
     }
 
     // Minecraft View bobbing calculation when walking or running on ground
@@ -1070,19 +1212,47 @@ export class Controls {
 
     // First-person punch, rifle scope aiming, and recoil animation
     if (this.armPivot) {
-      const recoilKick = Math.sin(this.recoilProgress * Math.PI) * 0.16;
       if (this.weaponsMode) {
-        // Interpolate arm & rifle between hip-carry and centered scope sightline
-        const baseX = 0.34 * (1 - this.aimBlend) + 0.04 * this.aimBlend;
-        const baseY = -0.28 * (1 - this.aimBlend) + (-0.16) * this.aimBlend;
-        const baseZ = -0.48 * (1 - this.aimBlend) + (-0.34) * this.aimBlend + recoilKick;
-        const bobArmY = isMoving ? Math.abs(Math.cos(this.bobTimer)) * 0.02 * bobScale : 0;
+        // Weapon bobbing calculation when walking or running (dampened 88% during ADS)
+        const weaponBobScale = 1.0 - this.aimBlend * 0.88;
+        const weaponBobX = isMoving ? Math.sin(this.bobTimer * 0.5) * 0.022 * this.bobAmount * weaponBobScale : 0;
+        const weaponBobY = isMoving ? (Math.abs(Math.sin(this.bobTimer)) * 0.016) * this.bobAmount * weaponBobScale : 0;
+        const weaponBobRoll = isMoving ? Math.sin(this.bobTimer * 0.5) * 0.012 * this.bobAmount * weaponBobScale : 0;
 
-        this.armPivot.position.set(baseX, baseY + bobArmY, baseZ);
+        // Tactical recoil kickback along Z and muzzle pitch rise along X
+        const recoilKick = Math.sin(this.recoilProgress * Math.PI) * 0.10;
+        const recoilPitch = -Math.sin(this.recoilProgress * Math.PI) * 0.09;
+
+        // Natural horizontal hip-carry vs centered scope sightline (ADS)
+        // In hip: authentic horizontal tactical rifle held naturally along camera -Z
+        const hipX = 0.24;
+        const hipY = -0.22;
+        const hipZ = -0.42;
+
+        // In ADS: optical axis (scope at local Y=0.13) centered directly on camera -Z (adsY = -0.13)
+        const adsX = 0.0;
+        const adsY = -0.13;
+        const adsZ = -0.30;
+
+        const curX = hipX * (1 - this.aimBlend) + adsX * this.aimBlend + weaponBobX;
+        const curY = hipY * (1 - this.aimBlend) + adsY * this.aimBlend + weaponBobY;
+        const curZ = hipZ * (1 - this.aimBlend) + adsZ * this.aimBlend + recoilKick;
+
+        this.armPivot.position.set(curX, curY, curZ);
+
+        // Rotation: horizontal with natural right-shoulder offset at hip, zero angle in ADS
+        const hipRotX = -0.02 + recoilPitch;
+        const hipRotY = 0.04;
+        const hipRotZ = -0.02 + weaponBobRoll;
+
+        const adsRotX = 0.0 + recoilPitch * 0.35;
+        const adsRotY = 0.0;
+        const adsRotZ = 0.0;
+
         this.armPivot.rotation.set(
-          -0.12 * (1 - this.aimBlend) + recoilKick * 1.1,
-          0.18 * (1 - this.aimBlend),
-          -0.05 * (1 - this.aimBlend)
+          hipRotX * (1 - this.aimBlend) + adsRotX * this.aimBlend,
+          hipRotY * (1 - this.aimBlend) + adsRotY * this.aimBlend,
+          hipRotZ * (1 - this.aimBlend) + adsRotZ * this.aimBlend
         );
       } else if (this.punchProgress > 0) {
         this.punchProgress -= dt * 6.5;

@@ -271,11 +271,57 @@ class RoomManager {
       }
     }
 
-    // 2. Check if shot targeted a synchronized animal (Animal bursts/explodes for all players)
+    // 2. Check if shot targeted a synchronized animal or NPC
     if (data.targetAnimalId) {
       const burstResult = room.gameState.hitAnimal(data.targetAnimalId, shooter.id);
-      if (burstResult) {
-        this.broadcast(room, MSG.ANIMAL_BURST, burstResult);
+      const payload = {
+        animalId: data.targetAnimalId,
+        shooterId: shooter.id,
+        dir: data.dir || [0, 0, -1],
+        hitPos: data.hitPos || null,
+        ...(burstResult || {})
+      };
+      if (burstResult && burstResult.x !== undefined) {
+        payload.x = burstResult.x;
+        payload.y = burstResult.y;
+        payload.z = burstResult.z;
+        payload.type = burstResult.type;
+      } else if (data.hitPos) {
+        payload.x = data.hitPos[0];
+        payload.y = data.hitPos[1];
+        payload.z = data.hitPos[2];
+        payload.type = 'npc';
+      }
+
+      this.broadcast(room, MSG.ANIMAL_BURST, payload);
+
+      // Despawn synchronization after 3 seconds: broadcast final removal
+      setTimeout(() => {
+        this.broadcast(room, MSG.ANIMALS_UPDATE, {
+          animals: room.gameState.getAnimalsSnapshot()
+        });
+      }, 3050);
+    }
+
+    // 3. Shoot-to-detonate TNT block immediately
+    if (data.targetTnt && typeof data.targetTnt === 'object') {
+      const tx = Math.round(data.targetTnt.x);
+      const ty = Math.round(data.targetTnt.y);
+      const tz = Math.round(data.targetTnt.z);
+      const explosion = room.gameState.detonateTnt(tx, ty, tz, 3);
+      this.broadcast(room, MSG.TNT_EXPLODE, explosion);
+      if (explosion.hitAnimals && explosion.hitAnimals.length > 0) {
+        for (const anim of explosion.hitAnimals) {
+          this.broadcast(room, MSG.ANIMAL_BURST, {
+            animalId: anim.id,
+            type: anim.type,
+            x: anim.x,
+            y: anim.y,
+            z: anim.z,
+            shooterId: shooter.id,
+            dir: data.dir || [0, 0, -1]
+          });
+        }
         this.broadcast(room, MSG.ANIMALS_UPDATE, {
           animals: room.gameState.getAnimalsSnapshot()
         });

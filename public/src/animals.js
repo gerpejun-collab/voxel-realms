@@ -9,6 +9,7 @@
  *    bridges, and mountain tunnels with rotating wheels, headlights, and taillights.
  */
 import * as THREE from 'three';
+import { BLOCKS, BLOCK_DEFS } from './blocks.js';
 
 export const ANIMAL_SPECIES = ['sheep', 'pig', 'cow', 'chicken', 'wolf', 'horse'];
 
@@ -40,6 +41,13 @@ class VoxelAnimal {
 
     this.legs = [];
     this.headGroup = null;
+
+    // Knockback & Despawn state
+    this.isKnockedDown = false;
+    this.knockdownTimer = 0;
+    this.isDying = false;
+    this.despawnTimer = 0;
+    this.knockbackVelocity = new THREE.Vector3();
 
     this.buildModel(type);
     this.scene.add(this.group);
@@ -391,7 +399,94 @@ class VoxelAnimal {
     this.state = data.state || 'idle';
   }
 
+  triggerKnockdown(dir = null) {
+    if (this.isKnockedDown || this.isDying) return;
+    this.isKnockedDown = true;
+    this.isDying = true;
+    this.knockdownTimer = 3.0; // Exactly 3-second despawn timer
+    this.despawnTimer = 3.0;
+    this.state = 'knockdown';
+
+    let kx = 0, kz = 0;
+    if (dir) {
+      const dx = (dir.x !== undefined) ? dir.x : (dir[0] || 0);
+      const dz = (dir.z !== undefined) ? dir.z : (dir[2] || 0);
+      const len = Math.hypot(dx, dz) || 1;
+      kx = dx / len;
+      kz = dz / len;
+    } else {
+      const angle = this.rotationY + Math.PI;
+      kx = Math.sin(angle);
+      kz = Math.cos(angle);
+    }
+    // Directional knockback velocity vector along bullet direction
+    this.knockbackVelocity.set(kx * 5.2, 3.2, kz * 5.2);
+    this.applyHurtColor(true);
+  }
+
+  triggerHit(dir = null) {
+    this.triggerKnockdown(dir);
+  }
+
+  applyHurtColor(isHurt) {
+    if (!this.group) return;
+    this.group.traverse((child) => {
+      if (child.isMesh && child.material) {
+        if (child.__origEmissive === undefined) {
+          child.__origEmissive = child.material.emissive ? child.material.emissive.getHex() : 0x000000;
+        }
+        if (child.material.emissive) {
+          child.material.emissive.setHex(isHurt ? 0xcc1111 : child.__origEmissive);
+        }
+      }
+    });
+  }
+
   update(dt, playerPos) {
+    if (this.isKnockedDown || this.isDying) {
+      this.knockdownTimer = Math.max(0, (this.knockdownTimer || this.despawnTimer) - dt);
+      this.despawnTimer = this.knockdownTimer;
+
+      // Apply knockback movement & gravity along bullet direction
+      this.position.x += this.knockbackVelocity.x * dt;
+      this.position.z += this.knockbackVelocity.z * dt;
+      this.position.y += this.knockbackVelocity.y * dt;
+
+      this.knockbackVelocity.x *= Math.pow(0.86, dt * 60);
+      this.knockbackVelocity.z *= Math.pow(0.86, dt * 60);
+      this.knockbackVelocity.y -= 20.0 * dt;
+
+      const gy = this.world && typeof this.world.getHeightAt === 'function'
+        ? this.world.getHeightAt(Math.floor(this.position.x), Math.floor(this.position.z)) + 1
+        : 25;
+
+      if (this.position.y <= gy) {
+        this.position.y = gy;
+        this.knockbackVelocity.y = 0;
+      }
+
+      this.group.position.copy(this.position);
+
+      // Knockdown tilt animation: smoothly rotate onto side (rotation.z = Math.PI / 2)
+      this.group.rotation.z = Math.min(Math.PI / 2, this.group.rotation.z + dt * 8.0);
+
+      // Halt leg swings during knockdown
+      for (const leg of this.legs) {
+        leg.rotation.x *= 0.8;
+      }
+
+      // Flash hurt red tint for initial impact
+      const flash = (this.knockdownTimer > 2.75) || (Math.floor(this.knockdownTimer * 6) % 2 === 0 && this.knockdownTimer > 2.2);
+      this.applyHurtColor(flash);
+
+      // Despawn after exactly 3.0 seconds
+      if (this.knockdownTimer <= 0) {
+        this.isDespawned = true;
+        this.dispose();
+      }
+      return;
+    }
+
     if (this.serverControlled) {
       // Smooth multiplayer interpolation
       this.position.lerp(this.targetPos, Math.min(1, dt * 6));
@@ -509,6 +604,12 @@ class RareNonHumanNpc {
     this.phase = Math.random() * Math.PI * 2;
     this.group = new THREE.Group();
     this.parts = {};
+    this.config = config;
+
+    // Knockback & Despawn state
+    this.isDying = false;
+    this.despawnTimer = 0;
+    this.knockbackVelocity = new THREE.Vector3();
 
     this.buildConstruct(config.kind);
     const groundY = this.world ? this.world.getHeightAt(Math.floor(this.homeX), Math.floor(this.homeZ)) + 1 : 25;
@@ -621,7 +722,77 @@ class RareNonHumanNpc {
     }
   }
 
+  triggerHit(dir = null) {
+    if (this.isDying) return;
+    this.isDying = true;
+    this.despawnTimer = 3.0; // 3 seconds despawn
+
+    let kx = 0, kz = 0;
+    if (dir) {
+      const dx = (dir.x !== undefined) ? dir.x : (dir[0] || 0);
+      const dz = (dir.z !== undefined) ? dir.z : (dir[2] || 0);
+      const len = Math.hypot(dx, dz) || 1;
+      kx = dx / len;
+      kz = dz / len;
+    } else {
+      kx = (Math.random() - 0.5);
+      kz = (Math.random() - 0.5);
+    }
+    this.knockbackVelocity.set(kx * 4.8, 3.8, kz * 4.8);
+    this.applyHurtColor(true);
+  }
+
+  applyHurtColor(isHurt) {
+    if (!this.group) return;
+    this.group.traverse((child) => {
+      if (child.isMesh && child.material) {
+        if (child.__origEmissive === undefined) {
+          child.__origEmissive = child.material.emissive ? child.material.emissive.getHex() : 0x000000;
+        }
+        if (child.material.emissive) {
+          child.material.emissive.setHex(isHurt ? 0xcc1111 : child.__origEmissive);
+        }
+      }
+    });
+  }
+
+  dispose() {
+    if (this.group && this.group.parent) {
+      this.group.parent.remove(this.group);
+    }
+  }
+
   update(dt) {
+    if (this.isDying) {
+      this.despawnTimer -= dt;
+
+      // Knockback kinematics
+      this.position.x += this.knockbackVelocity.x * dt;
+      this.position.z += this.knockbackVelocity.z * dt;
+      this.position.y += this.knockbackVelocity.y * dt;
+      this.knockbackVelocity.x *= Math.pow(0.85, dt * 60);
+      this.knockbackVelocity.z *= Math.pow(0.85, dt * 60);
+      this.knockbackVelocity.y -= 20.0 * dt;
+
+      const gy = this.world ? this.world.getHeightAt(Math.floor(this.position.x), Math.floor(this.position.z)) + 1 : 25;
+      if (this.position.y <= gy) {
+        this.position.y = gy;
+        this.knockbackVelocity.y = 0;
+      }
+
+      this.group.position.copy(this.position);
+      this.group.rotation.x = -0.35;
+      this.group.rotation.z = Math.sin(this.despawnTimer * 12) * 0.25;
+
+      const pulse = (Math.floor(this.despawnTimer * 8) % 2 === 0);
+      this.applyHurtColor(pulse);
+
+      if (this.despawnTimer <= 0) {
+        this.dispose();
+      }
+      return;
+    }
+
     this.phase += dt * 2.2;
     const radius = 3.2;
     const wx = this.homeX + Math.cos(this.phase * 0.35) * radius;
@@ -654,29 +825,409 @@ class RareNonHumanNpc {
 }
 
 /**
+ * Helpers for obstacle block detection
+ */
+const DEFAULT_BLOCKS = {
+  AIR: 0,
+  GRASS: 1,
+  DIRT: 2,
+  DIRT_DRY: 3,
+  STONE: 4,
+  COBBLESTONE: 5,
+  OAK_LOG: 6,
+  OAK_LEAVES: 7,
+  WOOD_PLANK: 8,
+  SAND: 9,
+  GRAVEL: 10,
+  WATER: 11,
+  SNOW: 12,
+  ICE: 13,
+  BRICK: 14,
+  CLAY: 15,
+  GLASS: 16,
+  IRON_ORE: 17,
+  GOLD_ORE: 18,
+  TNT: 19,
+  ASPHALT: 20
+};
+
+function getSafeBlocks() {
+  if (typeof BLOCKS !== 'undefined' && BLOCKS) return BLOCKS;
+  return DEFAULT_BLOCKS;
+}
+
+function getSafeBlockDefs() {
+  if (typeof BLOCK_DEFS !== 'undefined' && BLOCK_DEFS) return BLOCK_DEFS;
+  return null;
+}
+
+function isSolidOrObstacle(block) {
+  if (block === null || block === undefined || block === 0 || block === false) return false;
+  if (block === true) return true;
+  const blocks = getSafeBlocks();
+  const defs = getSafeBlockDefs();
+  if (typeof block === 'number') {
+    if (block === blocks.AIR || block === blocks.WATER) return false;
+    if (block === blocks.TNT) return true;
+    if (defs && defs[block]) return Boolean(defs[block].solid);
+    return true; // Any other block number is a solid block
+  }
+  if (typeof block === 'object') {
+    if (block.id === blocks.AIR || block.type === blocks.AIR) return false;
+    if (block.id === blocks.WATER || block.type === blocks.WATER) return false;
+    if (block.id === blocks.TNT || block.type === blocks.TNT || block.isExplosive) return true;
+    if (block.solid !== undefined) return Boolean(block.solid);
+    return true;
+  }
+  return true;
+}
+
+/**
  * Realistic Voxel Car that drives deterministically along structured highway lanes
+ * with forward obstacle probing (2.5 blocks ahead), smooth deceleration, and obstacle avoidance.
  */
 export class VoxelCar {
   constructor(route, arg1, arg2) {
     this.route = route;
-    if (arg1 && typeof arg1.getBlock === 'function' && arg2 && typeof arg2.add === 'function') {
-      this.scene = arg2;
+    if (arg1 && typeof arg1.getBlock === 'function') {
       this.world = arg1;
+      this.scene = (arg2 && typeof arg2.add === 'function') ? arg2 : null;
+    } else if (arg2 && typeof arg2.getBlock === 'function') {
+      this.world = arg2;
+      this.scene = (arg1 && typeof arg1.add === 'function') ? arg1 : null;
     } else {
-      this.scene = arg1;
+      this.scene = (arg1 && typeof arg1.add === 'function') ? arg1 : null;
       this.world = arg2;
     }
+
     this.group = new THREE.Group();
     this.wheels = [];
     this.progress = route.initialProgress || 0;
-    this.speed = route.speed || 9.5;
+    this.maxSpeed = route.speed !== undefined ? route.speed : 9.5;
+    this.currentSpeed = this.maxSpeed;
+    this.speed = this.currentSpeed;
     this.direction = 1;
     this.position = new THREE.Vector3();
     this.rotationY = 0;
 
+    // Obstacle avoidance & collision intelligence state
+    this.probeDistance = 2.5;       // Probes 2.5 blocks ahead along travel heading
+    this.decelerationRate = 22.0;   // Smooth braking deceleration (units/s^2)
+    this.accelerationRate = 14.0;   // Smooth throttle acceleration (units/s^2)
+    this.hasObstacle = false;
+    this.isBlocked = false;
+    this.isStopped = false;
+    this.isBraking = false;
+    this.isHalted = false;
+    this.targetSpeed = this.maxSpeed;
+    this.trafficManager = null;
+    this.taillights = [];
+    this.headlights = [];
+
+    // Set initial position and orientation based on initialProgress
+    const initialPos = this.computePositionAtProgress(this.progress);
+    this.position.set(initialPos.x, initialPos.y, initialPos.z);
+    this.rotationY = this.computeRotationAtProgress(this.progress);
+
     this.buildCarModel(route.color || 0xd92b2b);
-    this.scene.add(this.group);
+    if (this.scene && typeof this.scene.add === 'function') {
+      this.scene.add(this.group);
+    }
     this.update(0.016);
+  }
+
+  computePositionAtProgress(prog) {
+    let wx, wz;
+    if (this.route.type === 'circle') {
+      wx = this.route.cx + Math.cos(prog) * this.route.radius;
+      wz = this.route.cz + Math.sin(prog) * this.route.radius;
+    } else {
+      const dx = this.route.x2 - this.route.x1;
+      const dz = this.route.z2 - this.route.z1;
+      wx = this.route.x1 + dx * prog;
+      wz = this.route.z1 + dz * prog;
+    }
+    const roadY = (this.world && typeof this.world.getRoadHeightAt === 'function')
+      ? this.world.getRoadHeightAt(Math.round(wx), Math.round(wz)) + 1
+      : 25;
+    return { x: wx, y: roadY, z: wz };
+  }
+
+  computeRotationAtProgress(prog) {
+    if (this.route.type === 'circle') {
+      const tx = -Math.sin(prog);
+      const tz = Math.cos(prog);
+      return Math.atan2(tx, tz);
+    } else {
+      const dx = this.route.x2 - this.route.x1;
+      const dz = this.route.z2 - this.route.z1;
+      return Math.atan2(dx, dz);
+    }
+  }
+
+  getHeadingVector() {
+    if (this.route.type === 'circle') {
+      const tx = -Math.sin(this.progress);
+      const tz = Math.cos(this.progress);
+      return { x: tx, z: tz };
+    } else {
+      const dx = this.route.x2 - this.route.x1;
+      const dz = this.route.z2 - this.route.z1;
+      const len = Math.hypot(dx, dz) || 1;
+      return { x: dx / len, z: dz / len };
+    }
+  }
+
+  /**
+   * Casts 3 parallel forward rays at road heights +1 and +2 (center, left +0.6, right -0.6)
+   * interrogating world.getBlock to detect walls, buildings, placed blocks, monuments,
+   * and TNT blocks up to lookAheadDist (default 8.0 blocks) ahead.
+   *
+   * @param {number} [lookAheadDist=8.0] - Maximum look-ahead distance in blocks
+   * @returns {{ distance: number, blockId: number, x: number, y: number, z: number, isObstacle: boolean } | null}
+   */
+  checkObstacleAhead(lookAheadDist = 8.0) {
+    if (!this.world || typeof this.world.getBlock !== 'function') {
+      return null;
+    }
+
+    const heading = this.getHeadingVector();
+    const hx = heading.x;
+    const hz = heading.z;
+    const curX = this.position.x;
+    const curZ = this.position.z;
+    const curY = Math.floor(this.position.y || 25);
+
+    // Lateral perpendicular vector: pointing to the right (+0.6) / left (-0.6)
+    const perpX = hz;
+    const perpZ = -hx;
+
+    // 3 parallel rays: center (0.0), left (-0.6), right (+0.6)
+    const lateralOffsets = [0.0, -0.6, 0.6];
+    const frontBumper = 1.55;
+    const maxDist = (typeof lookAheadDist === 'number' && lookAheadDist > 0) ? lookAheadDist : 8.0;
+
+    // First check direct contact at front bumper (d = 0.0)
+    for (const lat of lateralOffsets) {
+      const sampleX = curX + hx * frontBumper + perpX * lat;
+      const sampleZ = curZ + hz * frontBumper + perpZ * lat;
+      const roadY = (typeof this.world.getRoadHeightAt === 'function')
+        ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ)) + 1
+        : curY;
+      const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
+      if (Math.floor(roadY) !== curY) {
+        yLevels.push(curY, curY + 1);
+      }
+      for (const iy of yLevels) {
+        const block = this.world.getBlock(Math.floor(sampleX), iy, Math.floor(sampleZ));
+        if (isSolidOrObstacle(block)) {
+          return {
+            distance: 0.0,
+            blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
+            x: sampleX,
+            y: iy,
+            z: sampleZ,
+            isObstacle: true
+          };
+        }
+      }
+    }
+
+    // Step along 3 forward rays from 0.1m up to maxDist in 0.1m increments
+    for (let d = 0.1; d <= maxDist + 0.001; d += 0.1) {
+      const roundedD = Math.round(d * 10) / 10;
+      const distFromCenter = frontBumper + roundedD;
+
+      for (const lat of lateralOffsets) {
+        const sampleX = curX + hx * distFromCenter + perpX * lat;
+        const sampleZ = curZ + hz * distFromCenter + perpZ * lat;
+
+        const roadY = (typeof this.world.getRoadHeightAt === 'function')
+          ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ)) + 1
+          : curY;
+
+        // Heights: road surface + 1 (hood height) and road surface + 2 (windshield height)
+        const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
+        if (Math.floor(roadY) !== curY) {
+          yLevels.push(curY, curY + 1);
+        }
+
+        for (const iy of yLevels) {
+          const bx = Math.floor(sampleX);
+          const bz = Math.floor(sampleZ);
+          const block = this.world.getBlock(bx, iy, bz);
+
+          if (isSolidOrObstacle(block)) {
+            return {
+              distance: roundedD,
+              blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
+              x: sampleX,
+              y: iy,
+              z: sampleZ,
+              isObstacle: true
+            };
+          }
+        }
+      }
+    }
+
+    // Dynamic vehicle ahead detection in the same traffic lane
+    if (this.trafficManager && Array.isArray(this.trafficManager.cars)) {
+      for (const other of this.trafficManager.cars) {
+        if (other === this) continue;
+        const toX = other.position.x - curX;
+        const toZ = other.position.z - curZ;
+        const forwardProj = toX * hx + toZ * hz;
+        const lateralProj = Math.abs(toX * perpX + toZ * perpZ);
+        if (forwardProj > frontBumper && forwardProj <= maxDist + frontBumper && lateralProj < 1.35) {
+          const carDist = Math.max(0.1, Math.round((forwardProj - frontBumper * 2) * 10) / 10);
+          return {
+            distance: carDist,
+            isVehicle: true,
+            x: other.position.x,
+            y: other.position.y,
+            z: other.position.z,
+            isObstacle: true
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Forward obstacle probing along travel heading using world.getBlock(...)
+   * Maintains compatibility with legacy probe checks.
+   */
+  checkObstacle(distance = 2.5) {
+    if (!this.world || typeof this.world.getBlock !== 'function') {
+      this.hasObstacle = false;
+      this.isBlocked = false;
+      return false;
+    }
+
+    const heading = this.getHeadingVector();
+    const hx = heading.x;
+    const hz = heading.z;
+    const curX = this.position.x;
+    const curZ = this.position.z;
+    const curY = Math.floor(this.position.y || 25);
+
+    // Lateral perpendicular vector for checking lane width
+    const perpX = hz;
+    const perpZ = -hx;
+
+    // Distances to probe: probe distance plus intermediate samples along heading
+    const probeDist = typeof distance === 'number' ? distance : 2.5;
+    const sampleDistances = [probeDist];
+    if (probeDist >= 1.8) {
+      sampleDistances.unshift(1.0, 1.8);
+    }
+
+    const lateralOffsets = [0, -0.45, 0.45];
+
+    for (const d of sampleDistances) {
+      const baseX = curX + hx * d;
+      const baseZ = curZ + hz * d;
+
+      for (const lat of lateralOffsets) {
+        const px = baseX + perpX * lat;
+        const pz = baseZ + perpZ * lat;
+
+        const roadY = (typeof this.world.getRoadHeightAt === 'function')
+          ? this.world.getRoadHeightAt(Math.round(px), Math.round(pz)) + 1
+          : curY;
+
+        const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
+        if (Math.floor(roadY) !== curY) {
+          yLevels.push(curY, curY + 1);
+        }
+
+        const coords = [
+          [Math.floor(px), Math.floor(pz)],
+          [Math.round(px), Math.round(pz)]
+        ];
+
+        for (const [ix, iz] of coords) {
+          for (const iy of yLevels) {
+            const block = this.world.getBlock(ix, iy, iz);
+            if (isSolidOrObstacle(block)) {
+              this.hasObstacle = true;
+              this.isBlocked = true;
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    // Car-to-car collision intelligence if inside TrafficManager
+    if (this.trafficManager && Array.isArray(this.trafficManager.cars)) {
+      for (const other of this.trafficManager.cars) {
+        if (other === this) continue;
+        const toX = other.position.x - curX;
+        const toZ = other.position.z - curZ;
+        const forwardProj = toX * hx + toZ * hz;
+        const lateralProj = Math.abs(toX * perpX + toZ * perpZ);
+        if (forwardProj > 0.2 && forwardProj <= 3.8 && lateralProj < 1.35) {
+          this.hasObstacle = true;
+          this.isBlocked = true;
+          return true;
+        }
+      }
+    }
+
+    this.hasObstacle = false;
+    this.isBlocked = false;
+    return false;
+  }
+
+  probeObstacle(distance = 2.5) {
+    return this.checkObstacle(distance);
+  }
+
+  isObstacleAhead(distance = 2.5) {
+    return this.checkObstacle(distance);
+  }
+
+  /**
+   * Checks if candidate car position penetrates any solid obstacle block or wall
+   */
+  isCollisionAt(x, z, hx, hz) {
+    if (!this.world || typeof this.world.getBlock !== 'function') return false;
+    const curY = Math.floor(this.position.y || 25);
+    // Bumper check: front center and front corners (3 points)
+    const bumperOffsets = [
+      [0, 1.55],
+      [-0.60, 1.55],
+      [0.60, 1.55]
+    ];
+    const perpX = hz;
+    const perpZ = -hx;
+
+    for (const [lat, fwd] of bumperOffsets) {
+      const cx = x + hx * fwd + perpX * lat;
+      const cz = z + hz * fwd + perpZ * lat;
+
+      const roadY = (typeof this.world.getRoadHeightAt === 'function')
+        ? this.world.getRoadHeightAt(Math.round(cx), Math.round(cz)) + 1
+        : curY;
+
+      const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
+      for (const iy of yLevels) {
+        if (isSolidOrObstacle(this.world.getBlock(Math.floor(cx), iy, Math.floor(cz)))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  setTaillightsBraking(isBraking) {
+    if (this.taillightMat && this.taillightMat.emissive && typeof this.taillightMat.emissive.setHex === 'function') {
+      this.taillightMat.emissive.setHex(isBraking ? 0xff0000 : 0x991b1b);
+    }
   }
 
   buildCarModel(bodyColor) {
@@ -687,6 +1238,10 @@ export class VoxelCar {
     const rimMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
     const headlightMat = new THREE.MeshLambertMaterial({ color: 0xfef08a, emissive: 0xca8a04 });
     const taillightMat = new THREE.MeshLambertMaterial({ color: 0xef4444, emissive: 0x991b1b });
+    this.taillightMat = taillightMat;
+    this.headlightMat = headlightMat;
+    this.taillights = [];
+    this.headlights = [];
 
     // Lower chassis & bumpers (1.6m wide, 0.45m tall, 3.1m long)
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.42, 3.1), chassisMat);
@@ -717,6 +1272,8 @@ export class VoxelCar {
       const tl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.2, 0.08), taillightMat);
       tl.position.set(lx, 0.74, -1.50);
       this.group.add(hl, tl);
+      this.headlights.push(hl);
+      this.taillights.push(tl);
     }
 
     // 4 Rotating Voxel Wheels
@@ -737,49 +1294,144 @@ export class VoxelCar {
     }
   }
 
-  update(dt) {
-    if (this.route.type === 'circle') {
-      // Smooth circular roundabout route around Central Spawn Plaza
-      const angularSpeed = this.speed / this.route.radius;
-      this.progress = (this.progress + angularSpeed * dt) % (Math.PI * 2);
-      const wx = this.route.cx + Math.cos(this.progress) * this.route.radius;
-      const wz = this.route.cz + Math.sin(this.progress) * this.route.radius;
-      const roadY = (this.world && typeof this.world.getRoadHeightAt === 'function')
-        ? this.world.getRoadHeightAt(Math.round(wx), Math.round(wz)) + 1
-        : 25;
+  update(dt = 0.016) {
+    const clampedDt = Math.min(Math.max(dt, 0), 0.1);
 
-      this.position.set(wx, roadY, wz);
-      // Tangent direction along circle
-      const tx = -Math.sin(this.progress);
-      const tz = Math.cos(this.progress);
-      this.rotationY = Math.atan2(tx, tz);
-    } else {
-      // Linear highway lane between (x1, z1) and (x2, z2)
-      const dx = this.route.x2 - this.route.x1;
-      const dz = this.route.z2 - this.route.z1;
-      const totalLen = Math.hypot(dx, dz) || 1;
-      this.progress += (this.speed * dt) / totalLen;
-      if (this.progress > 1) {
-        this.progress -= 1;
+    // Heading and orientation
+    this.rotationY = this.computeRotationAtProgress(this.progress);
+    const heading = this.getHeadingVector();
+    const hx = heading.x;
+    const hz = heading.z;
+
+    // Obstacle detection raycasting (up to 8 blocks ahead)
+    const obsAhead = this.checkObstacleAhead(8.0);
+    // Legacy probe for compatibility with test assertions on checkObstacle(2.5)
+    const probeBlocked = this.checkObstacle(this.probeDistance);
+    const obstacleDetected = (obsAhead !== null) || probeBlocked;
+
+    this.hasObstacle = obstacleDetected;
+    this.isBlocked = obstacleDetected;
+
+    // Target speed calculation:
+    // - If obstacle distance <= 1.8m: set target speed = 0, halt completely before obstacle
+    // - If obstacle distance 1.8m < d <= 7.5m: smoothly decelerate linearly toward 0
+    // - When clear: target speed = maxSpeed (cruising speed 8.0 .. 14.0 m/s)
+    let targetSpeed = this.maxSpeed;
+    let isBraking = false;
+
+    if (obsAhead) {
+      const d = obsAhead.distance;
+      if (d <= 1.8) {
+        targetSpeed = 0.0;
+        isBraking = true;
+      } else if (d <= 7.5) {
+        // Smooth linear deceleration toward 0
+        const factor = (d - 1.8) / (7.5 - 1.8);
+        targetSpeed = this.maxSpeed * Math.max(0, Math.min(1, factor));
+        isBraking = true;
       }
-
-      const wx = this.route.x1 + dx * this.progress;
-      const wz = this.route.z1 + dz * this.progress;
-      const roadY = (this.world && typeof this.world.getRoadHeightAt === 'function')
-        ? this.world.getRoadHeightAt(Math.round(wx), Math.round(wz)) + 1
-        : 25;
-
-      this.position.set(wx, roadY, wz);
-      this.rotationY = Math.atan2(dx, dz);
+    } else if (probeBlocked) {
+      targetSpeed = 0.0;
+      isBraking = true;
     }
 
-    this.group.position.copy(this.position);
-    this.group.rotation.y = this.rotationY;
+    this.targetSpeed = targetSpeed;
+
+    // Smooth deceleration / acceleration toward targetSpeed
+    if (this.currentSpeed > targetSpeed) {
+      this.currentSpeed = Math.max(targetSpeed, this.currentSpeed - this.decelerationRate * clampedDt);
+      this.isBraking = true;
+    } else if (this.currentSpeed < targetSpeed) {
+      this.currentSpeed = Math.min(targetSpeed, this.currentSpeed + this.accelerationRate * clampedDt);
+      this.isBraking = isBraking;
+    } else {
+      this.isBraking = isBraking;
+    }
+
+    this.speed = this.currentSpeed;
+    this.isStopped = (this.currentSpeed <= 0.001);
+    if (this.isStopped) {
+      this.currentSpeed = 0;
+      this.speed = 0;
+    }
+    this.isHalted = (this.currentSpeed === 0 && obstacleDetected);
+
+    // If obstacle is <= 1.8m, enforce complete halt without clipping or passing through
+    if (obsAhead && obsAhead.distance <= 1.8) {
+      this.currentSpeed = 0;
+      this.speed = 0;
+      this.isStopped = true;
+      this.isHalted = true;
+      this.isBraking = true;
+    }
+
+    // Taillight brake light indication:
+    // While braking or halted, set vehicle taillights to bright red emissive (0xff0000).
+    // When obstacle clears or is removed, restore normal taillights (0x991b1b).
+    const shouldBrakeLights = this.isBraking || this.isHalted || (obsAhead !== null) || (this.currentSpeed < this.maxSpeed - 0.05);
+    if (this.taillightMat && this.taillightMat.emissive && typeof this.taillightMat.emissive.setHex === 'function') {
+      this.taillightMat.emissive.setHex(shouldBrakeLights ? 0xff0000 : 0x991b1b);
+    }
+
+    // Advance vehicle along lane if moving
+    if (this.currentSpeed > 0) {
+      let candidateProgress = this.progress;
+      let candPos;
+
+      if (this.route.type === 'circle') {
+        const angularSpeed = this.currentSpeed / this.route.radius;
+        candidateProgress = (this.progress + angularSpeed * clampedDt) % (Math.PI * 2);
+        candPos = this.computePositionAtProgress(candidateProgress);
+      } else {
+        const dx = this.route.x2 - this.route.x1;
+        const dz = this.route.z2 - this.route.z1;
+        const totalLen = Math.hypot(dx, dz) || 1;
+        candidateProgress = this.progress + (this.currentSpeed * clampedDt) / totalLen;
+        if (candidateProgress > 1) {
+          candidateProgress -= 1;
+        }
+        candPos = this.computePositionAtProgress(candidateProgress);
+      }
+
+      // Check if moving to candidate position would cause bumper to collide with an obstacle
+      const candHeading = this.route.type === 'circle'
+        ? { x: -Math.sin(candidateProgress), z: Math.cos(candidateProgress) }
+        : heading;
+
+      if (this.isCollisionAt(candPos.x, candPos.z, candHeading.x, candHeading.z)) {
+        // Halt before colliding
+        this.currentSpeed = 0;
+        this.speed = 0;
+        this.isStopped = true;
+      } else {
+        this.progress = candidateProgress;
+        this.position.set(candPos.x, candPos.y, candPos.z);
+        this.rotationY = this.computeRotationAtProgress(this.progress);
+      }
+    } else {
+      // Re-anchor Y to road height when stationary
+      const roadY = (this.world && typeof this.world.getRoadHeightAt === 'function')
+        ? this.world.getRoadHeightAt(Math.round(this.position.x), Math.round(this.position.z)) + 1
+        : (this.position.y || 25);
+      this.position.y = roadY;
+    }
+
+    // Update 3D scene group transform
+    if (this.group) {
+      if (this.group.position && typeof this.group.position.copy === 'function') {
+        this.group.position.copy(this.position);
+      }
+      if (this.group.rotation) {
+        this.group.rotation.y = this.rotationY;
+      }
+    }
 
     // Spin wheels proportionally to linear speed
-    const wheelSpin = this.speed * dt * 2.6;
+    const wheelSpin = this.currentSpeed * clampedDt * 2.6;
     for (const w of this.wheels) {
-      w.rotation.x += wheelSpin;
+      if (w && w.rotation) {
+        w.rotation.x += wheelSpin;
+      }
     }
   }
 }
@@ -789,6 +1441,12 @@ export class TrafficManager {
     if (arg1 && typeof arg1.getBlock === 'function' && arg2 && typeof arg2.add === 'function') {
       this.scene = arg2;
       this.world = arg1;
+    } else if (arg1 && typeof arg1.getBlock === 'function') {
+      this.world = arg1;
+      this.scene = arg2;
+    } else if (arg2 && typeof arg2.getBlock === 'function') {
+      this.scene = arg1;
+      this.world = arg2;
     } else {
       this.scene = arg1;
       this.world = arg2;
@@ -823,8 +1481,14 @@ export class TrafficManager {
     ];
 
     for (const r of routes) {
-      this.cars.push(new VoxelCar(r, this.scene, this.world));
+      const car = new VoxelCar(r, this.scene, this.world);
+      car.trafficManager = this;
+      this.cars.push(car);
     }
+  }
+
+  getCars() {
+    return this.cars;
   }
 
   update(dt) {
@@ -921,6 +1585,7 @@ export class AnimalManager {
     // Remove animals that were despawned or burst on server
     for (let i = this.animals.length - 1; i >= 0; i--) {
       const a = this.animals[i];
+      if (a.isDying) continue; // Keep entity visible during 3-second knockback / despawn
       if (!activeIds.has(a.id)) {
         a.dispose();
         this.animalsById.delete(a.id);
@@ -955,13 +1620,15 @@ export class AnimalManager {
   }
 
   /**
-   * Raycast against active animals for rifle shooting
+   * Raycast against active animals and rare non-human NPCs for rifle shooting
    */
   getHitAnimal(rayOrigin, rayDir, maxDist = 75) {
     let closest = null;
     let closestDist = maxDist;
+    let isNpc = false;
 
     for (const animal of this.animals) {
+      if (animal.isDying) continue;
       const center = new THREE.Vector3(animal.position.x, animal.position.y + 0.65, animal.position.z);
       const toCenter = center.clone().sub(rayOrigin);
       const proj = toCenter.dot(rayDir);
@@ -972,51 +1639,89 @@ export class AnimalManager {
       if (perpDistSq <= hitRadius * hitRadius) {
         closestDist = proj;
         closest = animal;
+        isNpc = false;
+      }
+    }
+
+    // Also raycast against extraordinary rare non-human NPCs
+    for (const npc of this.npcs) {
+      if (npc.isDying) continue;
+      const center = new THREE.Vector3(npc.position.x, npc.position.y + 1.2, npc.position.z);
+      const toCenter = center.clone().sub(rayOrigin);
+      const proj = toCenter.dot(rayDir);
+      if (proj < 0 || proj > closestDist) continue;
+
+      const perpDistSq = toCenter.lengthSq() - proj * proj;
+      const hitRadius = 1.35;
+      if (perpDistSq <= hitRadius * hitRadius) {
+        closestDist = proj;
+        closest = npc;
+        isNpc = true;
       }
     }
 
     if (!closest) return null;
     return {
-      id: closest.id,
-      type: closest.type,
+      id: closest.id || (closest.config && closest.config.id) || 'npc',
+      type: closest.type || (closest.config && closest.config.kind) || 'animal',
       x: closest.position.x,
-      y: closest.position.y + 0.6,
-      z: closest.position.z
+      y: closest.position.y + (isNpc ? 1.0 : 0.6),
+      z: closest.position.z,
+      distance: closestDist,
+      isNpc
     };
   }
 
   /**
-   * Burst / respawn an animal when shot or caught in a TNT explosion
+   * Burst / knockback an animal or NPC when shot or caught in a TNT explosion
    */
-  burstAnimal(id, playerPos = { x: 0, z: 0 }) {
+  burstAnimal(id, playerPos = { x: 0, z: 0 }, dir = null) {
     const animal = this.animalsById.get(id);
-    if (!animal) return null;
-
-    const burstPos = {
-      x: animal.position.x,
-      y: animal.position.y + 0.6,
-      z: animal.position.z,
-      type: animal.type
-    };
-
-    if (this.serverSynced) {
-      animal.dispose();
-      this.animalsById.delete(id);
-      const idx = this.animals.indexOf(animal);
-      if (idx !== -1) this.animals.splice(idx, 1);
-    } else {
-      animal.spawnNear(playerPos.x || 0, playerPos.z || 0, 18, 44);
+    if (animal) {
+      animal.triggerHit(dir);
+      return {
+        x: animal.position.x,
+        y: animal.position.y + 0.6,
+        z: animal.position.z,
+        type: animal.type
+      };
     }
 
-    return burstPos;
+    const npc = this.npcs.find(n => n.id === id || (n.config && n.config.id === id));
+    if (npc) {
+      npc.triggerHit(dir);
+      return {
+        x: npc.position.x,
+        y: npc.position.y + 1.0,
+        z: npc.position.z,
+        type: npc.config ? npc.config.kind : 'npc'
+      };
+    }
+
+    return null;
+  }
+
+  triggerAnimalHit(id, dir = null) {
+    return this.burstAnimal(id, { x: 0, z: 0 }, dir);
   }
 
   update(dt, playerPos) {
-    for (const animal of this.animals) {
+    for (let i = this.animals.length - 1; i >= 0; i--) {
+      const animal = this.animals[i];
       animal.update(dt, playerPos);
+      if (animal.isDying && animal.despawnTimer <= 0) {
+        animal.dispose();
+        this.animalsById.delete(animal.id);
+        this.animals.splice(i, 1);
+      }
     }
-    for (const npc of this.npcs) {
+    for (let i = this.npcs.length - 1; i >= 0; i--) {
+      const npc = this.npcs[i];
       npc.update(dt);
+      if (npc.isDying && npc.despawnTimer <= 0) {
+        npc.dispose();
+        this.npcs.splice(i, 1);
+      }
     }
     if (this.traffic) {
       this.traffic.update(dt);

@@ -204,9 +204,17 @@ export class MultiplayerClient {
         break;
 
       case 'weapon_shot_fx':
-        if (data && data.shooterId !== this.myId && this.particles && typeof this.particles.spawnMuzzleFlash === 'function') {
+        if (data && data.shooterId !== this.myId) {
           const o = Array.isArray(data.origin) ? { x: data.origin[0], y: data.origin[1], z: data.origin[2] } : null;
-          this.particles.spawnMuzzleFlash(o);
+          const hp = Array.isArray(data.hitPos) ? { x: data.hitPos[0], y: data.hitPos[1], z: data.hitPos[2] } : null;
+          const d = Array.isArray(data.dir) ? { x: data.dir[0], y: data.dir[1], z: data.dir[2] } : { x: 0, y: 0, z: -1 };
+          if (o && this.particles && typeof this.particles.spawnMuzzleFlash === 'function') {
+            this.particles.spawnMuzzleFlash(o);
+          }
+          if (o && this.particles && typeof this.particles.spawnBulletTracer === 'function') {
+            const target = hp || { x: o.x + d.x * 65, y: o.y + d.y * 65, z: o.z + d.z * 65 };
+            this.particles.spawnBulletTracer(o, target);
+          }
         }
         break;
 
@@ -224,13 +232,24 @@ export class MultiplayerClient {
 
       case 'tnt_explode':
         if (data) {
-          if (Array.isArray(data.destroyed)) {
-            for (const [bx, by, bz] of data.destroyed) {
-              this.world.setBlock(bx, by, bz, 0, true);
+          const destroyed = data.destroyedBlocks || data.destroyed;
+          if (Array.isArray(destroyed)) {
+            for (const [bx, by, bz] of destroyed) {
+              if (typeof this.world.applyBlockDelta === 'function') {
+                this.world.applyBlockDelta(bx, by, bz, 0);
+              } else if (typeof this.world.setBlock === 'function') {
+                this.world.setBlock(bx, by, bz, 0, true);
+              }
+            }
+            if (typeof this.checkAvatarsGroundAfterBlockBreak === 'function') {
+              this.checkAvatarsGroundAfterBlockBreak();
             }
           }
           if (this.particles && typeof this.particles.spawnExplosion === 'function') {
             this.particles.spawnExplosion(data.x, data.y, data.z);
+          }
+          if (sound && typeof sound.playExplosion === 'function') {
+            sound.playExplosion();
           }
           if (this.onTntExplode) {
             this.onTntExplode(data);
@@ -240,7 +259,7 @@ export class MultiplayerClient {
 
       case 'block_update':
         // Synchronized block change
-        const { x, y, z, blockType, playerId } = data;
+        const { x, y, z, blockType, playerId, affectedPlayers } = data;
         const key = `${x},${y},${z}`;
         this.pendingModifications.delete(key);
 
@@ -257,7 +276,26 @@ export class MultiplayerClient {
           if (remote) remote.triggerSwing();
         }
 
-        this.world.setBlock(x, y, z, blockType, true);
+        // Apply authoritative block delta across client world
+        this.world.applyBlockDelta(x, y, z, blockType);
+
+        // If block was broken, immediately check supporting blocks and update ground detection
+        if (blockType === 0) {
+          this.checkAvatarsGroundAfterBlockBreak(x, y, z);
+        }
+
+        // If server provided affected players who fell, synchronize their authoritative positions
+        if (Array.isArray(affectedPlayers)) {
+          for (const ap of affectedPlayers) {
+            if (ap.id !== this.myId) {
+              const remote = this.remoteAvatars.get(ap.id);
+              if (remote) {
+                remote.setTargetState(ap.pos, null, null);
+                remote.updateGroundDetection();
+              }
+            }
+          }
+        }
         break;
 
       case 'block_reject':
@@ -266,7 +304,8 @@ export class MultiplayerClient {
         if (this.pendingModifications.has(rejKey)) {
           const original = this.pendingModifications.get(rejKey);
           this.pendingModifications.delete(rejKey);
-          this.world.setBlock(data.x, data.y, data.z, original, true);
+          this.world.applyBlockDelta(data.x, data.y, data.z, original);
+          this.checkAvatarsGroundAfterBlockBreak(data.x, data.y, data.z);
         }
         if (this.onError) {
           this.onError(data.reason || 'Modificación no permitida');
@@ -298,8 +337,12 @@ export class MultiplayerClient {
 
   addRemotePlayer(p) {
     if (this.remoteAvatars.has(p.id) || p.id === this.myId) return;
-    const avatar = new Avatar(p.id, p.name, this.scene);
-    if (p.pos) avatar.setTargetState(p.pos, p.rot, p.action);
+    const avatar = new Avatar(p.id, p.name, this.scene, this.world);
+    avatar.world = this.world;
+    if (p.pos) {
+      avatar.group.position.set(p.pos[0], p.pos[1], p.pos[2]);
+      avatar.setTargetState(p.pos, p.rot, p.action);
+    }
     this.remoteAvatars.set(p.id, avatar);
   }
 
@@ -346,7 +389,7 @@ export class MultiplayerClient {
   }
 
   sendBlockModify(x, y, z, blockType) {
-    // Optimistic local update
+    // Optimistic local update using applyBlockDelta to sync local deltas Map
     const previous = this.world.getBlock(x, y, z);
     const key = `${x},${y},${z}`;
     this.pendingModifications.set(key, previous);
@@ -354,10 +397,33 @@ export class MultiplayerClient {
     if (blockType === 0 && previous !== 0) {
       this.particles.spawnBlockDebris(x, y, z);
     }
-    this.world.setBlock(x, y, z, blockType, true);
+    this.world.applyBlockDelta(x, y, z, blockType);
+
+    // If block was broken, immediately check supporting blocks and update ground detection
+    if (blockType === 0) {
+      this.checkAvatarsGroundAfterBlockBreak(x, y, z);
+    }
 
     // Send request to server
     this.send('block_modify', { x, y, z, blockType });
+  }
+
+  /**
+   * Checks ground detection for all remote avatars and local physics when a block is removed
+   */
+  checkAvatarsGroundAfterBlockBreak(x, y, z) {
+    for (const avatar of this.remoteAvatars.values()) {
+      if (!avatar) continue;
+      if (typeof avatar.onSupportingBlockRemoved === 'function') {
+        avatar.onSupportingBlockRemoved(x, y, z);
+      } else if (typeof avatar.updateGroundDetection === 'function') {
+        avatar.updateGroundDetection();
+      }
+    }
+
+    if (this.physics && typeof this.physics.onBlockBroken === 'function') {
+      this.physics.onBlockBroken(x, y, z);
+    }
   }
 
   sendWeaponToggle(enabled) {
@@ -368,8 +434,8 @@ export class MultiplayerClient {
     this.send('weapon_shoot', payload);
   }
 
-  sendTntTrigger(x, y, z) {
-    this.send('tnt_trigger', { x, y, z });
+  sendTntTrigger(x, y, z, fuseMs = 1800) {
+    this.send('tnt_trigger', { x, y, z, fuseMs });
   }
 
   /**

@@ -67,6 +67,24 @@ export const LANDMARKS = [
     y: 20,
     z: -500,
     desc: 'XYZ (0, 20, -500) • Resort de Lujo, Gran Faro, Yate & Arrecife'
+  },
+  {
+    id: 'fuji',
+    name: 'Monte Fuji (+500, +500)',
+    icon: '🗻',
+    x: 500,
+    y: 26,
+    z: 500,
+    desc: 'XYZ (+500, 26, +500) • Volcán Colosal, Cráter Nevado, Lagos & Cavernas'
+  },
+  {
+    id: 'circuit',
+    name: 'Gran Circuito (-500, -500)',
+    icon: '🏎️',
+    x: -500,
+    y: 25,
+    z: -500,
+    desc: 'XYZ (-500, 25, -500) • Pista Internacional, Gradas, Boxes, Lago & Túneles'
   }
 ];
 
@@ -638,6 +656,14 @@ export class UIManager {
       // Playa Paraíso: stand on coastal boardwalk facing tropical resort, palm trees & superyacht
       vx = 0.5; vy = 21.0; vz = -442.5;
       targetYaw = Math.PI; targetPitch = 0.05;
+    } else if (tx === 500 && tz === 500) {
+      // Mount Fuji: stand on the scenic reflection lake shore facing the colossal volcano
+      vx = 445.5; vy = 26.0; vz = 445.5;
+      targetYaw = -Math.PI / 4; targetPitch = 0.28;
+    } else if (tx === -500 && tz === -500) {
+      // Gran Circuito: stand on the starting grid facing down the main straight toward Turn 1
+      vx = -495.5; vy = 25.0; vz = -420.5;
+      targetYaw = Math.PI / 2; targetPitch = 0.05;
     }
 
     // Stream chunks around new location first so terrain & monuments exist before physics step
@@ -785,12 +811,14 @@ export class UIManager {
   getSectorName(x, z) {
     const distCenter = Math.hypot(x, z);
     if (distCenter <= 40) return '🏰 Plaza Central';
+    if (Math.hypot(x - 500, z - 500) <= 90) return '🗻 Monte Fuji';
     if (z >= 420 && z <= 580 && Math.abs(x) <= 80) return '🇳🇴 Fiordos de Noruega';
     if (Math.hypot(x, z + 500) <= 120) return '🏖️ Playa Paraíso';
     if (Math.hypot(x - 250, z - 250) <= 70) return '🇯🇵 Japón Imperial';
     if (Math.hypot(x + 250, z - 250) <= 70) return '🇨🇳 China y Shanghai';
     if (Math.hypot(x - 250, z + 250) <= 70) return '🇫🇷 París y Torre Eiffel';
     if (Math.hypot(x + 250, z + 250) <= 70) return '🇺🇸 Nueva York';
+    if (Math.abs(x - (-500)) <= 125 && Math.abs(z - (-500)) <= 125) return '🏎️ Gran Circuito';
     return '🌲 Tierras del Reino';
   }
 

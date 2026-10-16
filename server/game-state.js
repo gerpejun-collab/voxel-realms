@@ -301,10 +301,24 @@ class GameState {
    */
   hitAnimal(animalId, shooterId = null) {
     const anim = this.animals.get(animalId);
-    if (!anim) return null;
-    this.animals.delete(animalId);
-    // Replenish shared area animals if needed
-    this.reconcileAreaAnimals();
+    if (!anim) {
+      return {
+        animalId,
+        shooterId
+      };
+    }
+    // Mark animal as dying with 3-second despawn delay
+    anim.state = 'dying';
+    anim.despawnAt = Date.now() + 3000;
+    anim.shooterId = shooterId;
+
+    if (!anim.despawnTimeout) {
+      anim.despawnTimeout = setTimeout(() => {
+        this.animals.delete(animalId);
+        this.reconcileAreaAnimals();
+      }, 3000);
+    }
+
     return {
       animalId: anim.id,
       type: anim.type,
@@ -337,6 +351,28 @@ class GameState {
               this.blockDeltas.set(key, 0);
               destroyedBlocks.push([bx, by, bz]);
             }
+          }
+        }
+      }
+    }
+
+    // Adjust any players standing on destroyed blocks
+    for (const p of this.players.values()) {
+      const px = p.pos[0];
+      const py = p.pos[1];
+      const pz = p.pos[2];
+      const pMinX = px - 0.3, pMaxX = px + 0.3;
+      const pMinZ = pz - 0.3, pMaxZ = pz + 0.3;
+      for (const [bx, by, bz] of destroyedBlocks) {
+        if (bx + 1 > pMinX && bx < pMaxX && bz + 1 > pMinZ && bz < pMaxZ) {
+          if (Math.abs(py - (by + 1)) < 0.25) {
+            let newFloorY = by;
+            while (newFloorY > 0 && this.getBlock(bx, newFloorY - 1, bz) === 0) {
+              newFloorY--;
+            }
+            p.pos[1] = newFloorY;
+            p.lastUpdate = Date.now();
+            break;
           }
         }
       }
@@ -388,24 +424,26 @@ class GameState {
         return { success: false, reason: 'Out of reach' };
       }
 
-      // Check if placing a block inside the player's own bounding box
+      // Check if placing a block inside any player's bounding box
       if (blockType > 0) {
-        const px = player.pos[0];
-        const py = player.pos[1];
-        const pz = player.pos[2];
-        const pMinX = px - 0.3, pMaxX = px + 0.3;
-        const pMinY = py, pMaxY = py + 1.8;
-        const pMinZ = pz - 0.3, pMaxZ = pz + 0.3;
+        for (const p of this.players.values()) {
+          const px = p.pos[0];
+          const py = p.pos[1];
+          const pz = p.pos[2];
+          const pMinX = px - 0.3, pMaxX = px + 0.3;
+          const pMinY = py, pMaxY = py + 1.8;
+          const pMinZ = pz - 0.3, pMaxZ = pz + 0.3;
 
-        const bMinX = x, bMaxX = x + 1;
-        const bMinY = y, bMaxY = y + 1;
-        const bMinZ = z, bMaxZ = z + 1;
+          const bMinX = x, bMaxX = x + 1;
+          const bMinY = y, bMaxY = y + 1;
+          const bMinZ = z, bMaxZ = z + 1;
 
-        const intersects = (pMinX < bMaxX && pMaxX > bMinX) &&
-                           (pMinY < bMaxY && pMaxY > bMinY) &&
-                           (pMinZ < bMaxZ && pMaxZ > bMinZ);
-        if (intersects) {
-          return { success: false, reason: 'Cannot place block inside player' };
+          const intersects = (pMinX < bMaxX && pMaxX > bMinX) &&
+                             (pMinY < bMaxY && pMaxY > bMinY) &&
+                             (pMinZ < bMaxZ && pMaxZ > bMinZ);
+          if (intersects) {
+            return { success: false, reason: 'Cannot place block inside player' };
+          }
         }
       }
     }
@@ -413,9 +451,34 @@ class GameState {
     const key = `${x},${y},${z}`;
     this.blockDeltas.set(key, blockType);
 
+    // If a block beneath any player is broken, adjust their authoritative ground Y position
+    const affectedPlayers = [];
+    if (blockType === 0) {
+      for (const p of this.players.values()) {
+        const px = p.pos[0];
+        const py = p.pos[1];
+        const pz = p.pos[2];
+        const pMinX = px - 0.3, pMaxX = px + 0.3;
+        const pMinZ = pz - 0.3, pMaxZ = pz + 0.3;
+        // Check horizontal overlap with excavated block
+        if (x + 1 > pMinX && x < pMaxX && z + 1 > pMinZ && z < pMaxZ) {
+          // If player's feet were resting on this block (y + 1)
+          if (Math.abs(py - (y + 1)) < 0.25) {
+            let newFloorY = y;
+            while (newFloorY > 0 && this.getBlock(x, newFloorY - 1, z) === 0) {
+              newFloorY--;
+            }
+            p.pos[1] = newFloorY;
+            p.lastUpdate = Date.now();
+            affectedPlayers.push({ id: p.id, pos: [...p.pos] });
+          }
+        }
+      }
+    }
+
     return {
       success: true,
-      delta: { x, y, z, blockType, playerId }
+      delta: { x, y, z, blockType, playerId, affectedPlayers }
     };
   }
 

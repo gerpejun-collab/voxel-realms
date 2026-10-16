@@ -25,6 +25,10 @@ export const BLOCKS = {
   ASPHALT: 20
 };
 
+// Convenient racing curb block aliases
+BLOCKS.RED_CONCRETE = BLOCKS.BRICK;
+BLOCKS.WHITE_CONCRETE = BLOCKS.SNOW;
+
 // Texture slot indices within our procedural atlas
 export const ATLAS_SLOTS = {
   GRASS_TOP: 0,

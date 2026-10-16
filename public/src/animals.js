@@ -13,11 +13,16 @@ import * as THREE from 'three';
 export const ANIMAL_SPECIES = ['sheep', 'pig', 'cow', 'chicken', 'wolf', 'horse'];
 
 class VoxelAnimal {
-  constructor(type, scene, world, id = null) {
+  constructor(type, arg1, arg2, id = null) {
     this.id = id || `local_${Math.random().toString(36).slice(2, 9)}`;
     this.type = type;
-    this.scene = scene;
-    this.world = world;
+    if (arg1 && typeof arg1.getBlock === 'function' && arg2 && typeof arg2.add === 'function') {
+      this.scene = arg2;
+      this.world = arg1;
+    } else {
+      this.scene = arg1;
+      this.world = arg2;
+    }
     this.group = new THREE.Group();
 
     this.position = new THREE.Vector3();
@@ -488,12 +493,17 @@ class VoxelAnimal {
  * Extraordinary Non-Human Voxel NPCs (Guardian Golem, Jade Spirit, Cyber-Drone, Void Stalker, Frost Yeti, Coral Crab)
  */
 class RareNonHumanNpc {
-  constructor(config, scene, world) {
+  constructor(config, arg1, arg2) {
     this.id = config.id;
     this.kind = config.kind;
     this.name = config.name;
-    this.scene = scene;
-    this.world = world;
+    if (arg1 && typeof arg1.getBlock === 'function' && arg2 && typeof arg2.add === 'function') {
+      this.scene = arg2;
+      this.world = arg1;
+    } else {
+      this.scene = arg1;
+      this.world = arg2;
+    }
     this.homeX = config.x;
     this.homeZ = config.z;
     this.phase = Math.random() * Math.PI * 2;
@@ -647,10 +657,15 @@ class RareNonHumanNpc {
  * Realistic Voxel Car that drives deterministically along structured highway lanes
  */
 export class VoxelCar {
-  constructor(route, scene, world) {
+  constructor(route, arg1, arg2) {
     this.route = route;
-    this.scene = scene;
-    this.world = world;
+    if (arg1 && typeof arg1.getBlock === 'function' && arg2 && typeof arg2.add === 'function') {
+      this.scene = arg2;
+      this.world = arg1;
+    } else {
+      this.scene = arg1;
+      this.world = arg2;
+    }
     this.group = new THREE.Group();
     this.wheels = [];
     this.progress = route.initialProgress || 0;
@@ -770,9 +785,14 @@ export class VoxelCar {
 }
 
 export class TrafficManager {
-  constructor(scene, world) {
-    this.scene = scene;
-    this.world = world;
+  constructor(arg1, arg2) {
+    if (arg1 && typeof arg1.getBlock === 'function' && arg2 && typeof arg2.add === 'function') {
+      this.scene = arg2;
+      this.world = arg1;
+    } else {
+      this.scene = arg1;
+      this.world = arg2;
+    }
     this.cars = [];
     this.initHighwayTraffic();
   }
@@ -815,9 +835,14 @@ export class TrafficManager {
 }
 
 export class AnimalManager {
-  constructor(scene, world) {
-    this.scene = scene;
-    this.world = world;
+  constructor(arg1, arg2) {
+    if (arg1 && typeof arg1.getBlock === 'function' && arg2 && typeof arg2.add === 'function') {
+      this.scene = arg2;
+      this.world = arg1;
+    } else {
+      this.scene = arg1;
+      this.world = arg2;
+    }
     this.animals = [];
     this.animalsById = new Map();
     this.npcs = [];
@@ -825,7 +850,7 @@ export class AnimalManager {
     this.serverSynced = false;
 
     // Initialize highway traffic & rare non-human NPCs
-    this.traffic = new TrafficManager(scene, world);
+    this.traffic = new TrafficManager(this.scene, this.world);
     this.initRareNpcs();
     this.initLocalAnimals();
   }

@@ -218,7 +218,7 @@ export class UIManager {
             serverStatus.innerHTML = '<span class="status-dot online"></span> Servidor En Línea';
           }
           if (lobbyPlayerCount) {
-            lobbyPlayerCount.textContent = `${data.onlinePlayers || 0} / ${data.maxPlayers || 12} conectados`;
+            lobbyPlayerCount.textContent = `${data.onlinePlayers || 0} / ${data.maxPlayers || 30} conectados`;
           }
         })
         .catch(() => {

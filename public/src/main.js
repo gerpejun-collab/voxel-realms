@@ -45,7 +45,7 @@ class VoxelRealmsApp {
     );
 
     // 6. Initialize Ambient Voxel Animals, Rare NPCs & Highway Traffic
-    this.animalManager = new AnimalManager(this.world, this.sceneManager.scene);
+    this.animalManager = new AnimalManager(this.sceneManager.scene, this.world);
 
     // 7. Initialize UI Overlay & HUD
     this.ui = new UIManager(

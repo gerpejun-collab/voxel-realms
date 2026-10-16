@@ -58,17 +58,35 @@ export const LANDMARKS = [
     y: 50,
     z: 500,
     desc: 'XYZ (0, 50, +500) • Acantilados, Cascadas & Taiga'
+  },
+  {
+    id: 'beach',
+    name: 'Playa Paraíso (0, -500)',
+    icon: '🏖️',
+    x: 0,
+    y: 20,
+    z: -500,
+    desc: 'XYZ (0, 20, -500) • Resort de Lujo, Yate & Palmeras'
   }
 ];
 
 export class UIManager {
-  constructor(materialManager, controls, sceneManager, world, multiplayer) {
+  constructor(materialManager, controls, sceneManager, world, multiplayer, animalManager = null) {
     this.materials = materialManager;
     this.controls = controls;
     this.physics = controls?.physics;
     this.sceneManager = sceneManager;
     this.world = world;
     this.multiplayer = multiplayer;
+    this.animalManager = animalManager;
+
+    // Telemetry and session state
+    this.sessionStartTime = Date.now();
+    this.fpsHistory = [];
+    this.fpsTelemetryCanvas = document.getElementById('fps-telemetry-canvas');
+    this.fpsCanvasCtx = this.fpsTelemetryCanvas?.getContext ? this.fpsTelemetryCanvas.getContext('2d') : null;
+    this.boostEnabled = false;
+    this.weaponsEnabled = false;
 
     // Elements
     this.lobbyOverlay = document.getElementById('lobby-overlay');
@@ -614,6 +632,10 @@ export class UIManager {
       // Norway Fjords: stand on scenic cliff overlook facing the fjord gorge, waterfalls & Viking cabin
       vx = -16.5; vy = 51.0; vz = 492.5;
       targetYaw = -1.45; targetPitch = -0.12;
+    } else if (tx === 0 && tz === -500) {
+      // Playa Paraíso: stand on coastal boardwalk facing tropical resort, palm trees & superyacht
+      vx = 0.5; vy = 21.0; vz = -442.5;
+      targetYaw = Math.PI; targetPitch = 0.05;
     }
 
     // Stream chunks around new location first so terrain & monuments exist before physics step
@@ -762,6 +784,7 @@ export class UIManager {
     const distCenter = Math.hypot(x, z);
     if (distCenter <= 40) return '🏰 Plaza Central';
     if (z >= 420 && z <= 580 && Math.abs(x) <= 80) return '🇳🇴 Fiordos de Noruega';
+    if (Math.hypot(x, z + 500) <= 120) return '🏖️ Playa Paraíso';
     if (Math.hypot(x - 250, z - 250) <= 70) return '🇯🇵 Japón Imperial';
     if (Math.hypot(x + 250, z - 250) <= 70) return '🇨🇳 China y Shanghai';
     if (Math.hypot(x - 250, z + 250) <= 70) return '🇫🇷 París y Torre Eiffel';
@@ -1016,6 +1039,111 @@ export class UIManager {
       qualityMenuSelect.addEventListener('change', (e) => {
         sound.playClick();
         this.sceneManager.setGraphicsQuality(e.target.value);
+      });
+    }
+
+    // FPS Cap Slider (10, 30, 60, 100, 120, MAX)
+    const fpsCapSlider = document.getElementById('fps-cap-slider');
+    const fpsCapLabel = document.getElementById('fps-cap-label');
+    const fpsCapSteps = [10, 30, 60, 100, 120, Infinity];
+    const fpsCapLabels = ['10 FPS', '30 FPS', '60 FPS', '100 FPS', '120 FPS', 'MAX'];
+    if (fpsCapSlider) {
+      fpsCapSlider.addEventListener('input', (e) => {
+        const step = parseInt(e.target.value, 10);
+        const cap = fpsCapSteps[step] || Infinity;
+        window.targetMaxFps = cap;
+        if (fpsCapLabel) fpsCapLabel.textContent = fpsCapLabels[step] || 'MAX';
+      });
+      fpsCapSlider.addEventListener('change', () => sound.playClick());
+    }
+
+    // Slider value labels
+    const renderDistVal = document.getElementById('render-dist-val');
+    if (renderDistSlider && renderDistVal) {
+      renderDistSlider.addEventListener('input', (e) => {
+        renderDistVal.textContent = e.target.value;
+      });
+    }
+    const sensVal = document.getElementById('sens-val');
+    if (sensSlider && sensVal) {
+      sensSlider.addEventListener('input', (e) => {
+        sensVal.textContent = Math.round((parseFloat(e.target.value) / 0.0022) * 100) + '%';
+      });
+    }
+    const fovVal = document.getElementById('fov-val');
+    if (fovSlider && fovVal) {
+      fovSlider.addEventListener('input', (e) => {
+        fovVal.textContent = e.target.value + '°';
+      });
+    }
+
+    // Boost Mode Toggle
+    const boostToggleBtn = document.getElementById('boost-mode-toggle');
+    const boostStateLabel = document.getElementById('boost-mode-state');
+    if (boostToggleBtn) {
+      boostToggleBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.boostEnabled = !this.boostEnabled;
+        if (boostStateLabel) boostStateLabel.textContent = this.boostEnabled ? 'ON' : 'OFF';
+        boostToggleBtn.classList.toggle('active', this.boostEnabled);
+        if (this.world && typeof this.world.setBoostMode === 'function') {
+          this.world.setBoostMode(this.boostEnabled);
+        }
+        if (this.sceneManager && typeof this.sceneManager.setBoostQuality === 'function') {
+          this.sceneManager.setBoostQuality(this.boostEnabled);
+        }
+        if (qualityMenuSelect && this.boostEnabled) {
+          qualityMenuSelect.value = 'boost';
+        }
+        this.showNotification(`Modo BOOST ${this.boostEnabled ? 'Activado 🚀' : 'Desactivado'}`);
+      });
+    }
+
+    // Weapons & TNT Mode Toggle
+    const weaponsToggleBtn = document.getElementById('weapons-mode-toggle');
+    const weaponsStateLabel = document.getElementById('weapons-mode-state');
+    const weaponsHud = document.getElementById('weapons-hud-controls');
+    if (weaponsToggleBtn) {
+      weaponsToggleBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.weaponsEnabled = !this.weaponsEnabled;
+        if (weaponsStateLabel) weaponsStateLabel.textContent = this.weaponsEnabled ? 'ON' : 'OFF';
+        weaponsToggleBtn.classList.toggle('active', this.weaponsEnabled);
+        if (this.controls && typeof this.controls.setWeaponsMode === 'function') {
+          this.controls.setWeaponsMode(this.weaponsEnabled);
+        }
+        if (weaponsHud) {
+          weaponsHud.classList.toggle('hidden', !this.weaponsEnabled);
+        }
+        if (this.multiplayer && typeof this.multiplayer.sendWeaponToggle === 'function') {
+          this.multiplayer.sendWeaponToggle(this.weaponsEnabled);
+        }
+        if (this.animalManager && typeof this.animalManager.setWeaponsMode === 'function') {
+          this.animalManager.setWeaponsMode(this.weaponsEnabled);
+        }
+        this.showNotification(`Modo Armas & TNT ${this.weaponsEnabled ? 'Activado 🔫' : 'Desactivado'}`);
+      });
+    }
+
+    // Desktop & Click listeners for Weapons HUD buttons
+    const btnAim = document.getElementById('btn-weapon-aim');
+    if (btnAim) {
+      btnAim.addEventListener('click', () => {
+        sound.playClick();
+        const active = this.controls.toggleAiming();
+        btnAim.classList.toggle('active', active);
+      });
+    }
+    const btnShoot = document.getElementById('btn-weapon-shoot');
+    if (btnShoot) {
+      btnShoot.addEventListener('click', () => {
+        this.controls.triggerShoot();
+      });
+    }
+    const btnTnt = document.getElementById('btn-weapon-tnt');
+    if (btnTnt) {
+      btnTnt.addEventListener('click', () => {
+        this.controls.triggerTnt();
       });
     }
 
@@ -1379,20 +1507,74 @@ export class UIManager {
     // Update live connected count badge
     this.updatePlayerCountBadge();
 
-    // Update corner FPS element
+    // Update corner FPS element (ONLY place where FPS is displayed in HUD)
     const fpsElem = document.getElementById('hud-fps-val');
     if (fpsElem) {
       fpsElem.textContent = `${fps} FPS`;
     }
 
-    // Update coordinates & sector
+    // Update coordinates & sector (WITHOUT duplicate FPS)
     const coordsElem = document.getElementById('hud-coords');
     if (coordsElem && pos) {
       const bx = Math.floor(pos.x);
       const by = Math.floor(pos.y);
       const bz = Math.floor(pos.z);
       const sector = this.getSectorName(bx, bz);
-      coordsElem.textContent = `XYZ: ${bx} / ${by} / ${bz} | ${sector} | ${fps} FPS`;
+      coordsElem.textContent = `XYZ: ${bx} / ${by} / ${bz} • ${sector}`;
+    }
+
+    // Session Uptime Timer (HH:MM:SS)
+    const uptimeSec = Math.floor((Date.now() - this.sessionStartTime) / 1000);
+    const hh = String(Math.floor(uptimeSec / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((uptimeSec % 3600) / 60)).padStart(2, '0');
+    const ss = String(uptimeSec % 60).padStart(2, '0');
+    const uptimeElem = document.getElementById('session-uptime-val');
+    if (uptimeElem) {
+      uptimeElem.textContent = `${hh}:${mm}:${ss}`;
+    }
+
+    // FPS Telemetry Stats & Live Canvas Graph
+    if (typeof fps === 'number' && fps > 0) {
+      this.fpsHistory.push(fps);
+      if (this.fpsHistory.length > 50) this.fpsHistory.shift();
+
+      const nowElem = document.getElementById('telemetry-fps-now');
+      if (nowElem) nowElem.textContent = fps;
+
+      let sum = 0, min = 999, max = 0;
+      for (let i = 0; i < this.fpsHistory.length; i++) {
+        const val = this.fpsHistory[i];
+        sum += val;
+        if (val < min) min = val;
+        if (val > max) max = val;
+      }
+      const avg = Math.round(sum / this.fpsHistory.length);
+
+      const avgElem = document.getElementById('telemetry-fps-avg');
+      if (avgElem) avgElem.textContent = avg;
+      const minElem = document.getElementById('telemetry-fps-min');
+      if (minElem) minElem.textContent = min;
+      const maxElem = document.getElementById('telemetry-fps-max');
+      if (maxElem) maxElem.textContent = max;
+
+      const gradeBadge = document.getElementById('telemetry-grade-badge');
+      if (gradeBadge) {
+        if (avg >= 55) {
+          gradeBadge.className = 'telemetry-grade grade-s';
+          gradeBadge.textContent = `S+ ÓPTIMO (${Math.min(100, Math.round((avg / 60) * 100))}%)`;
+        } else if (avg >= 45) {
+          gradeBadge.className = 'telemetry-grade grade-a';
+          gradeBadge.textContent = `A EXCELENTE (${Math.round((avg / 60) * 100)}%)`;
+        } else if (avg >= 30) {
+          gradeBadge.className = 'telemetry-grade grade-b';
+          gradeBadge.textContent = `B BUENO (${Math.round((avg / 60) * 100)}%)`;
+        } else {
+          gradeBadge.className = 'telemetry-grade grade-c';
+          gradeBadge.textContent = `C MODERADO (${Math.round((avg / 60) * 100)}%)`;
+        }
+      }
+
+      this.drawFpsGraph();
     }
 
     // Update targeted voxel highlight wireframe
@@ -1411,5 +1593,83 @@ export class UIManager {
       const blockLabel = document.getElementById('target-block-name');
       if (blockLabel) blockLabel.textContent = '';
     }
+  }
+
+  drawFpsGraph() {
+    if (!this.fpsCanvasCtx || !this.fpsTelemetryCanvas) return;
+    const ctx = this.fpsCanvasCtx;
+    const w = this.fpsTelemetryCanvas.width;
+    const h = this.fpsTelemetryCanvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle horizontal grid lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.25); ctx.lineTo(w, h * 0.25);
+    ctx.moveTo(0, h * 0.5); ctx.lineTo(w, h * 0.5);
+    ctx.moveTo(0, h * 0.75); ctx.lineTo(w, h * 0.75);
+    ctx.stroke();
+
+    if (this.fpsHistory.length < 2) return;
+
+    const maxScale = Math.max(75, ...this.fpsHistory);
+    const stepX = w / (this.fpsHistory.length - 1);
+
+    // Area fill with green gradient
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let i = 0; i < this.fpsHistory.length; i++) {
+      const x = i * stepX;
+      const y = h - (this.fpsHistory[i] / maxScale) * (h - 8);
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo((this.fpsHistory.length - 1) * stepX, h);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(85, 255, 85, 0.35)');
+    grad.addColorStop(1, 'rgba(85, 255, 85, 0.02)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line stroke
+    ctx.beginPath();
+    for (let i = 0; i < this.fpsHistory.length; i++) {
+      const x = i * stepX;
+      const y = h - (this.fpsHistory[i] / maxScale) * (h - 8);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#55ff55';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  showWeaponHitToast(data) {
+    const toast = document.getElementById('weapon-hit-toast');
+    if (!toast || !data) return;
+
+    const isMeTarget = (data.targetPlayerId === this.multiplayer?.myId);
+    const isMeShooter = (data.shooterId === this.multiplayer?.myId);
+
+    if (isMeTarget) {
+      toast.textContent = `💥 ¡Has recibido un impacto amistoso de ${data.shooterName || 'Jugador'}!`;
+      toast.className = 'hit-target-toast show';
+      if (sound && typeof sound.playHitThud === 'function') sound.playHitThud();
+    } else if (isMeShooter) {
+      toast.textContent = `🎯 ¡Impacto certero en ${data.targetName || 'Jugador'}!`;
+      toast.className = 'hit-shooter-toast show';
+      if (sound && typeof sound.playHitThud === 'function') sound.playHitThud();
+    } else {
+      return;
+    }
+
+    clearTimeout(this.hitToastTimeout);
+    this.hitToastTimeout = setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.classList.add('hidden'), 300);
+    }, 2400);
+    toast.classList.remove('hidden');
   }
 }

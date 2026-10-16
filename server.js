@@ -9,7 +9,7 @@ const { RoomManager } = require('./server/rooms');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = '0.0.0.0';
-const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS, 10) || 12;
+const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS, 10) || 30;
 const WORLD_SEED = parseInt(process.env.WORLD_SEED, 10) || 48151623;
 
 const app = express();

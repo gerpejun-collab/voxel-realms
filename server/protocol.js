@@ -9,6 +9,9 @@ const MSG = {
   CHAT: 'chat',
   PING: 'ping',
   TELEPORT_TO_PLAYER: 'teleport_to_player',
+  WEAPON_TOGGLE: 'weapon_toggle',
+  WEAPON_SHOOT: 'weapon_shoot',
+  TNT_TRIGGER: 'tnt_trigger',
 
   // Server -> Client
   INIT: 'init',
@@ -19,12 +22,18 @@ const MSG = {
   BLOCK_REJECT: 'block_reject',
   CHAT_BROADCAST: 'chat_broadcast',
   TELEPORT_CONFIRM: 'teleport_confirm',
+  WEAPON_HIT: 'weapon_hit',
+  WEAPON_SHOT_FX: 'weapon_shot_fx',
+  TNT_PRIMED: 'tnt_primed',
+  TNT_EXPLODE: 'tnt_explode',
+  ANIMALS_UPDATE: 'animals_update',
+  ANIMAL_BURST: 'animal_burst',
   PONG: 'pong',
   ERROR: 'error'
 };
 
 const MAX_NAME_LENGTH = 16;
-const MAX_CHAT_LENGTH = 120;
+const MAX_CHAT_LENGTH = 160;
 const MAX_BLOCK_ID = 32;
 const MAX_PLAYER_ID_LENGTH = 64;
 
@@ -46,7 +55,7 @@ function sanitizeChat(text) {
   return text
     .replace(/[<>]/g, '')
     .trim()
-    .substring(0, MAX_CHAT_LENGTH);
+    .substring(0, 120);
 }
 
 /**
@@ -92,6 +101,34 @@ function validateTeleportPacket(packet) {
   return true;
 }
 
+/**
+ * Validate weapon shoot packet
+ */
+function isValidWeaponShoot(data) {
+  if (!data || typeof data !== 'object') return false;
+  const validWeapons = ['rifle', 'shotgun', 'sniper', 'tnt'];
+  if (data.weaponType && !validWeapons.includes(data.weaponType)) return false;
+  if (data.targetPlayerId !== undefined && data.targetPlayerId !== null) {
+    if (typeof data.targetPlayerId !== 'string' || data.targetPlayerId.length > MAX_PLAYER_ID_LENGTH) return false;
+  }
+  if (data.targetAnimalId !== undefined && data.targetAnimalId !== null) {
+    if (typeof data.targetAnimalId !== 'string' || data.targetAnimalId.length > 64) return false;
+  }
+  return true;
+}
+
+/**
+ * Validate TNT trigger packet
+ */
+function isValidTntTrigger(data) {
+  if (!data || typeof data !== 'object') return false;
+  const { x, y, z } = data;
+  if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') return false;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return false;
+  if (y < 0 || y > 128 || Math.abs(x) > 10000 || Math.abs(z) > 10000) return false;
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     MSG,
@@ -103,6 +140,9 @@ if (typeof module !== 'undefined' && module.exports) {
     sanitizeChat,
     isValidBlockModify,
     isValidMove,
-    validateTeleportPacket
+    validateTeleportPacket,
+    isValidWeaponShoot,
+    isValidTntTrigger
   };
 }
+

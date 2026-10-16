@@ -25,7 +25,7 @@ export class MultiplayerClient {
     this.lastSentPos = [0, 0, 0];
     this.lastSentRot = [0, 0];
 
-    // Callbacks for UI
+    // Callbacks for UI & World Managers
     this.onConnected = null;
     this.onDisconnected = null;
     this.onPlayerCountChange = null;
@@ -33,6 +33,11 @@ export class MultiplayerClient {
     this.onNotification = null;
     this.onError = null;
     this.onTeleportConfirm = null;
+    this.onAnimalsUpdate = null;
+    this.onAnimalBurst = null;
+    this.onWeaponHit = null;
+    this.onTntPrime = null;
+    this.onTntExplode = null;
   }
 
   connect(playerName) {
@@ -137,6 +142,11 @@ export class MultiplayerClient {
           }
         }
 
+        // Sync initial authoritative animals
+        if (Array.isArray(data.animals) && this.onAnimalsUpdate) {
+          this.onAnimalsUpdate(data.animals);
+        }
+
         if (this.onPlayerCountChange) {
           this.onPlayerCountChange(this.remoteAvatars.size + 1);
         }
@@ -177,6 +187,53 @@ export class MultiplayerClient {
                 avatar.setTargetState(p.pos, p.rot, p.action);
               }
             }
+          }
+        }
+        break;
+
+      case 'animals_update':
+        if (data && Array.isArray(data.animals) && this.onAnimalsUpdate) {
+          this.onAnimalsUpdate(data.animals);
+        }
+        break;
+
+      case 'animal_burst':
+        if (data && this.onAnimalBurst) {
+          this.onAnimalBurst(data);
+        }
+        break;
+
+      case 'weapon_shot_fx':
+        if (data && data.shooterId !== this.myId && this.particles && typeof this.particles.spawnMuzzleFlash === 'function') {
+          const o = Array.isArray(data.origin) ? { x: data.origin[0], y: data.origin[1], z: data.origin[2] } : null;
+          this.particles.spawnMuzzleFlash(o);
+        }
+        break;
+
+      case 'weapon_hit':
+        if (data && this.onWeaponHit) {
+          this.onWeaponHit(data);
+        }
+        break;
+
+      case 'tnt_primed':
+        if (data && this.onTntPrime) {
+          this.onTntPrime(data.x, data.y, data.z, data.fuseMs || 1600);
+        }
+        break;
+
+      case 'tnt_explode':
+        if (data) {
+          if (Array.isArray(data.destroyed)) {
+            for (const [bx, by, bz] of data.destroyed) {
+              this.world.setBlock(bx, by, bz, 0, true);
+            }
+          }
+          if (this.particles && typeof this.particles.spawnExplosion === 'function') {
+            this.particles.spawnExplosion(data.x, data.y, data.z);
+          }
+          if (this.onTntExplode) {
+            this.onTntExplode(data);
           }
         }
         break;
@@ -303,6 +360,52 @@ export class MultiplayerClient {
     this.send('block_modify', { x, y, z, blockType });
   }
 
+  sendWeaponToggle(enabled) {
+    this.send('weapon_toggle', { enabled: Boolean(enabled) });
+  }
+
+  sendWeaponShoot(payload) {
+    this.send('weapon_shoot', payload);
+  }
+
+  sendTntTrigger(x, y, z) {
+    this.send('tnt_trigger', { x, y, z });
+  }
+
+  /**
+   * Raycast against remote players' avatars for non-lethal rifle hits
+   */
+  getRaycastPlayerHit(rayOrigin, rayDir, maxDist = 80) {
+    let closestId = null;
+    let closestName = null;
+    let closestDist = maxDist;
+
+    for (const [id, avatar] of this.remoteAvatars.entries()) {
+      if (!avatar || !avatar.currentPos) continue;
+      const center = {
+        x: avatar.currentPos.x,
+        y: avatar.currentPos.y + 0.9,
+        z: avatar.currentPos.z
+      };
+      const vx = center.x - rayOrigin.x;
+      const vy = center.y - rayOrigin.y;
+      const vz = center.z - rayOrigin.z;
+      const proj = vx * rayDir.x + vy * rayDir.y + vz * rayDir.z;
+      if (proj < 0 || proj > closestDist) continue;
+
+      const distSq = vx * vx + vy * vy + vz * vz;
+      const perpSq = distSq - proj * proj;
+      if (perpSq <= 0.65 * 0.65) {
+        closestDist = proj;
+        closestId = id;
+        closestName = avatar.name;
+      }
+    }
+
+    if (!closestId) return null;
+    return { id: closestId, name: closestName, distance: closestDist };
+  }
+
   sendChat(text) {
     if (!text || !text.trim()) return;
     this.send('chat', { text: text.trim() });
@@ -318,8 +421,23 @@ export class MultiplayerClient {
     const ry = Math.round(y);
     const rz = Math.round(z);
     const sector = sectorName ? (sectorName.startsWith('[') ? sectorName : `[${sectorName}]`) : '[Tierras del Reino]';
-    const msg = `📍 Mi ubicación: ${sector} (X: ${rx}, Y: ${ry}, Z: ${rz})`;
+    const msg = `📍 Mi ubicación: ${sector} (X: ${rx}, Y: ${ry}, Z: ${rz}) — [Clic para Teletransportarse]`;
     this.sendChat(msg);
+
+    // Update browser URL query string and copy shareable link if supported
+    try {
+      if (typeof window !== 'undefined' && window.location && window.history && window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tp', `${rx},${ry},${rz}`);
+        window.history.replaceState({}, '', url.toString());
+        if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(url.toString()).catch(() => {});
+        }
+      }
+    } catch (_) {
+      // Ignore in headless test environments
+    }
+
     return msg;
   }
 
@@ -329,3 +447,4 @@ export class MultiplayerClient {
     }
   }
 }
+

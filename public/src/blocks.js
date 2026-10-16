@@ -20,7 +20,9 @@ export const BLOCKS = {
   CLAY: 15,
   GLASS: 16,
   IRON_ORE: 17,
-  GOLD_ORE: 18
+  GOLD_ORE: 18,
+  TNT: 19,
+  ASPHALT: 20
 };
 
 // Texture slot indices within our procedural atlas
@@ -44,7 +46,11 @@ export const ATLAS_SLOTS = {
   CLAY: 16,
   GLASS: 17,
   IRON_ORE: 18,
-  GOLD_ORE: 19
+  GOLD_ORE: 19,
+  TNT_SIDE: 20,
+  TNT_TOP: 21,
+  TNT_BOTTOM: 22,
+  ASPHALT: 23
 };
 
 /**
@@ -316,6 +322,35 @@ export const BLOCK_DEFS = {
       ATLAS_SLOTS.GOLD_ORE,
       ATLAS_SLOTS.GOLD_ORE
     ]
+  },
+  [BLOCKS.TNT]: {
+    id: BLOCKS.TNT,
+    name: 'TNT Reactivo',
+    solid: true,
+    transparent: false,
+    isExplosive: true,
+    faces: [
+      ATLAS_SLOTS.TNT_TOP,
+      ATLAS_SLOTS.TNT_BOTTOM,
+      ATLAS_SLOTS.TNT_SIDE,
+      ATLAS_SLOTS.TNT_SIDE,
+      ATLAS_SLOTS.TNT_SIDE,
+      ATLAS_SLOTS.TNT_SIDE
+    ]
+  },
+  [BLOCKS.ASPHALT]: {
+    id: BLOCKS.ASPHALT,
+    name: 'Asfalto de Carretera',
+    solid: true,
+    transparent: false,
+    faces: [
+      ATLAS_SLOTS.ASPHALT,
+      ATLAS_SLOTS.ASPHALT,
+      ATLAS_SLOTS.ASPHALT,
+      ATLAS_SLOTS.ASPHALT,
+      ATLAS_SLOTS.ASPHALT,
+      ATLAS_SLOTS.ASPHALT
+    ]
   }
 };
 
@@ -329,7 +364,8 @@ export const HOTBAR_BLOCKS = [
   BLOCKS.COBBLESTONE,
   BLOCKS.WOOD_PLANK,
   BLOCKS.OAK_LOG,
-  BLOCKS.OAK_LEAVES,
   BLOCKS.BRICK,
-  BLOCKS.GLASS
+  BLOCKS.GLASS,
+  BLOCKS.TNT
 ];
+

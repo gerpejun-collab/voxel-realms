@@ -223,6 +223,11 @@ export class SceneManager {
       this.sunLight.shadow.mapSize.set(2048, 2048);
       this.scene.fog.density = 0.011;
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
+    } else if (profile === 'boost') {
+      this.renderer.shadowMap.enabled = true;
+      this.sunLight.shadow.mapSize.set(2048, 2048);
+      this.scene.fog.density = 0.0085;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
     }
   }
 

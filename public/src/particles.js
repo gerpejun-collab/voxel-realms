@@ -72,6 +72,7 @@ export class ParticleManager {
     this.windAngle = 0.8;
     this.windSpeed = 2.4;
     this.time = 0;
+    this.explosions = [];
   }
 
   /**
@@ -108,8 +109,119 @@ export class ParticleManager {
     }
   }
 
+  /**
+   * Spawns a dramatic Minecraft TNT explosion (expanding shockwave sphere, fireball core, and 45 high-velocity debris fragments)
+   */
+  spawnExplosion(x, y, z) {
+    const cx = x + 0.5;
+    const cy = y + 0.5;
+    const cz = z + 0.5;
+
+    for (let i = 0; i < 42; i++) {
+      if (this.debrisParticles.length >= this.maxDebris) {
+        this.debrisParticles.shift();
+      }
+      const angle = Math.random() * Math.PI * 2;
+      const elev = (Math.random() - 0.15) * Math.PI;
+      const speed = 5.5 + Math.random() * 9.5;
+      this.debrisParticles.push({
+        x: cx + (Math.random() - 0.5) * 1.2,
+        y: cy + (Math.random() - 0.5) * 1.2,
+        z: cz + (Math.random() - 0.5) * 1.2,
+        vx: Math.cos(angle) * Math.cos(elev) * speed,
+        vy: Math.abs(Math.sin(elev)) * speed + 4.5,
+        vz: Math.sin(angle) * Math.cos(elev) * speed,
+        scale: 1.3 + Math.random() * 1.2,
+        rotX: Math.random() * 6,
+        rotY: Math.random() * 6,
+        life: 1.15,
+        maxLife: 1.15
+      });
+    }
+
+    // Visual fireball & shockwave mesh
+    if (this.scene && typeof this.scene.add === 'function') {
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xff7700,
+        transparent: true,
+        opacity: 0.92
+      });
+      const shockMat = new THREE.MeshBasicMaterial({
+        color: 0xfef08a,
+        transparent: true,
+        opacity: 0.65,
+        wireframe: true
+      });
+      const coreMesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), coreMat);
+      coreMesh.position.set(cx, cy, cz);
+      const shockMesh = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.8), shockMat);
+      shockMesh.position.set(cx, cy, cz);
+
+      this.scene.add(coreMesh);
+      this.scene.add(shockMesh);
+      this.explosions.push({
+        coreMesh,
+        shockMesh,
+        coreMat,
+        shockMat,
+        life: 0.48,
+        maxLife: 0.48
+      });
+    }
+  }
+
+  /**
+   * Spawns muzzle flash & impact sparks for the Sniper Rifle
+   */
+  spawnMuzzleFlash(origin, hitPoint = null) {
+    if (!origin) return;
+    for (let i = 0; i < 6; i++) {
+      if (this.debrisParticles.length >= this.maxDebris) {
+        this.debrisParticles.shift();
+      }
+      this.debrisParticles.push({
+        x: origin.x + (Math.random() - 0.5) * 0.15,
+        y: origin.y + (Math.random() - 0.5) * 0.15,
+        z: origin.z + (Math.random() - 0.5) * 0.15,
+        vx: (Math.random() - 0.5) * 2.5,
+        vy: (Math.random() - 0.5) * 2.5,
+        vz: (Math.random() - 0.5) * 2.5,
+        scale: 0.45,
+        rotX: 0,
+        rotY: 0,
+        life: 0.18,
+        maxLife: 0.18
+      });
+    }
+    if (hitPoint) {
+      this.spawnBlockDebris(hitPoint.x - 0.5, hitPoint.y - 0.5, hitPoint.z - 0.5);
+    }
+  }
+
   update(dt, playerPos) {
     this.time += dt;
+
+    // --- Update Active TNT Fireball Shockwaves ---
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const ex = this.explosions[i];
+      ex.life -= dt;
+      if (ex.life <= 0) {
+        if (ex.coreMesh.parent) ex.coreMesh.parent.remove(ex.coreMesh);
+        if (ex.shockMesh.parent) ex.shockMesh.parent.remove(ex.shockMesh);
+        this.explosions.splice(i, 1);
+        continue;
+      }
+      const t = 1 - (ex.life / ex.maxLife);
+      const coreScale = 1 + t * 4.2;
+      const shockScale = 1 + t * 6.8;
+      ex.coreMesh.scale.set(coreScale, coreScale, coreScale);
+      ex.coreMesh.rotation.x += dt * 5;
+      ex.coreMesh.rotation.y += dt * 6;
+      ex.shockMesh.scale.set(shockScale, shockScale, shockScale);
+      ex.shockMesh.rotation.y -= dt * 4;
+      ex.coreMat.opacity = Math.max(0, (1 - t) * 0.9);
+      ex.shockMat.opacity = Math.max(0, (1 - t) * 0.65);
+    }
 
     // --- Update Debris Particles ---
     for (let i = this.debrisParticles.length - 1; i >= 0; i--) {
@@ -180,3 +292,4 @@ export class ParticleManager {
     posAttr.needsUpdate = true;
   }
 }
+

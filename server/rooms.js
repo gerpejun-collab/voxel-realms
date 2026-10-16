@@ -1,15 +1,27 @@
 // server/rooms.js
 // Room manager and message dispatcher for multiplayer sessions
 
-const { MSG, sanitizeName, sanitizeChat, isValidBlockModify, isValidMove, validateTeleportPacket } = require('./protocol');
+const {
+  MSG,
+  sanitizeName,
+  sanitizeChat,
+  isValidBlockModify,
+  isValidMove,
+  validateTeleportPacket,
+  isValidWeaponShoot,
+  isValidTntTrigger
+} = require('./protocol');
 const { GameState } = require('./game-state');
 
 class RoomManager {
   constructor(options = {}) {
-    this.maxPlayers = Number(options.maxPlayers) || 12;
-    this.defaultSeed = Number(options.seed) || 48151623;
+    const maxParam = (typeof options === 'number') ? options : (options && options.maxPlayers);
+    this.maxPlayers = Number(maxParam) || 30;
+    this.defaultSeed = Number(options?.seed) || 48151623;
     this.rooms = new Map(); // roomId -> { gameState, clients: Map<ws, playerId> }
     this.socketMeta = new Map(); // ws -> { id, roomId, lastMsgTime, msgCount }
+    this.pendingTntTimers = new Set();
+    this.playerHitCooldowns = new Map(); // "shooterId->targetId" -> timestamp
 
     // Start tick loop for movement broadcasts (20 updates/second)
     this.tickInterval = setInterval(() => this.tick(), 50);
@@ -19,7 +31,7 @@ class RoomManager {
     if (!this.rooms.has(roomId)) {
       this.rooms.set(roomId, {
         id: roomId,
-        gameState: new GameState(this.defaultSeed),
+        gameState: new GameState(this.defaultSeed, this.maxPlayers),
         clients: new Map() // ws -> playerId
       });
     }
@@ -55,6 +67,13 @@ class RoomManager {
         }
       }
     }
+  }
+
+  findSocketByPlayerId(room, playerId) {
+    for (const [clientWs, pid] of room.clients.entries()) {
+      if (pid === playerId) return clientWs;
+    }
+    return null;
   }
 
   handleConnection(ws) {
@@ -133,6 +152,18 @@ class RoomManager {
       case MSG.TELEPORT_TO_PLAYER:
         this.handleTeleportToPlayer(ws, meta, (data && typeof data === 'object') ? data : parsed);
         break;
+
+      case MSG.WEAPON_TOGGLE:
+        this.handleWeaponToggle(ws, meta, data);
+        break;
+
+      case MSG.WEAPON_SHOOT:
+        this.handleWeaponShoot(ws, meta, data);
+        break;
+
+      case MSG.TNT_TRIGGER:
+        this.handleTntTrigger(ws, meta, data);
+        break;
     }
   }
 
@@ -165,7 +196,8 @@ class RoomManager {
       name: player.name,
       pos: player.pos,
       rot: player.rot,
-      action: player.action
+      action: player.action,
+      weaponsEnabled: !!player.weaponsEnabled
     }, ws);
   }
 
@@ -175,6 +207,129 @@ class RoomManager {
     if (!room || !isValidMove(data)) return;
 
     room.gameState.updatePlayer(meta.id, data);
+  }
+
+  handleWeaponToggle(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
+
+    const enabled = Boolean(data && data.enabled);
+    room.gameState.setPlayerWeaponsMode(meta.id, enabled);
+
+    // Broadcast updated shared animal list to everyone in the room (no duplicates!)
+    this.broadcast(room, MSG.ANIMALS_UPDATE, {
+      animals: room.gameState.getAnimalsSnapshot()
+    });
+  }
+
+  handleWeaponShoot(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidWeaponShoot(data)) return;
+
+    const shooter = room.gameState.getPlayer(meta.id);
+    if (!shooter) return;
+
+    // Broadcast tracer/muzzle FX to other players
+    this.broadcast(room, MSG.WEAPON_SHOT_FX, {
+      shooterId: shooter.id,
+      weaponType: data.weaponType || 'rifle',
+      origin: data.origin || shooter.pos,
+      dir: data.dir || [0, 0, -1],
+      hitPos: data.hitPos || null
+    }, ws);
+
+    // 1. Check if shot targeted a player (Non-lethal impact + non-annoying notification)
+    if (data.targetPlayerId) {
+      const targetPlayer = room.gameState.getPlayer(data.targetPlayerId);
+      if (targetPlayer && targetPlayer.id !== shooter.id) {
+        const pairKey = `${shooter.id}->${targetPlayer.id}`;
+        const now = Date.now();
+        const lastHit = this.playerHitCooldowns.get(pairKey) || 0;
+
+        // Throttle notifications to at most once every 1.2s per shooter/target pair so it is never annoying
+        if (now - lastHit >= 1200) {
+          this.playerHitCooldowns.set(pairKey, now);
+          const hitPayload = {
+            shooterId: shooter.id,
+            shooterName: shooter.name,
+            targetPlayerId: targetPlayer.id,
+            targetName: targetPlayer.name,
+            weaponType: data.weaponType || 'rifle',
+            nonLethal: true,
+            hitPos: data.hitPos || targetPlayer.pos
+          };
+
+          const targetWs = this.findSocketByPlayerId(room, targetPlayer.id);
+          if (targetWs) {
+            this.send(targetWs, MSG.WEAPON_HIT, hitPayload);
+          }
+          // Confirm impact to shooter as well
+          this.send(ws, MSG.WEAPON_HIT, hitPayload);
+        }
+      }
+    }
+
+    // 2. Check if shot targeted a synchronized animal (Animal bursts/explodes for all players)
+    if (data.targetAnimalId) {
+      const burstResult = room.gameState.hitAnimal(data.targetAnimalId, shooter.id);
+      if (burstResult) {
+        this.broadcast(room, MSG.ANIMAL_BURST, burstResult);
+        this.broadcast(room, MSG.ANIMALS_UPDATE, {
+          animals: room.gameState.getAnimalsSnapshot()
+        });
+      }
+    }
+  }
+
+  handleTntTrigger(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidTntTrigger(data)) return;
+
+    const fuseMs = typeof data.fuseMs === 'number' ? Math.max(0, Math.min(4000, data.fuseMs)) : 1800;
+    const rx = Math.round(data.x);
+    const ry = Math.round(data.y);
+    const rz = Math.round(data.z);
+
+    this.broadcast(room, MSG.TNT_PRIMED, {
+      x: rx,
+      y: ry,
+      z: rz,
+      fuseMs,
+      playerId: meta.id
+    });
+
+    const executeDetonation = () => {
+      const explosion = room.gameState.detonateTnt(rx, ry, rz, 3);
+      this.broadcast(room, MSG.TNT_EXPLODE, explosion);
+      if (explosion.hitAnimals && explosion.hitAnimals.length > 0) {
+        for (const anim of explosion.hitAnimals) {
+          this.broadcast(room, MSG.ANIMAL_BURST, {
+            animalId: anim.id,
+            type: anim.type,
+            x: anim.x,
+            y: anim.y,
+            z: anim.z,
+            shooterId: meta.id
+          });
+        }
+        this.broadcast(room, MSG.ANIMALS_UPDATE, {
+          animals: room.gameState.getAnimalsSnapshot()
+        });
+      }
+    };
+
+    if (fuseMs <= 0) {
+      executeDetonation();
+    } else {
+      const timer = setTimeout(() => {
+        this.pendingTntTimers.delete(timer);
+        executeDetonation();
+      }, fuseMs);
+      this.pendingTntTimers.add(timer);
+    }
   }
 
   handleBlockModify(ws, meta, data) {
@@ -314,7 +469,12 @@ class RoomManager {
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
     }
+    for (const timer of this.pendingTntTimers) {
+      clearTimeout(timer);
+    }
+    this.pendingTntTimers.clear();
   }
 }
 
 module.exports = { RoomManager };
+

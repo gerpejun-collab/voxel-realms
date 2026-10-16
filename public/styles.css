@@ -2074,4 +2074,500 @@ body.mobile-mode .desktop-only {
   transform: translateY(1px);
 }
 
+/* ==========================================================================
+   MOBILE CONTROLS OVERHAUL & RELOCATED CAMERA BUTTON
+   ========================================================================== */
+.mobile-cam-relocated {
+  position: absolute !important;
+  bottom: 168px !important;
+  left: 24px !important;
+  right: auto !important;
+  width: 52px !important;
+  height: 52px !important;
+  background: rgba(30, 41, 59, 0.85) !important;
+  border: 2px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6) !important;
+  z-index: 30 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.mobile-cam-relocated .btn-icon {
+  font-size: 20px !important;
+}
+
+.mobile-cam-relocated .btn-label {
+  font-size: 8px !important;
+  font-weight: 800 !important;
+  color: #f1f5f9 !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Redesigned Right-Thumb 2x2 Action Cluster */
+.action-fan-arc {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 170px;
+  height: 160px;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.action-fan-arc .mobile-action-btn {
+  pointer-events: auto;
+  border-radius: 12px !important;
+  outline: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Jump: Bottom Right */
+.mobile-action-btn.jump-btn {
+  bottom: 8px !important;
+  right: 8px !important;
+  width: 60px !important;
+  height: 60px !important;
+  background: rgba(14, 116, 144, 0.85) !important;
+  border: 2px solid rgba(103, 232, 249, 0.85) !important;
+  box-shadow: 0 4px 14px rgba(6, 182, 212, 0.4) !important;
+}
+
+/* Place: Bottom Left of cluster */
+.mobile-action-btn.place-btn {
+  bottom: 8px !important;
+  right: 76px !important;
+  width: 54px !important;
+  height: 54px !important;
+  background: rgba(22, 101, 52, 0.85) !important;
+  border: 2px solid rgba(74, 222, 128, 0.85) !important;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.4) !important;
+}
+
+/* Break / Shoot: Top Right of cluster */
+.mobile-action-btn.break-btn {
+  bottom: 76px !important;
+  right: 8px !important;
+  width: 58px !important;
+  height: 58px !important;
+  background: rgba(153, 27, 27, 0.88) !important;
+  border: 2px solid rgba(248, 113, 113, 0.85) !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
+}
+
+/* Sprint: Top Left of cluster */
+.mobile-action-btn.sprint-btn {
+  bottom: 76px !important;
+  right: 76px !important;
+  width: 54px !important;
+  height: 54px !important;
+  background: rgba(161, 98, 7, 0.85) !important;
+  border: 2px solid rgba(251, 191, 36, 0.85) !important;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4) !important;
+}
+
+/* ==========================================================================
+   WEAPONS HUD & SCOPE OVERLAY
+   ========================================================================== */
+#weapons-hud-controls {
+  position: absolute;
+  top: 72px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 25;
+}
+
+.weapon-hud-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-family: var(--font-title);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  border-radius: 0px;
+  border: none;
+  outline: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px rgba(255, 255, 255, 0.4),
+    inset -2px -2px 0px rgba(0, 0, 0, 0.7);
+  background: #3f3f46;
+  color: #f4f4f5;
+  text-shadow: 1px 1px 0px #000000;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.08s ease;
+}
+
+.weapon-hud-btn:hover {
+  background: #52525b;
+}
+
+.weapon-hud-btn.active {
+  background: #0284c7 !important;
+  box-shadow: 
+    inset 2px 2px 0px #bae6fd,
+    inset -2px -2px 0px #0369a1,
+    0 0 10px rgba(14, 165, 233, 0.5) !important;
+}
+
+.weapon-hud-btn.shoot-highlight {
+  background: #991b1b;
+  box-shadow: 
+    inset 2px 2px 0px #fca5a5,
+    inset -2px -2px 0px #7f1d1d;
+}
+
+.weapon-hud-btn.tnt-highlight {
+  background: #c2410c;
+  box-shadow: 
+    inset 2px 2px 0px #fdba74,
+    inset -2px -2px 0px #9a3412;
+}
+
+/* Sniper Scope Overlay */
+#rifle-scope-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scope-vignette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at center, transparent 32%, rgba(0, 0, 0, 0.95) 68%, #000000 100%);
+}
+
+.scope-circle {
+  position: relative;
+  width: min(70vh, 70vw);
+  height: min(70vh, 70vw);
+  border: 3px solid rgba(0, 0, 0, 0.85);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scope-line-h {
+  position: absolute;
+  width: 100%;
+  height: 1.5px;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.scope-line-v {
+  position: absolute;
+  width: 1.5px;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.scope-center-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: #ef4444;
+  border-radius: 50%;
+}
+
+.scope-telemetry {
+  position: absolute;
+  bottom: 24px;
+  font-family: var(--font-title);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #38bdf8;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 4px 16px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+/* Weapon Hit Toast */
+#weapon-hit-toast {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  padding: 10px 22px;
+  font-family: var(--font-title);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  border-radius: 0px;
+  outline: 2px solid #000000;
+  z-index: 55;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#weapon-hit-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+#weapon-hit-toast.hit-target-toast {
+  background: #7f1d1d;
+  border: 1px solid #ef4444;
+  box-shadow: 
+    inset 2px 2px 0px #fca5a5,
+    inset -2px -2px 0px #450a0a,
+    0 6px 20px rgba(0, 0, 0, 0.7);
+  color: #fef2f2;
+  text-shadow: 1px 1px 0px #000000;
+}
+
+#weapon-hit-toast.hit-shooter-toast {
+  background: #14532d;
+  border: 1px solid #22c55e;
+  box-shadow: 
+    inset 2px 2px 0px #86efac,
+    inset -2px -2px 0px #052e16,
+    0 6px 20px rgba(0, 0, 0, 0.7);
+  color: #f0fdf4;
+  text-shadow: 1px 1px 0px #000000;
+}
+
+/* ==========================================================================
+   PAUSE MENU OVERHAUL & TELEMETRY PANEL
+   ========================================================================== */
+.pause-card {
+  max-height: 90vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 20px 26px !important;
+}
+
+.pause-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.session-timer-chip {
+  font-size: 11px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 4px 10px;
+  color: #38bdf8;
+}
+
+.pause-scroll-body {
+  overflow-y: auto;
+  max-height: calc(88vh - 120px);
+  padding-right: 6px;
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Telemetry Box & Canvas */
+.telemetry-box {
+  background: rgba(18, 20, 26, 0.9);
+  outline: 2px solid #000000;
+  box-shadow: 
+    inset 1px 1px 0px rgba(255, 255, 255, 0.15),
+    inset -1px -1px 0px rgba(0, 0, 0, 0.8);
+  padding: 12px 14px;
+}
+
+.telemetry-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.telemetry-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.telemetry-stat .t-label {
+  font-family: var(--font-title);
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.telemetry-stat .t-val {
+  font-family: var(--font-title);
+  font-size: 13px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.telemetry-grade {
+  padding: 4px 10px;
+  font-family: var(--font-title);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  outline: 1px solid #000000;
+  text-shadow: 1px 1px 0px #000000;
+}
+
+.telemetry-grade.grade-s {
+  background: #15803d;
+  color: #bbf7d0;
+}
+
+.telemetry-grade.grade-a {
+  background: #0369a1;
+  color: #bae6fd;
+}
+
+.telemetry-grade.grade-b {
+  background: #b45309;
+  color: #fef08a;
+}
+
+.telemetry-grade.grade-c {
+  background: #b91c1c;
+  color: #fecaca;
+}
+
+#fps-telemetry-canvas {
+  width: 100%;
+  height: 54px;
+  background: rgba(10, 12, 16, 0.85);
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+  display: block;
+}
+
+/* Special Mode Toggles (Boost & Weapons) */
+.pause-special-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.special-toggle-btn {
+  padding: 9px 12px;
+  font-family: var(--font-title);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-align: center;
+  border-radius: 0px;
+  border: none;
+  outline: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px rgba(255, 255, 255, 0.4),
+    inset -2px -2px 0px rgba(0, 0, 0, 0.7);
+  background: #475569;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 0.08s ease;
+}
+
+.special-toggle-btn.active {
+  background: #16a34a !important;
+  box-shadow: 
+    inset 2px 2px 0px #86efac,
+    inset -2px -2px 0px #14532d,
+    0 0 10px rgba(34, 197, 94, 0.5) !important;
+  color: #ffffff !important;
+}
+
+.special-toggle-btn.weapons-toggle-btn.active {
+  background: #dc2626 !important;
+  box-shadow: 
+    inset 2px 2px 0px #fca5a5,
+    inset -2px -2px 0px #7f1d1d,
+    0 0 10px rgba(239, 68, 68, 0.5) !important;
+}
+
+/* Minecraft Range Slider */
+.mc-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 10px;
+  background: #18181b;
+  outline: 2px solid #000000;
+  box-shadow: inset 1px 1px 0px #000000, inset -1px -1px 0px #3f3f46;
+  border-radius: 0px;
+  margin: 6px 0;
+}
+
+.mc-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 22px;
+  background: #71717a;
+  outline: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #e4e4e7,
+    inset -2px -2px 0px #27272a;
+  cursor: pointer;
+  border-radius: 0px;
+}
+
+.fps-cap-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-title);
+  font-size: 9px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+/* Compact mobile landscape top bar */
+@media (max-width: 1024px) and (orientation: landscape), (max-height: 600px) {
+  #hud-top-bar {
+    max-width: calc(100vw - 190px) !important;
+  }
+  .hud-corner-chip {
+    max-width: 100% !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    padding: 4px 10px !important;
+    font-size: 10px !important;
+    gap: 5px !important;
+  }
+  .pause-card {
+    max-height: 94vh !important;
+    padding: 14px 18px !important;
+  }
+  .pause-scroll-body {
+    max-height: 52vh !important;
+  }
+  #weapons-hud-controls {
+    top: 50px !important;
+    right: 12px !important;
+  }
+  .weapon-hud-btn {
+    padding: 6px 10px !important;
+    font-size: 10px !important;
+  }
+}
+
+
 

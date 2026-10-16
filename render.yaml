@@ -13,6 +13,6 @@ services:
       - key: PORT
         value: 10000
       - key: MAX_PLAYERS
-        value: 12
+        value: 30
       - key: WORLD_SEED
         value: 48151623

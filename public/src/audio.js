@@ -362,6 +362,142 @@ class SoundSystem {
     osc.start(t);
     osc.stop(t + 0.25);
   }
+
+  /**
+   * Sniper / Voxel Rifle gunshot sound: crisp supersonic crack + low-end punch
+   */
+  playShoot() {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const noiseBuffer = this.createNoiseBuffer(0.22);
+    if (noiseBuffer) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = noiseBuffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, t);
+      filter.Q.setValueAtTime(1.4, t);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.85, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+      src.start(t);
+      src.stop(t + 0.22);
+    }
+
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, t);
+    osc.frequency.exponentialRampToValueAtTime(42, t + 0.16);
+    oscGain.gain.setValueAtTime(0.65, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.16);
+  }
+
+  /**
+   * Primed TNT fuse sizzle sound
+   */
+  playFuse() {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const noiseBuffer = this.createNoiseBuffer(0.6);
+    if (!noiseBuffer) return;
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(2800, t);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.32, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    src.start(t);
+    src.stop(t + 0.6);
+  }
+
+  /**
+   * Reactive TNT detonation explosion sound: deep seismic rumble + blast wave
+   */
+  playExplosion() {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const noiseBuffer = this.createNoiseBuffer(0.65);
+    if (noiseBuffer) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = noiseBuffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(750, t);
+      filter.frequency.exponentialRampToValueAtTime(110, t + 0.65);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.95, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
+
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+      src.start(t);
+      src.stop(t + 0.65);
+    }
+
+    const sub = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(95, t);
+    sub.frequency.exponentialRampToValueAtTime(22, t + 0.55);
+    subGain.gain.setValueAtTime(0.9, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    sub.connect(subGain);
+    subGain.connect(this.masterGain);
+    sub.start(t);
+    sub.stop(t + 0.55);
+  }
+
+  /**
+   * Subtle, non-annoying notification chime when tagged by a friendly rifle shot
+   */
+  playHitNotification() {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(520, t);
+    osc.frequency.exponentialRampToValueAtTime(780, t + 0.09);
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.11);
+  }
 }
 
 export const sound = new SoundSystem();
+

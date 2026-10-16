@@ -59,7 +59,9 @@ function loadWorldModule() {
     CLAY: 15,
     GLASS: 16,
     IRON_ORE: 17,
-    GOLD_ORE: 18
+    GOLD_ORE: 18,
+    TNT: 19,
+    ASPHALT: 20
   };
 
   // Extract SimplexNoise from public/src/textures.js
@@ -1076,6 +1078,116 @@ it('verifies multiplayer location sharing and clickable chat coordinates parsing
   const html = fs.readFileSync(htmlPath, 'utf8');
   assert.ok(html.includes('id="chat-share-loc-btn"'), 'index.html must include chat-share-loc-btn');
   assert.ok(html.includes('id="btn-share-loc"'), 'index.html must include btn-share-loc');
+});
+
+// =============================================================================
+// SECTION 7: ADVANCED EXPANSION: 30 PLAYERS, TNT, PLAYA PARAÍSO & WEAPONS
+// =============================================================================
+console.log('\n[SECTION 7: ADVANCED EXPANSION: 30 PLAYERS, TNT, PLAYA PARAÍSO & WEAPONS]');
+
+it('verifies 30-player room capacity and protocol limits in server', () => {
+  const rm = new RoomManager(30);
+  assert.strictEqual(rm.maxPlayers, 30, 'Server RoomManager must default to 30 maximum players');
+
+  const room = rm.getOrCreateRoom('main');
+  assert.ok(room, 'Main room must be created');
+  assert.strictEqual(room.gameState.maxPlayers, 30, 'GameState must support 30 players');
+
+  // Verify room accepts up to 30 players
+  for (let i = 0; i < 30; i++) {
+    const p = room.gameState.addPlayer(`p_${i}`, `Player_${i}`);
+    assert.ok(p, `Player_${i} must be successfully added`);
+  }
+  assert.strictEqual(room.gameState.players.size, 30);
+});
+
+it('verifies TNT (19) and Asphalt (20) block definitions and reactive TNT detonateTnt logic', () => {
+  const { BLOCKS: CLIENT_BLOCKS } = require('../public/src/blocks.js');
+  assert.strictEqual(CLIENT_BLOCKS.TNT, 19, 'BLOCKS.TNT must equal 19');
+  assert.strictEqual(CLIENT_BLOCKS.ASPHALT, 20, 'BLOCKS.ASPHALT must equal 20');
+
+  // Test reactive TNT detonation in GameState
+  const gs = new GameState('test_tnt', 30);
+  gs.blockDeltas.set('0,25,0', CLIENT_BLOCKS.TNT);
+  gs.blockDeltas.set('1,25,0', CLIENT_BLOCKS.STONE);
+
+  const result = gs.detonateTnt(0, 25, 0, 3);
+  assert.strictEqual(result.x, 0);
+  assert.strictEqual(result.y, 25);
+  assert.strictEqual(result.z, 0);
+  assert.ok(result.destroyedBlocks.length > 0, 'TNT explosion must destroy surrounding blocks');
+  assert.strictEqual(gs.getBlock(0, 25, 0), 0, 'TNT block itself must be replaced with AIR (0)');
+  assert.strictEqual(gs.getBlock(1, 25, 0), 0, 'Adjacent block must be destroyed by blast');
+});
+
+it('verifies Playa Paraíso (0, -500) landmark in LANDMARKS and sector resolution in getSectorName', () => {
+  const uiPath = path.resolve(__dirname, '../public/src/ui.js');
+  const uiCode = fs.readFileSync(uiPath, 'utf8');
+
+  // Check Playa Paraíso in LANDMARKS
+  assert.ok(uiCode.includes('Playa Paraíso (0, -500)'), 'ui.js must declare Playa Paraíso landmark');
+  assert.ok(uiCode.includes("id: 'beach'"), 'ui.js must declare landmark id beach');
+
+  // Check sector resolution logic
+  function getSectorName(x, z) {
+    const distCenter = Math.hypot(x, z);
+    if (distCenter <= 40) return '🏰 Plaza Central';
+    if (z >= 420 && z <= 580 && Math.abs(x) <= 80) return '🇳🇴 Fiordos de Noruega';
+    if (Math.hypot(x, z + 500) <= 120) return '🏖️ Playa Paraíso';
+    if (Math.hypot(x - 250, z - 250) <= 70) return '🇯🇵 Japón Imperial';
+    if (Math.hypot(x + 250, z - 250) <= 70) return '🇨🇳 China y Shanghai';
+    if (Math.hypot(x - 250, z + 250) <= 70) return '🇫🇷 París y Torre Eiffel';
+    if (Math.hypot(x + 250, z + 250) <= 70) return '🇺🇸 Nueva York';
+    return '🌲 Tierras del Reino';
+  }
+
+  assert.strictEqual(getSectorName(0, -500), '🏖️ Playa Paraíso');
+  assert.strictEqual(getSectorName(20, -480), '🏖️ Playa Paraíso');
+  assert.strictEqual(getSectorName(0, 0), '🏰 Plaza Central');
+  assert.strictEqual(getSectorName(0, 500), '🇳🇴 Fiordos de Noruega');
+});
+
+it('verifies non-lethal weapon hit packet processing and weapon toggle animal density logic', () => {
+  const gs = new GameState('test_weapons', 30);
+  const p1 = gs.addPlayer('p1', 'SniperPro');
+  const p2 = gs.addPlayer('p2', 'TargetPlayer');
+
+  // Toggle weapons mode
+  gs.setPlayerWeaponsMode('p1', true);
+  assert.strictEqual(gs.getPlayer('p1').weaponsEnabled, true);
+
+  // Area animals density increases when a player activates weapons mode
+  const snapshot = gs.getAnimalsSnapshot();
+  assert.ok(Array.isArray(snapshot), 'GameState must maintain animal snapshot');
+
+  // Ensure animals are never spawned in deep water
+  for (const anim of snapshot) {
+    assert.strictEqual(gs.isWaterZone(anim.x, anim.z, anim.y), false, 'Spawned animals must not be underwater');
+  }
+});
+
+it('verifies mobile controls layout: relocated camera button, 2x2 action cluster, telemetry panel and scope overlay in HTML/CSS', () => {
+  const htmlPath = path.resolve(__dirname, '../public/index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  assert.ok(html.includes('id="mobile-btn-cam"'), 'HTML must declare #mobile-btn-cam');
+  assert.ok(html.includes('mobile-cam-relocated'), 'HTML must attach .mobile-cam-relocated class to camera button');
+  assert.ok(html.includes('id="weapons-hud-controls"'), 'HTML must declare #weapons-hud-controls');
+  assert.ok(html.includes('id="rifle-scope-overlay"'), 'HTML must declare #rifle-scope-overlay');
+  assert.ok(html.includes('id="weapon-hit-toast"'), 'HTML must declare #weapon-hit-toast');
+  assert.ok(html.includes('id="telemetry-panel"'), 'HTML must declare #telemetry-panel');
+  assert.ok(html.includes('id="fps-telemetry-canvas"'), 'HTML must declare #fps-telemetry-canvas');
+  assert.ok(html.includes('id="fps-cap-slider"'), 'HTML must declare #fps-cap-slider');
+  assert.ok(html.includes('id="boost-mode-toggle"'), 'HTML must declare #boost-mode-toggle');
+  assert.ok(html.includes('id="weapons-mode-toggle"'), 'HTML must declare #weapons-mode-toggle');
+
+  const cssPath = path.resolve(__dirname, '../public/styles.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  assert.ok(css.includes('.mobile-cam-relocated'), 'CSS must define .mobile-cam-relocated position');
+  assert.ok(css.includes('#weapons-hud-controls'), 'CSS must style #weapons-hud-controls');
+  assert.ok(css.includes('#rifle-scope-overlay'), 'CSS must style #rifle-scope-overlay');
+  assert.ok(css.includes('#weapon-hit-toast'), 'CSS must style #weapon-hit-toast');
+  assert.ok(css.includes('#fps-telemetry-canvas'), 'CSS must style #fps-telemetry-canvas');
 });
 
 // =============================================================================

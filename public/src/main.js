@@ -44,19 +44,32 @@ class VoxelRealmsApp {
       this.particleManager
     );
 
-    // 6. Initialize UI Overlay & HUD
+    // 6. Initialize Ambient Voxel Animals, Rare NPCs & Highway Traffic
+    this.animalManager = new AnimalManager(this.world, this.sceneManager.scene);
+
+    // 7. Initialize UI Overlay & HUD
     this.ui = new UIManager(
       this.materialManager,
       this.controls,
       this.sceneManager,
       this.world,
-      this.multiplayer
+      this.multiplayer,
+      this.animalManager
     );
 
-    // 7. Initialize Ambient Voxel Animals (Minecraft Sheep & Pigs)
-    this.animalManager = new AnimalManager(this.world, this.sceneManager.scene);
+    // Connect Multiplayer Animal Synchronizer & Bursts
+    if (this.multiplayer) {
+      this.multiplayer.onAnimalsUpdate = (animals) => {
+        this.animalManager.syncAnimalsFromServer(animals);
+      };
+      this.multiplayer.onAnimalBurst = (burstData) => {
+        if (burstData && this.particleManager) {
+          this.particleManager.spawnAnimalBurst(burstData.x, burstData.y, burstData.z);
+        }
+      };
+    }
 
-    // Setup Block Interaction Events
+    // Setup Block Interaction & Weapons Events
     this.setupInteractions();
 
     // Initial safe player spawn at open plaza viewpoint facing the Golden Altar & Statues
@@ -70,6 +83,7 @@ class VoxelRealmsApp {
     this.fpsCounter = 0;
     this.fpsTimer = 0;
     this.currentFps = 60;
+    this.lastFrameTime = 0;
 
     // Start loop
     this.animate = this.animate.bind(this);
@@ -110,10 +124,71 @@ class VoxelRealmsApp {
 
       this.multiplayer.sendBlockModify(placePos.x, placePos.y, placePos.z, selectedBlockId);
     };
+
+    // Rifle Shoot (Sniper / Non-lethal player hit & animal bursting)
+    this.controls.onWeaponShoot = ({ origin, dir, voxelHit }) => {
+      // 1. Particle muzzle flash & smoke
+      if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
+        this.particleManager.spawnMuzzleFlash(origin, dir);
+      }
+
+      // 2. Raycast remote player hit (friendly notification)
+      let targetPlayerId = null;
+      let targetPlayerHit = null;
+      if (this.multiplayer && typeof this.multiplayer.getRaycastPlayerHit === 'function') {
+        targetPlayerHit = this.multiplayer.getRaycastPlayerHit(origin, dir, 85);
+        if (targetPlayerHit) {
+          targetPlayerId = targetPlayerHit.id;
+        }
+      }
+
+      // 3. Raycast animal / rare NPC hit
+      let targetAnimalId = null;
+      if (this.animalManager && typeof this.animalManager.getHitAnimal === 'function') {
+        const hitAnim = this.animalManager.getHitAnimal(origin, dir, 75);
+        if (hitAnim) {
+          targetAnimalId = hitAnim.id;
+          const burstPos = this.animalManager.burstAnimal(hitAnim.id, this.physics.pos);
+          if (burstPos && this.particleManager && typeof this.particleManager.spawnAnimalBurst === 'function') {
+            this.particleManager.spawnAnimalBurst(burstPos.x, burstPos.y, burstPos.z);
+          }
+        }
+      }
+
+      // 4. Send multiplayer packet
+      if (this.multiplayer && typeof this.multiplayer.sendWeaponShoot === 'function') {
+        this.multiplayer.sendWeaponShoot({
+          origin: [origin.x, origin.y, origin.z],
+          dir: [dir.x, dir.y, dir.z],
+          targetPlayerId,
+          targetAnimalId,
+          hitPos: targetPlayerHit ? [origin.x + dir.x * targetPlayerHit.distance, origin.y + dir.y * targetPlayerHit.distance, origin.z + dir.z * targetPlayerHit.distance] : null
+        });
+      }
+    };
+
+    // TNT placement & trigger
+    this.controls.onPlaceTnt = (coords) => {
+      if (!coords) return;
+      if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
+        this.multiplayer.sendTntTrigger(coords.x, coords.y, coords.z);
+      }
+    };
   }
 
   animate() {
     requestAnimationFrame(this.animate);
+
+    // FPS Cap throttling (10, 30, 60, 100, 120, MAX)
+    const targetFps = window.targetMaxFps || Infinity;
+    if (targetFps < 300) {
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const minInterval = 1000 / targetFps;
+      if (this.lastFrameTime && (now - this.lastFrameTime < minInterval - 1.2)) {
+        return;
+      }
+      this.lastFrameTime = now;
+    }
 
     // Calculate delta time (capped to avoid physics anomalies on lag)
     const rawDt = this.clock.getDelta();
@@ -149,16 +224,16 @@ class VoxelRealmsApp {
      );
     this.multiplayer.update(dt);
 
-    // 6. Ambient Voxel Animals
-    this.animalManager.update(dt);
+    // 6. Ambient Voxel Animals, Rare NPCs & Highway Traffic
+    this.animalManager.update(dt, this.physics.pos);
 
     // 7. Day/Night Atmosphere & Sun Orbit (Perpetual Bright Day)
     this.sceneManager.updateDayNightCycle(this.multiplayer.timeOfDay, this.physics.pos);
 
-    // 7. HUD & Target Highlight
+    // 8. HUD, Target Highlight & Telemetry
     this.ui.updateHUD(this.currentFps, this.physics.pos);
 
-    // 8. Render Frame
+    // 9. Render Frame
     this.sceneManager.render();
   }
 }

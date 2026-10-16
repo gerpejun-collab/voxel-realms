@@ -811,6 +811,118 @@ const TextureGenerators = {
     }
     ctx.putImageData(img, 0, 0);
     return canvas;
+  },
+
+  [ATLAS_SLOTS.TNT_SIDE]: (w, h) => {
+    const canvas = createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const d = img.data;
+
+    for (let y = 0; y < h; y++) {
+      const inWhiteBand = (y >= h * 0.34 && y <= h * 0.66);
+      const isStickSeam = (Math.floor(x => x)(0), false);
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const seam = (x % Math.floor(w / 4) < 3);
+        const n = noise.fbm(x / 16, y / 16, 3) * 18;
+        if (inWhiteBand) {
+          const border = (y < h * 0.37 || y > h * 0.63);
+          const v = border ? 40 : Math.min(255, Math.max(210, 242 + n));
+          d[idx] = v;
+          d[idx + 1] = v;
+          d[idx + 2] = v;
+          d[idx + 3] = 255;
+        } else {
+          const r = seam ? 120 : Math.min(255, Math.max(150, 210 + n));
+          const g = seam ? 20 : Math.min(255, Math.max(20, 38 + n * 0.4));
+          const b = seam ? 20 : Math.min(255, Math.max(20, 32 + n * 0.4));
+          d[idx] = r;
+          d[idx + 1] = g;
+          d[idx + 2] = b;
+          d[idx + 3] = 255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.fillStyle = '#111111';
+    ctx.font = `900 ${Math.floor(h * 0.25)}px "Silkscreen", "VT323", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('TNT', w / 2, h / 2 + 2);
+    return canvas;
+  },
+
+  [ATLAS_SLOTS.TNT_TOP]: (w, h) => {
+    const canvas = createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const d = img.data;
+    const cx = w / 2;
+    const cy = h / 2;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const dist = Math.hypot(x - cx, y - cy);
+        const n = noise.fbm(x / 12, y / 12, 3) * 20;
+        if (dist < w * 0.14) {
+          // Fuse wick in center
+          const fuse = dist < w * 0.06 ? 235 : 55;
+          d[idx] = fuse;
+          d[idx + 1] = fuse;
+          d[idx + 2] = fuse;
+        } else {
+          const grid = (x % Math.floor(w / 4) < 3) || (y % Math.floor(h / 4) < 3);
+          d[idx] = grid ? 115 : Math.min(255, 205 + n);
+          d[idx + 1] = grid ? 22 : Math.max(15, 36 + n * 0.3);
+          d[idx + 2] = grid ? 22 : Math.max(15, 32 + n * 0.3);
+        }
+        d[idx + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  },
+
+  [ATLAS_SLOTS.TNT_BOTTOM]: (w, h) => {
+    const canvas = createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const d = img.data;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const grid = (x % Math.floor(w / 4) < 3) || (y % Math.floor(h / 4) < 3);
+        const n = noise.fbm(x / 12, y / 12, 3) * 18;
+        d[idx] = grid ? 95 : Math.min(255, 185 + n);
+        d[idx + 1] = grid ? 20 : Math.max(15, 34 + n * 0.3);
+        d[idx + 2] = grid ? 20 : Math.max(15, 30 + n * 0.3);
+        d[idx + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  },
+
+  [ATLAS_SLOTS.ASPHALT]: (w, h) => {
+    const canvas = createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const d = img.data;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const grain = noise.fbm(x / 6, y / 6, 4) * 18;
+        const speck = Math.abs(noise.noise2D(x / 2, y / 2)) > 0.72 ? 18 : 0;
+        const base = Math.min(95, Math.max(28, 48 + Math.floor(grain) + speck));
+        d[idx] = base;
+        d[idx + 1] = base + 1;
+        d[idx + 2] = base + 4;
+        d[idx + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
   }
 };
 

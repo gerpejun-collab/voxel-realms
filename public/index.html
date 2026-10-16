@@ -25,6 +25,22 @@
 
   <!-- In-game HUD -->
   <div id="hud-overlay" class="hidden">
+    <!-- Sniper Rifle Scope Reticle Overlay -->
+    <div id="rifle-scope-overlay" class="hidden">
+      <div class="scope-vignette"></div>
+      <div class="scope-circle">
+        <div class="scope-line-h"></div>
+        <div class="scope-line-v"></div>
+        <div class="scope-mil-dots-h"></div>
+        <div class="scope-mil-dots-v"></div>
+        <div class="scope-center-dot"></div>
+      </div>
+      <div class="scope-telemetry">ZOOM ÓPTICO 2.4x • MODO FRANCOTIRADOR</div>
+    </div>
+
+    <!-- Non-Lethal Friendly Hit Notification Toast -->
+    <div id="weapon-hit-toast" class="hidden"></div>
+
     <!-- Crosshair Reticle -->
     <div id="crosshair">
       <div class="cross-line vertical"></div>
@@ -59,6 +75,22 @@
       <button id="btn-menu-toggle" class="hud-action-pill mc-pill highlight-pill" title="Menú de Juego y Ajustes (ESC)">⚙️ Menú</button>
     </div>
 
+    <!-- Weapons & Reactive TNT HUD Action Bar (Visible when Weapons Mode is active) -->
+    <div id="weapons-hud-controls" class="hidden">
+      <button id="btn-weapon-aim" class="weapon-hud-btn mc-btn" title="Apuntar con Mira Telescópica (Click Der / Tecla Z)">
+        <span class="weapon-btn-icon">🎯</span>
+        <span class="weapon-btn-label">APUNTAR</span>
+      </button>
+      <button id="btn-weapon-shoot" class="weapon-hud-btn mc-btn shoot-highlight" title="Disparar Rifle (Click Izq / Tecla F)">
+        <span class="weapon-btn-icon">🔫</span>
+        <span class="weapon-btn-label">DISPARAR</span>
+      </button>
+      <button id="btn-weapon-tnt" class="weapon-hud-btn mc-btn tnt-highlight" title="Colocar y Detonar TNT Reactivo (Tecla G)">
+        <span class="weapon-btn-icon">🧨</span>
+        <span class="weapon-btn-label">TNT REACTIVO</span>
+      </button>
+    </div>
+
     <!-- Selected block toast label -->
     <div id="selected-block-label">Césped</div>
 
@@ -80,6 +112,12 @@
 
     <!-- Mobile Touch Controls Overlay -->
     <div id="mobile-touch-overlay" class="hidden">
+      <!-- Relocated Camera Perspective Toggle (Separated from right-hand mining cluster) -->
+      <button id="mobile-btn-cam" class="mobile-action-btn cam-btn mc-action-btn mobile-cam-relocated" title="Alternar Cámara (1ª / 3ª Persona)">
+        <span class="btn-icon">📷</span>
+        <span class="btn-label">CÁMARA</span>
+      </button>
+
       <!-- Left Virtual Joystick Zone (#virtual-joystick) -->
       <div id="virtual-joystick" class="virtual-joystick-container">
         <div id="joystick-zone">
@@ -91,15 +129,11 @@
 
       <!-- Right Touch Action Fan Arc (#mobile-action-buttons) -->
       <div id="mobile-action-buttons" class="action-fan-arc">
-        <button id="mobile-btn-cam" class="mobile-action-btn cam-btn mc-action-btn" title="Alternar Cámara">
-          <span class="btn-icon">📷</span>
-          <span class="btn-label">VISTA</span>
-        </button>
         <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn" title="Alternar Correr">
           <span class="btn-icon">⚡</span>
           <span class="btn-label">CORRER</span>
         </button>
-        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn" title="Romper Bloque (Ataque)">
+        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn" title="Romper Bloque / Disparar">
           <span class="btn-icon">⛏️</span>
           <span class="btn-label">ROMPER</span>
         </button>
@@ -108,7 +142,7 @@
           <span class="btn-label">COLOCAR</span>
         </button>
         <button id="mobile-btn-jump" class="mobile-action-btn jump-btn mc-action-btn" title="Saltar">
-          <span class="btn-icon">🦘</span>
+          <span class="btn-icon">⏫</span>
           <span class="btn-label">SALTAR</span>
         </button>
       </div>
@@ -122,14 +156,14 @@
         <h2>🗺️ Mapa del Mundo y Viaje Rápido</h2>
         <button id="close-map-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
       </div>
-      <p class="modal-desc">Selecciona un monumento o sector para viajar al instante:</p>
+      <p class="modal-desc">Selecciona un monumento o distrito conectado por autopistas y túneles:</p>
 
       <div class="map-sectors-grid">
         <button class="map-dest-btn mc-btn" data-x="0" data-y="25" data-z="0" data-landmark="spawn">
           <span class="dest-icon">🏰</span>
           <div class="dest-info">
             <span class="dest-title">Plaza Central (0, 0)</span>
-            <span class="dest-coords">XYZ (0, 25, 0) • Altar Dorado & Guardianes</span>
+            <span class="dest-coords">XYZ (0, 25, 0) • Altar Dorado, Rotonda & Guardianes</span>
           </div>
         </button>
 
@@ -137,7 +171,7 @@
           <span class="dest-icon">⛩️</span>
           <div class="dest-info">
             <span class="dest-title">Japón Imperial (+250, +250)</span>
-            <span class="dest-coords">XYZ (+250, 25, +250) • Gran Pagoda, Torii & Sakura</span>
+            <span class="dest-coords">XYZ (+250, 25, +250) • Gran Pagoda, Castillo Himeji & Torii</span>
           </div>
         </button>
 
@@ -145,7 +179,7 @@
           <span class="dest-icon">🏮</span>
           <div class="dest-info">
             <span class="dest-title">China y Shanghai (-250, +250)</span>
-            <span class="dest-coords">XYZ (-250, 25, +250) • Torre Spire & Linternas</span>
+            <span class="dest-coords">XYZ (-250, 25, +250) • Shanghai Tower, SWFC & Ciudad Prohibida</span>
           </div>
         </button>
 
@@ -153,7 +187,7 @@
           <span class="dest-icon">🗼</span>
           <div class="dest-info">
             <span class="dest-title">París y Torre Eiffel (+250, -250)</span>
-            <span class="dest-coords">XYZ (+250, 25, -250) • Réplica Torre Eiffel 3 Niveles</span>
+            <span class="dest-coords">XYZ (+250, 25, -250) • Torre Eiffel, Pirámide Louvre & Notre-Dame</span>
           </div>
         </button>
 
@@ -161,7 +195,7 @@
           <span class="dest-icon">🗽</span>
           <div class="dest-info">
             <span class="dest-title">Nueva York (-250, -250)</span>
-            <span class="dest-coords">XYZ (-250, 25, -250) • Rascacielos Empire Art Déco</span>
+            <span class="dest-coords">XYZ (-250, 25, -250) • Empire State, Chrysler, WTC & Central Park</span>
           </div>
         </button>
 
@@ -169,7 +203,15 @@
           <span class="dest-icon">🏔️</span>
           <div class="dest-info">
             <span class="dest-title">Fiordos de Noruega (0, +500)</span>
-            <span class="dest-coords">XYZ (0, 50, +500) • Acantilados, Cascadas & Taiga</span>
+            <span class="dest-coords">XYZ (0, 50, +500) • Puente Colgante, Drakkar Vikingo & Cascadas</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="0" data-y="20" data-z="-500" data-landmark="beach">
+          <span class="dest-icon">🏖️</span>
+          <div class="dest-info">
+            <span class="dest-title">Playa Paraíso (0, -500)</span>
+            <span class="dest-coords">XYZ (0, 20, -500) • Resort Real, Muelle, Superyate & Chiringuito</span>
           </div>
         </button>
       </div>
@@ -189,7 +231,7 @@
   <div id="player-list-modal" class="hidden">
     <div class="player-list-card">
       <div class="modal-header">
-        <h3>Exploradores en el Reino</h3>
+        <h3>Exploradores en el Reino (Máx. 30)</h3>
         <button id="close-player-list-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
       </div>
       <table class="player-table">
@@ -217,15 +259,15 @@
       <div class="guide-content">
         <div class="guide-section">
           <h3>🏰 Punto de Encuentro (Descampado Central)</h3>
-          <p>Todos los exploradores aparecen juntos en el descampado central en <strong>XYZ (0, 24, 0)</strong>, con una plaza pavimentada y dos grandes estatuas guardianas de bienvenida.</p>
+          <p>Todos los exploradores aparecen juntos en el descampado central en <strong>XYZ (0, 24, 0)</strong>, conectado por autopistas con tráfico de coches, puentes colgantes y túneles de montaña hacia los 7 distritos del mundo.</p>
         </div>
 
         <div class="guide-section">
-          <h3>⛏️ Cómo Minar y Construir</h3>
+          <h3>⛏️ Cómo Minar, Construir y Usar Modo Armas/TNT</h3>
           <ul>
-            <li><strong>Romper / Minar Bloques:</strong> Apunta a un bloque con la cruceta central y haz <strong>Clic Izquierdo</strong> (o toca el botón <strong>⛏️ Romper</strong> en móvil). El bloque se destruye al instante.</li>
+            <li><strong>Romper / Minar Bloques:</strong> Apunta a un bloque con la cruceta central y haz <strong>Clic Izquierdo</strong> (o toca el botón <strong>⛏️ Romper</strong> en móvil).</li>
             <li><strong>Colocar Bloques:</strong> Apunta a la cara del bloque donde deseas edificar y haz <strong>Clic Derecho</strong> (o toca el botón <strong>🧱 Colocar</strong> en móvil).</li>
-            <li><strong>Seleccionar Bloques:</strong> Pulsa los números del <strong>1 al 9</strong>, gira la <strong>Rueda del Ratón</strong> o pulsa <strong>[E]</strong> (o botón <strong>🎒 Bloques</strong>) para elegir materiales como césped, adoquín, madera, ladrillo, nieve, arena, cristal y minerales.</li>
+            <li><strong>Modo Armas y TNT Reactivo:</strong> Actívalo desde el menú de <strong>Ajustes (⚙️)</strong> para equipar el Rifle de Francotirador con mira telescópica (<strong>🎯 Apuntar</strong> / <strong>🔫 Disparar</strong>) y lanzar <strong>🧨 TNT Reactivo</strong> con onda expansiva.</li>
           </ul>
         </div>
 
@@ -237,7 +279,7 @@
               <p><strong>W, A, S, D</strong>: Moverse</p>
               <p><strong>Espacio</strong>: Saltar / Salir del agua</p>
               <p><strong>Shift</strong>: Correr a mayor velocidad</p>
-              <p><strong>Ratón</strong>: Mirar alrededor</p>
+              <p><strong>F / Z / G</strong>: Disparar / Apuntar / TNT</p>
               <p><strong>T o Enter</strong>: Abrir Chat</p>
               <p><strong>Esc</strong>: Menú y Ajustes</p>
             </div>
@@ -245,10 +287,9 @@
               <h4>📱 Móvil / Pantalla Táctil</h4>
               <p><strong>Joystick (esquina izq)</strong>: Desplazarse en 360°</p>
               <p><strong>Arrastrar lado derecho</strong>: Girar cámara</p>
-              <p><strong>Botón ⛏️</strong>: Romper bloque apuntado</p>
-              <p><strong>Botón 🧱</strong>: Poner bloque seleccionado</p>
-              <p><strong>Botón 🦘</strong>: Saltar</p>
-              <p><strong>Botón 💬</strong>: Abrir chat en pantalla</p>
+              <p><strong>Botón 📷 (izq)</strong>: Alternar Cámara</p>
+              <p><strong>Botones ⛏️ / 🧱 / ⏫</strong>: Romper, Colocar y Saltar</p>
+              <p><strong>Botón 💬</strong>: Abrir chat y compartir link</p>
             </div>
           </div>
         </div>
@@ -274,46 +315,88 @@
   <!-- Pause Menu (Escape Key) -->
   <div id="pause-menu" class="hidden">
     <div class="pause-card">
-      <h2 class="game-logo-small">VOXEL REALMS</h2>
+      <div class="pause-header-row">
+        <h2 class="game-logo-small">OPCIONES Y TELEMETRÍA</h2>
+        <span id="session-uptime-badge" class="mc-badge session-timer-chip" title="Tiempo activo en la sesión">⏱️ Sesión: <strong id="session-uptime-val">00:00:00</strong></span>
+      </div>
       <div class="pause-divider"></div>
 
-      <div class="settings-group">
-        <label for="sens-slider">Sensibilidad del Ratón / Tacto</label>
-        <input type="range" id="sens-slider" min="0.001" max="0.005" step="0.0002" value="0.0022">
-      </div>
+      <div class="pause-scroll-body">
+        <!-- Real-Time FPS Telemetry & Performance Score Panel -->
+        <div id="telemetry-panel" class="telemetry-box">
+          <div class="telemetry-top-row">
+            <div class="telemetry-stat">
+              <span class="t-label">FPS ACTUAL / PROM</span>
+              <span class="t-val"><strong id="telemetry-fps-now">60</strong> / <span id="telemetry-fps-avg">60</span></span>
+            </div>
+            <div class="telemetry-stat">
+              <span class="t-label">MÍN / MÁX</span>
+              <span class="t-val"><span id="telemetry-fps-min">58</span> / <span id="telemetry-fps-max">60</span></span>
+            </div>
+            <div id="telemetry-grade-badge" class="telemetry-grade grade-s">S+ ÓPTIMO (98%)</div>
+          </div>
+          <canvas id="fps-telemetry-canvas" width="320" height="54"></canvas>
+        </div>
 
-      <div class="settings-group">
-        <label for="fov-slider">Campo de Visión (FOV)</label>
-        <input type="range" id="fov-slider" min="60" max="100" step="1" value="75">
-      </div>
+        <!-- Authentic Minecraft Special Mode Toggles (Boost & Weapons/TNT) -->
+        <div class="pause-special-toggles">
+          <button id="boost-mode-toggle" class="mc-btn special-toggle-btn" type="button">
+            🚀 Modo BOOST: <span id="boost-mode-state">OFF</span>
+          </button>
+          <button id="weapons-mode-toggle" class="mc-btn special-toggle-btn weapons-toggle-btn" type="button">
+            🔫 Modo Armas y TNT: <span id="weapons-mode-state">OFF</span>
+          </button>
+        </div>
 
-      <div class="settings-group">
-        <label for="render-dist-slider">Distancia de Renderizado (Chunks)</label>
-        <input type="range" id="render-dist-slider" min="3" max="8" step="1" value="5">
-      </div>
+        <div class="settings-columns">
+          <div class="settings-group mc-slider-group">
+            <label for="fps-cap-slider">Límite de FPS Máximos: <strong id="fps-cap-label">MAX</strong></label>
+            <input type="range" id="fps-cap-slider" class="mc-range" min="0" max="5" step="1" value="5">
+            <div class="fps-cap-ticks">
+              <span>10</span><span>30</span><span>60</span><span>100</span><span>120</span><span>MAX</span>
+            </div>
+          </div>
 
-      <div class="settings-group">
-        <label for="menu-quality-select">Perfil Gráfico</label>
-        <select id="menu-quality-select">
-          <option value="balanced">Equilibrado (Más Rendimiento)</option>
-          <option value="high" selected>Alto (Sombras Suaves PBR)</option>
-          <option value="ultra">Ultra (Máximo Realismo)</option>
-        </select>
-      </div>
+          <div class="settings-group mc-slider-group">
+            <label for="render-dist-slider">Distancia Renderizado: <strong id="render-dist-val">5</strong> Chunks</label>
+            <input type="range" id="render-dist-slider" class="mc-range" min="3" max="10" step="1" value="5">
+          </div>
 
-      <div class="pause-menu-grid">
-        <button id="menu-btn-map" class="mc-btn menu-grid-btn">🗺️ Mapa y Viajes</button>
-        <button id="menu-btn-speed" class="mc-btn menu-grid-btn">⚡ Velocidad: 1x</button>
-        <button id="menu-btn-cam" class="mc-btn menu-grid-btn">📷 Cámara: 1ª P.</button>
-        <button id="menu-btn-share-loc" class="mc-btn menu-grid-btn">📍 Mi Ubicación</button>
-        <button id="menu-btn-inv" class="mc-btn menu-grid-btn">🎒 Catálogo Bloques</button>
-        <button id="menu-btn-guide" class="mc-btn menu-grid-btn">❓ Guía & Controles</button>
-        <button id="menu-btn-fullscreen" class="mc-btn menu-grid-btn">⛶ Pantalla Completa</button>
+          <div class="settings-group mc-slider-group">
+            <label for="sens-slider">Sensibilidad Cámara: <strong id="sens-val">100%</strong></label>
+            <input type="range" id="sens-slider" class="mc-range" min="0.001" max="0.005" step="0.0002" value="0.0022">
+          </div>
+
+          <div class="settings-group mc-slider-group">
+            <label for="fov-slider">Campo de Visión (FOV): <strong id="fov-val">75°</strong></label>
+            <input type="range" id="fov-slider" class="mc-range" min="60" max="100" step="1" value="75">
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <label for="menu-quality-select">Perfil Gráfico</label>
+          <select id="menu-quality-select" class="mc-select">
+            <option value="balanced">Equilibrado (Más Rendimiento)</option>
+            <option value="high" selected>Alto (Sombras Suaves PBR)</option>
+            <option value="ultra">Ultra (Máximo Realismo)</option>
+            <option value="boost">🚀 Modo BOOST (Ultra Distancia + Máximo FPS)</option>
+          </select>
+        </div>
+
+        <div class="pause-menu-grid">
+          <button id="menu-btn-map" class="mc-btn menu-grid-btn">🗺️ Mapa y Viajes</button>
+          <button id="menu-btn-speed" class="mc-btn menu-grid-btn">⚡ Velocidad: 1x</button>
+          <button id="menu-btn-cam" class="mc-btn menu-grid-btn">📷 Cámara: 1ª P.</button>
+          <button id="menu-btn-share-loc" class="mc-btn menu-grid-btn">📍 Mi Ubicación</button>
+          <button id="menu-btn-inv" class="mc-btn menu-grid-btn">🎒 Catálogo Bloques</button>
+          <button id="menu-btn-guide" class="mc-btn menu-grid-btn">❓ Guía & Controles</button>
+          <button id="menu-btn-fullscreen" class="mc-btn menu-grid-btn">⛶ Pantalla Completa</button>
+        </div>
       </div>
 
       <div class="pause-actions">
-        <button id="resume-btn" class="primary-btn">Volver al Juego</button>
-        <button id="disconnect-btn" class="secondary-btn">Salir a la Pantalla Principal</button>
+        <button id="resume-btn" class="primary-btn mc-btn">Volver al Juego</button>
+        <button id="disconnect-btn" class="secondary-btn mc-btn">Salir a la Pantalla Principal</button>
       </div>
     </div>
   </div>
@@ -327,7 +410,7 @@
   <div id="lobby-overlay">
     <div class="lobby-backdrop"></div>
     <div class="lobby-card">
-      <div class="game-badge">HIPERREALISMO 3D • MULTIJUGADOR WEB</div>
+      <div class="game-badge">HIPERREALISMO 3D • MULTIJUGADOR WEB (30 JUGADORES)</div>
       <h1 class="game-logo">VOXEL REALMS</h1>
       <p class="tagline">Exploración y construcción infinita en tiempo real sin descargas.</p>
 
@@ -351,6 +434,7 @@
             <option value="balanced">Equilibrado (Fluido en cualquier equipo o móvil)</option>
             <option value="high" selected>Alto (PBR + Sombras Suaves + Agua Dinámica)</option>
             <option value="ultra">Ultra (Máximo Detalle + Partículas + Atmósfera)</option>
+            <option value="boost">🚀 Modo BOOST (Ultra Distancia + Máximo Rendimiento)</option>
           </select>
         </div>
 

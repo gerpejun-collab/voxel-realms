@@ -53,6 +53,12 @@ export class Controls {
     this.perspectiveIndex = 0;
     this.localAvatar = null;
 
+    // Weapons & Reactive TNT Mode state
+    this.weaponsMode = false;
+    this.isAiming = false;
+    this.aimBlend = 0;
+    this.recoilProgress = 0;
+
     // Callbacks
     this.onBreakBlock = null;
     this.onPlaceBlock = null;
@@ -62,6 +68,9 @@ export class Controls {
     this.onToggleMap = null;
     this.onCycleSpeed = null;
     this.onSpeedChange = null;
+    this.onWeaponShoot = null;
+    this.onPlaceTnt = null;
+    this.onAimChange = null;
 
     // Build first person arm & tool attached to camera
     this.buildFirstPersonArm();
@@ -126,6 +135,34 @@ export class Controls {
     this.heldBlockMesh.position.set(0, -0.44, 0.12);
     this.armPivot.add(this.heldBlockMesh);
 
+    // 1st-Person Precision Voxel Sniper Rifle attached to hand
+    this.rifleGroup = new THREE.Group();
+    this.rifleGroup.position.set(-0.04, -0.38, -0.12);
+    this.rifleGroup.rotation.set(Math.PI / 2 - 0.15, 0, 0);
+
+    const stockMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.6 });
+    const barrelMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.35, metalness: 0.7 });
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, roughness: 0.2 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.5, roughness: 0.3 });
+
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.34), stockMat);
+    stock.position.set(0, -0.02, 0.16);
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.13, 0.38), metalMat);
+    receiver.position.set(0, 0.02, -0.12);
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.58), barrelMat);
+    barrel.position.set(0, 0.04, -0.52);
+    const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.09), goldMat);
+    muzzle.position.set(0, 0.04, -0.82);
+    const scopeBody = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.065, 0.32), metalMat);
+    scopeBody.position.set(0, 0.12, -0.16);
+    const scopeLens = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.02), lensMat);
+    scopeLens.position.set(0, 0.12, 0.01);
+
+    this.rifleGroup.add(stock, receiver, barrel, muzzle, scopeBody, scopeLens);
+    this.rifleGroup.visible = false;
+    this.armPivot.add(this.rifleGroup);
+
     this.firstPersonArm.add(this.armPivot);
     this.punchProgress = 0;
   }
@@ -150,14 +187,119 @@ export class Controls {
       15: 0xa8a29e, // Clay
       16: 0xbae6fd, // Glass
       17: 0xd97706, // Iron Ore
-      18: 0xeab308  // Gold Ore
+      18: 0xeab308, // Gold Ore
+      19: 0xdc2626, // TNT
+      20: 0x262930  // Asphalt
     };
+    if (this.weaponsMode) {
+      this.heldBlockMesh.visible = false;
+      if (this.rifleGroup) this.rifleGroup.visible = true;
+      return;
+    }
+    if (this.rifleGroup) this.rifleGroup.visible = false;
     if (colors[blockId]) {
       this.heldBlockMat.color.setHex(colors[blockId]);
       this.heldBlockMesh.visible = true;
     } else {
       this.heldBlockMesh.visible = false;
     }
+  }
+
+  setWeaponsMode(enabled) {
+    this.weaponsMode = Boolean(enabled);
+    if (!this.weaponsMode && this.isAiming) {
+      this.setAiming(false);
+    }
+    if (this.rifleGroup) {
+      this.rifleGroup.visible = this.weaponsMode;
+    }
+    if (this.heldBlockMesh) {
+      this.heldBlockMesh.visible = !this.weaponsMode;
+    }
+  }
+
+  setAiming(aiming) {
+    const nextAim = Boolean(aiming) && this.weaponsMode;
+    if (this.isAiming === nextAim) return this.isAiming;
+    this.isAiming = nextAim;
+    if (sound && typeof sound.playClick === 'function') {
+      sound.playClick(this.isAiming ? 1.25 : 0.9);
+    }
+    if (this.onAimChange) {
+      this.onAimChange(this.isAiming);
+    }
+    return this.isAiming;
+  }
+
+  toggleAiming() {
+    if (!this.weaponsMode) return false;
+    return this.setAiming(!this.isAiming);
+  }
+
+  triggerShoot() {
+    if (!this.weaponsMode) return null;
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (this.lastShootTime && (now - this.lastShootTime < 200)) return null;
+    this.lastShootTime = now;
+
+    this.recoilProgress = 1.0;
+    if (this.localAvatar) {
+      this.localAvatar.triggerSwing();
+    }
+    if (sound && typeof sound.playShoot === 'function') {
+      sound.playShoot();
+    }
+
+    const origin = this.physics.getEyePosition();
+    const dir = new THREE.Vector3(0, 0, -1);
+    dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+
+    // Long-range raycast for TNT blocks or distant surfaces (up to 75 blocks)
+    const savedReach = this.reachDistance;
+    this.reachDistance = 75.0;
+    const longVoxelHit = this.raycastVoxel();
+    this.reachDistance = savedReach;
+    this.raycastVoxel();
+
+    const shotData = {
+      origin: { x: origin.x, y: origin.y, z: origin.z },
+      dir: { x: dir.x, y: dir.y, z: dir.z },
+      voxelHit: longVoxelHit ? { ...longVoxelHit } : null
+    };
+
+    if (this.onWeaponShoot) {
+      this.onWeaponShoot(shotData);
+    }
+    return shotData;
+  }
+
+  triggerTnt() {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (this.lastTntTime && (now - this.lastTntTime < 300)) return null;
+    this.lastTntTime = now;
+
+    this.triggerPunch();
+    let targetCoords = null;
+    if (this.targetedVoxel && this.targetedVoxel.place) {
+      targetCoords = {
+        x: this.targetedVoxel.place.x,
+        y: this.targetedVoxel.place.y,
+        z: this.targetedVoxel.place.z
+      };
+    } else if (this.physics) {
+      const eye = this.physics.getEyePosition();
+      const dir = new THREE.Vector3(0, 0, -1);
+      dir.applyEuler(new THREE.Euler(0, this.yaw, 0, 'YXZ'));
+      const tx = Math.floor(eye.x + dir.x * 2.5);
+      const tz = Math.floor(eye.z + dir.z * 2.5);
+      const ty = this.world ? this.world.getHeightAt(tx, tz) + 1 : Math.floor(this.physics.pos.y);
+      targetCoords = { x: tx, y: ty, z: tz };
+    }
+
+    if (targetCoords && this.onPlaceTnt) {
+      this.onPlaceTnt(targetCoords);
+    }
+    return targetCoords;
   }
 
   setupListeners() {
@@ -167,8 +309,10 @@ export class Controls {
       const movementX = e.movementX || 0;
       const movementY = e.movementY || 0;
 
-      this.yaw -= movementX * this.sensitivity;
-      this.pitch -= movementY * this.sensitivity;
+      // Finer mouse precision when aiming down sniper scope
+      const aimFactor = this.isAiming ? 0.42 : 1.0;
+      this.yaw -= movementX * this.sensitivity * aimFactor;
+      this.pitch -= movementY * this.sensitivity * aimFactor;
 
       // Clamp vertical pitch to prevent backflips
       const maxPitch = Math.PI / 2 - 0.02;
@@ -192,16 +336,22 @@ export class Controls {
       this.handleKeyUp(e);
     });
 
-    // Mouse buttons for building and destroying blocks
+    // Mouse buttons for building, destroying, or firing weapons
     this.domElement.addEventListener('mousedown', (e) => {
       if (!this.isLocked) return;
 
       if (e.button === 0) {
-        // Left click: Break targeted block
-        this.triggerBreak();
+        if (this.weaponsMode) {
+          this.triggerShoot();
+        } else {
+          this.triggerBreak();
+        }
       } else if (e.button === 2) {
-        // Right click: Place selected block
-        this.triggerPlace();
+        if (this.weaponsMode) {
+          this.toggleAiming();
+        } else {
+          this.triggerPlace();
+        }
       }
     });
 
@@ -247,6 +397,9 @@ export class Controls {
             target.closest('.touch-btn') ||
             target.closest('.mobile-action-btn') ||
             target.closest('#mobile-action-buttons') ||
+            target.closest('#mobile-btn-cam') ||
+            target.closest('#weapons-hud-controls') ||
+            target.closest('.weapon-hud-btn') ||
             target.closest('#virtual-joystick') ||
             target.closest('#joystick-zone') ||
             target.closest('#chat-container') ||
@@ -275,8 +428,9 @@ export class Controls {
           this.lastTouchX = touch.clientX;
           this.lastTouchY = touch.clientY;
 
-          this.yaw -= dx * this.sensitivity * 1.6;
-          this.pitch -= dy * this.sensitivity * 1.6;
+          const aimFactor = this.isAiming ? 0.45 : 1.6;
+          this.yaw -= dx * this.sensitivity * aimFactor;
+          this.pitch -= dy * this.sensitivity * aimFactor;
 
           const maxPitch = Math.PI / 2 - 0.02;
           this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
@@ -372,7 +526,7 @@ export class Controls {
       actionContainer.addEventListener('touchend', (e) => e.stopPropagation(), { passive: false });
     }
 
-    const actionButtons = document.querySelectorAll('.mobile-action-btn');
+    const actionButtons = document.querySelectorAll('.mobile-action-btn, .weapon-hud-btn');
     actionButtons.forEach((btn) => {
       btn.addEventListener('touchstart', () => {
         btn.classList.add('active-press');
@@ -418,7 +572,11 @@ export class Controls {
       btnBreak.addEventListener('touchstart', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.triggerBreak();
+        if (this.weaponsMode) {
+          this.triggerShoot();
+        } else {
+          this.triggerBreak();
+        }
       }, { passive: false });
     }
 
@@ -442,6 +600,37 @@ export class Controls {
         sprintState = !sprintState;
         this.setSprint(sprintState);
         btnSprint.classList.toggle('active', sprintState);
+      }, { passive: false });
+    }
+
+    const btnWeaponAim = document.getElementById('btn-weapon-aim');
+    if (btnWeaponAim && !btnWeaponAim.__fanBound) {
+      btnWeaponAim.__fanBound = true;
+      btnWeaponAim.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const active = this.toggleAiming();
+        btnWeaponAim.classList.toggle('active', active);
+      }, { passive: false });
+    }
+
+    const btnWeaponShoot = document.getElementById('btn-weapon-shoot');
+    if (btnWeaponShoot && !btnWeaponShoot.__fanBound) {
+      btnWeaponShoot.__fanBound = true;
+      btnWeaponShoot.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerShoot();
+      }, { passive: false });
+    }
+
+    const btnWeaponTnt = document.getElementById('btn-weapon-tnt');
+    if (btnWeaponTnt && !btnWeaponTnt.__fanBound) {
+      btnWeaponTnt.__fanBound = true;
+      btnWeaponTnt.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerTnt();
       }, { passive: false });
     }
   }
@@ -604,6 +793,26 @@ export class Controls {
         e.preventDefault();
         e.__vrHandled = true;
         this.cycleSpeed();
+        break;
+      case 'KeyF':
+        if (this.weaponsMode) {
+          e.preventDefault();
+          this.triggerShoot();
+        }
+        break;
+      case 'KeyZ':
+      case 'KeyQ':
+        if (this.weaponsMode) {
+          e.preventDefault();
+          this.toggleAiming();
+        }
+        break;
+      case 'KeyG':
+      case 'KeyT':
+        if (this.weaponsMode) {
+          e.preventDefault();
+          this.triggerTnt();
+        }
         break;
       case 'F5':
         e.preventDefault();
@@ -821,6 +1030,26 @@ export class Controls {
       sprint: this.keys.sprint
     });
 
+    // Smooth Sniper Scope Aiming interpolation (FOV 75 -> 32)
+    const targetAim = (this.weaponsMode && this.isAiming) ? 1.0 : 0.0;
+    if (Math.abs(targetAim - this.aimBlend) > 0.001) {
+      this.aimBlend += (targetAim - this.aimBlend) * Math.min(1.0, dt * 11.0);
+      if (this.camera && typeof this.camera.updateProjectionMatrix === 'function') {
+        this.camera.fov = 75 - this.aimBlend * 43;
+        this.camera.updateProjectionMatrix();
+      }
+    } else if (this.aimBlend !== targetAim) {
+      this.aimBlend = targetAim;
+      if (this.camera && typeof this.camera.updateProjectionMatrix === 'function') {
+        this.camera.fov = 75 - this.aimBlend * 43;
+        this.camera.updateProjectionMatrix();
+      }
+    }
+
+    if (this.recoilProgress > 0) {
+      this.recoilProgress = Math.max(0, this.recoilProgress - dt * 6.0);
+    }
+
     // Minecraft View bobbing calculation when walking or running on ground
     const isMoving = this.physics.onGround && (this.physics.action === 'walking' || this.physics.action === 'running');
     if (isMoving) {
@@ -835,21 +1064,38 @@ export class Controls {
       }
     }
 
-    const bobY = Math.sin(this.bobTimer) * 0.045 * this.bobAmount;
-    const bobRoll = Math.cos(this.bobTimer * 0.5) * 0.012 * this.bobAmount;
+    const bobScale = 1.0 - this.aimBlend * 0.75;
+    const bobY = Math.sin(this.bobTimer) * 0.045 * this.bobAmount * bobScale;
+    const bobRoll = Math.cos(this.bobTimer * 0.5) * 0.012 * this.bobAmount * bobScale;
 
-    // First-person punch & arm animation
+    // First-person punch, rifle scope aiming, and recoil animation
     if (this.armPivot) {
-      if (this.punchProgress > 0) {
+      const recoilKick = Math.sin(this.recoilProgress * Math.PI) * 0.16;
+      if (this.weaponsMode) {
+        // Interpolate arm & rifle between hip-carry and centered scope sightline
+        const baseX = 0.34 * (1 - this.aimBlend) + 0.04 * this.aimBlend;
+        const baseY = -0.28 * (1 - this.aimBlend) + (-0.16) * this.aimBlend;
+        const baseZ = -0.48 * (1 - this.aimBlend) + (-0.34) * this.aimBlend + recoilKick;
+        const bobArmY = isMoving ? Math.abs(Math.cos(this.bobTimer)) * 0.02 * bobScale : 0;
+
+        this.armPivot.position.set(baseX, baseY + bobArmY, baseZ);
+        this.armPivot.rotation.set(
+          -0.12 * (1 - this.aimBlend) + recoilKick * 1.1,
+          0.18 * (1 - this.aimBlend),
+          -0.05 * (1 - this.aimBlend)
+        );
+      } else if (this.punchProgress > 0) {
         this.punchProgress -= dt * 6.5;
         if (this.punchProgress < 0) this.punchProgress = 0;
         const punch = Math.sin((1.0 - this.punchProgress) * Math.PI);
+        this.armPivot.position.x = 0.36;
         this.armPivot.rotation.x = -0.25 - punch * 0.9;
         this.armPivot.rotation.y = 0.35 - punch * 0.4;
         this.armPivot.position.z = -0.52 - punch * 0.12;
       } else {
         const bobArmX = isMoving ? Math.sin(this.bobTimer) * 0.05 : 0;
         const bobArmY = isMoving ? Math.abs(Math.cos(this.bobTimer)) * 0.03 : 0;
+        this.armPivot.position.x = 0.36;
         this.armPivot.rotation.x = -0.25 + bobArmX;
         this.armPivot.position.y = -0.32 + bobArmY;
         this.armPivot.rotation.y = 0.35;

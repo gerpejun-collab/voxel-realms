@@ -14,7 +14,19 @@ export class World {
     this.chunks = new Map(); // "cx,cz" -> Chunk
     this.remeshQueue = [];
     this.renderDistance = 5; // Default chunk radius
+    this.boostMode = false;
+    this.maxRemeshPerFrame = 3;
     this.blockDeltas = new Map(); // Local record of server deltas "x,y,z" -> blockType
+  }
+
+  setBoostMode(enabled) {
+    this.boostMode = !!enabled;
+    if (this.boostMode) {
+      this.renderDistance = Math.max(this.renderDistance, 9);
+      this.maxRemeshPerFrame = 8;
+    } else {
+      this.maxRemeshPerFrame = 3;
+    }
   }
 
   getChunkKey(cx, cz) {
@@ -98,15 +110,83 @@ export class World {
   }
 
   /**
-   * Returns true if coordinates lie inside any of the 6 monument sectors
+   * Returns true if coordinates lie on the interconnected highway/road/bridge network
+   */
+  isRoadAt(wx, wz) {
+    const distCenter = Math.hypot(wx, wz);
+    // 1. Central Plaza Roundabout ring (radius 19..23)
+    if (distCenter >= 19 && distCenter <= 23) return true;
+    // 2. North-South Main Arterial Highway (X in -3..3, Z in -465..438)
+    if (Math.abs(wx) <= 3 && distCenter > 19 && wz >= -465 && wz <= 438) return true;
+    // 3. East-West Main Arterial Highway (Z in -3..3, X in -232..232)
+    if (Math.abs(wz) <= 3 && distCenter > 19 && Math.abs(wx) <= 232) return true;
+    // 4. Eastern Sector Highway connecting Japan (+250,+250) and Paris (+250,-250) along X in 226..232
+    if (wx >= 226 && wx <= 232 && Math.abs(wz) <= 250) return true;
+    // 5. Western Sector Highway connecting Shanghai (-250,+250) and New York (-250,-250) along X in -232..-226
+    if (wx >= -232 && wx <= -226 && Math.abs(wz) <= 250) return true;
+    // 6. Norway High Cliff Suspension Bridge (Z in 466..470, X in -18..18)
+    if (wz >= 466 && wz <= 470 && Math.abs(wx) <= 18) return true;
+    return false;
+  }
+
+  /**
+   * Returns true if coordinates lie inside a Minecraft mountain tunnel pass
+   */
+  isTunnelAt(wx, wz) {
+    // Dedicated mountain tunnel passes along the 4 main highways
+    if (Math.abs(wx) <= 4 && wz >= 115 && wz <= 145) return true; // North Mountain Tunnel
+    if (Math.abs(wx) <= 4 && wz >= -145 && wz <= -115) return true; // South Coastal Tunnel
+    if (wx >= 225 && wx <= 233 && Math.abs(wz) >= 95 && Math.abs(wz) <= 125) return true; // East Mountain Tunnels
+    if (wx >= -233 && wx <= -225 && Math.abs(wz) >= 95 && Math.abs(wz) <= 125) return true; // West Mountain Tunnels
+    if (Math.abs(wz) <= 4 && Math.abs(wx) >= 110 && Math.abs(wx) <= 136) return true; // Central E-W Tunnels
+    return false;
+  }
+
+  /**
+   * Returns elevation of the road surface at (wx, wz)
+   */
+  getRoadHeightAt(wx, wz) {
+    if (wz >= 466 && wz <= 470 && Math.abs(wx) <= 18) {
+      return 50; // High Norway Fjord suspension bridge
+    }
+    return 24;
+  }
+
+  /**
+   * Validates if an animal is allowed to spawn at (wx, wz)
+   * Never in water, never on roads/bridges/tunnels, never buried inside rocks/buildings
+   */
+  isValidAnimalSpawn(wx, wz) {
+    const bx = Math.floor(wx);
+    const bz = Math.floor(wz);
+    if (this.isRoadAt(bx, bz) || this.isTunnelAt(bx, bz)) return false;
+    const h = this.getHeightAt(bx, bz);
+    if (h <= WATER_LEVEL || h > 46) return false;
+    // Reject ocean / fjord / pond zones
+    if (bz <= -475 && Math.abs(bx) <= 85) return false;
+    if (bz >= 435 && bz <= 565 && Math.abs(bx) <= 12) return false;
+    if (Math.hypot(bx, bz) <= 18) return false;
+    // If chunk is loaded, verify surface block is not water and headroom is clear
+    const surfaceBlock = this.getBlock(bx, h, bz);
+    if (surfaceBlock === BLOCKS.WATER) return false;
+    const above1 = this.getBlock(bx, h + 1, bz);
+    const above2 = this.getBlock(bx, h + 2, bz);
+    if (above1 !== BLOCKS.AIR || above2 !== BLOCKS.AIR) return false;
+    return true;
+  }
+
+  /**
+   * Returns true if coordinates lie inside any of the monumental sectors (including Playa Paraíso)
    */
   isInsideMonument(wx, wz) {
-    if (Math.hypot(wx, wz) <= 24) return true; // Spawn Plaza
-    if (Math.hypot(wx - 250, wz - 250) <= 45) return true; // Japan Imperial
-    if (Math.hypot(wx + 250, wz - 250) <= 45) return true; // China & Shanghai
-    if (Math.hypot(wx - 250, wz + 250) <= 45) return true; // Paris & Eiffel Tower
-    if (Math.hypot(wx + 250, wz + 250) <= 45) return true; // New York
+    if (Math.hypot(wx, wz) <= 28) return true; // Spawn Plaza
+    if (Math.hypot(wx - 250, wz - 250) <= 65) return true; // Japan Imperial District
+    if (Math.hypot(wx + 250, wz - 250) <= 65) return true; // China & Shanghai District
+    if (Math.hypot(wx - 250, wz + 250) <= 65) return true; // Paris & Eiffel District
+    if (Math.hypot(wx + 250, wz + 250) <= 65) return true; // New York District
     if (wz >= 440 && wz <= 560 && Math.abs(wx) <= 55) return true; // Norway Fjords
+    if (wz >= -560 && wz <= -440 && Math.abs(wx) <= 75) return true; // Playa Paraíso Beach Sector
+    if (this.isRoadAt(wx, wz) || this.isTunnelAt(wx, wz)) return true;
     return false;
   }
 
@@ -114,11 +194,11 @@ export class World {
    * Returns true if coordinates lie within the flat urban building plateaus
    */
   isInsidePlateau(wx, wz) {
-    if (Math.hypot(wx, wz) <= 20) return true;
-    if (Math.hypot(wx - 250, wz - 250) <= 35) return true;
-    if (Math.hypot(wx + 250, wz - 250) <= 35) return true;
-    if (Math.hypot(wx - 250, wz + 250) <= 35) return true;
-    if (Math.hypot(wx + 250, wz + 250) <= 35) return true;
+    if (Math.hypot(wx, wz) <= 24) return true;
+    if (Math.hypot(wx - 250, wz - 250) <= 56) return true;
+    if (Math.hypot(wx + 250, wz - 250) <= 56) return true;
+    if (Math.hypot(wx - 250, wz + 250) <= 56) return true;
+    if (Math.hypot(wx + 250, wz + 250) <= 56) return true;
     return false;
   }
 
@@ -138,7 +218,7 @@ export class World {
   }
 
   /**
-   * Deterministic height function with central spawn clearing and leveled monument plateaus
+   * Deterministic height function with central spawn clearing, beach shoreline, and leveled monument plateaus
    */
   getHeightAt(wx, wz) {
     // 1. Norway Fjords & Nature: Colossal granite cliffs & deep ocean water gorge at (0, +500)
@@ -155,35 +235,51 @@ export class World {
       }
     }
 
+    // 2. Playa Paraíso / Tropical Beach Sector at (0, -500) (wz in -560..-440, wx in -75..75)
+    if (wz >= -560 && wz <= -440 && Math.abs(wx) <= 75) {
+      if (wz >= -465) {
+        // Resort & Palm Boardwalk terrace sloping gently from 24 down to 20
+        const t = (wz - (-465)) / 25; // 0 at -465, 1 at -440
+        return Math.floor(20 + t * 4);
+      } else if (wz >= -490) {
+        // Golden sand beach sloping into the sea (20 down to 18)
+        const t = (wz - (-490)) / 25;
+        return Math.floor(18 + t * 2);
+      } else {
+        // Turquoise lagoon & ocean bed (below WATER_LEVEL=18)
+        return 13;
+      }
+    }
+
     const BASE_HEIGHT = 24;
 
-    // 2. Central Spawn Plaza clearing (0, 0)
+    // 3. Central Spawn Plaza clearing (0, 0)
     const distSpawn = Math.hypot(wx, wz);
-    if (distSpawn <= 24) {
+    if (distSpawn <= 26) {
       return BASE_HEIGHT;
-    } else if (distSpawn < 36) {
+    } else if (distSpawn < 38) {
       const naturalH = this.getNaturalHeightAt(wx, wz);
-      const t = (distSpawn - 24) / 12;
+      const t = (distSpawn - 26) / 12;
       const smoothT = t * t * (3 - 2 * t);
       return Math.floor(BASE_HEIGHT * (1 - smoothT) + naturalH * smoothT);
     }
 
-    // 3. Four Monument Building Plateaus at (+250, +250), (-250, +250), (+250, -250), (-250, -250)
+    // 4. Four Expansive Custom Monument Districts at (+250, +250), (-250, +250), (+250, -250), (-250, -250)
     const centers = [
-      [250, 250],   // Japan Imperial
-      [-250, 250],  // China & Shanghai
-      [250, -250],  // Paris & Eiffel Tower
-      [-250, -250]  // New York
+      [250, 250],   // Japan Imperial District
+      [-250, 250],  // China & Shanghai District
+      [250, -250],  // Paris & Eiffel Tower District
+      [-250, -250]  // New York District
     ];
     for (let i = 0; i < 4; i++) {
       const [cx, cz] = centers[i];
-      if (Math.abs(wx - cx) <= 55 && Math.abs(wz - cz) <= 55) {
+      if (Math.abs(wx - cx) <= 75 && Math.abs(wz - cz) <= 75) {
         const d = Math.hypot(wx - cx, wz - cz);
-        if (d <= 40) {
+        if (d <= 58) {
           return BASE_HEIGHT;
-        } else if (d < 55) {
+        } else if (d < 74) {
           const naturalH = this.getNaturalHeightAt(wx, wz);
-          const t = (d - 40) / 15;
+          const t = (d - 58) / 16;
           const smoothT = t * t * (3 - 2 * t);
           return Math.floor(BASE_HEIGHT * (1 - smoothT) + naturalH * smoothT);
         }
@@ -194,7 +290,7 @@ export class World {
   }
 
   /**
-   * Generates procedural terrain, strata, water, ores, trees, plaza, and 5 monumental sectors
+   * Generates procedural terrain, strata, water, ores, trees, roads, tunnels, bridges, beach, and 6 monumental sectors
    */
   generateChunkTerrain(chunk) {
     const ox = chunk.originX;
@@ -224,17 +320,26 @@ export class World {
               } else {
                 block = BLOCKS.STONE;
               }
-            } else if (Math.hypot(wx - 250, wz - 250) <= 35) {
+            } else if (wz >= -560 && wz <= -440 && Math.abs(wx) <= 75) {
+              // Playa Paraíso Tropical Beach
+              if (wz >= -462) {
+                block = ((wx + wz) % 6 === 0) ? BLOCKS.WOOD_PLANK : BLOCKS.SAND;
+              } else {
+                block = BLOCKS.SAND;
+              }
+            } else if (Math.hypot(wx - 250, wz - 250) <= 58) {
               // Japan Imperial Sector
-              block = ((wx + wz) % 5 === 0) ? BLOCKS.GRAVEL : BLOCKS.GRASS;
-            } else if (Math.hypot(wx + 250, wz - 250) <= 35) {
+              const isCanalPath = (Math.abs(wx - 235) <= 1 || Math.abs(wz - 235) <= 1);
+              block = isCanalPath ? BLOCKS.COBBLESTONE : (((wx + wz) % 5 === 0) ? BLOCKS.GRAVEL : BLOCKS.GRASS);
+            } else if (Math.hypot(wx + 250, wz - 250) <= 58) {
               // China & Shanghai Sector: Lush green gardens with Imperial stone/brick avenues
-              const isAvenue = (Math.abs(wx + 250) <= 2 || Math.abs(wz - 250) <= 2 || Math.abs(wx + 242) <= 1);
+              const isAvenue = (Math.abs(wx + 250) <= 2 || Math.abs(wz - 250) <= 2 || Math.abs(wx + 242) <= 1 || Math.abs(wz - 235) <= 2);
               block = isAvenue ? (((wx + wz) % 2 === 0) ? BLOCKS.STONE : BLOCKS.BRICK) : BLOCKS.GRASS;
-            } else if (Math.hypot(wx - 250, wz + 250) <= 35) {
+            } else if (Math.hypot(wx - 250, wz + 250) <= 58) {
               // Paris & Eiffel Tower Sector
-              block = (Math.abs(wz - -240) <= 2) ? BLOCKS.GRAVEL : BLOCKS.GRASS;
-            } else if (Math.hypot(wx + 250, wz + 250) <= 35) {
+              const isPromenade = (Math.abs(wz - -240) <= 2 || Math.abs(wx - 250) <= 2);
+              block = isPromenade ? BLOCKS.GRAVEL : BLOCKS.GRASS;
+            } else if (Math.hypot(wx + 250, wz + 250) <= 58) {
               // New York Sector: Central Park green lawns with Manhattan avenues & sidewalks
               const isStreet = ((wx + 250) % 12 === 0 || (wz + 250) % 12 === 0);
               const isSidewalk = (Math.abs((wx + 250) % 12) === 1 || Math.abs((wz + 250) % 12) === 1);
@@ -258,6 +363,8 @@ export class World {
           } else if (y >= surfaceY - 3) {
             if (this.isInsidePlateau(wx, wz)) {
               block = BLOCKS.COBBLESTONE;
+            } else if (wz >= -560 && wz <= -440 && Math.abs(wx) <= 75) {
+              block = BLOCKS.SAND;
             } else if (surfaceY >= 42) {
               block = BLOCKS.STONE;
             } else if (surfaceY <= WATER_LEVEL + 1) {
@@ -278,8 +385,9 @@ export class World {
           chunk.voxels[chunk.getIndex(lx, y, lz)] = block;
         }
 
-        // Fill wild water bodies strictly outside monument plateau
-        if (surfaceY < WATER_LEVEL && !this.isInsideMonument(wx, wz)) {
+        // Fill ocean water in Playa Paraíso and wild water bodies outside dry plateaus
+        const isBeachOcean = (wz >= -560 && wz <= -488 && Math.abs(wx) <= 75);
+        if (surfaceY < WATER_LEVEL && (isBeachOcean || !this.isInsideMonument(wx, wz))) {
           for (let y = surfaceY + 1; y <= WATER_LEVEL; y++) {
             chunk.voxels[chunk.getIndex(lx, y, lz)] = BLOCKS.WATER;
           }
@@ -287,17 +395,21 @@ export class World {
       }
     }
 
-    // 1. Central Spawn Plaza & Guardian Statues
+    // 1. Interconnected Highways, Bridges & Minecraft Mountain Tunnels
+    this.buildRoadAndTunnelNetwork(chunk);
+
+    // 2. Central Spawn Plaza & Guardian Statues
     this.buildPlazaFeatures(chunk);
 
-    // 2. The 5 Monument Sectors (Japan, Shanghai, Paris, NYC, Norway Fjords)
+    // 3. The 6 Monument Sectors (Japan, Shanghai, Paris, NYC, Norway Fjords, Playa Paraíso)
     this.buildJapanSector(chunk);
     this.buildShanghaiSector(chunk);
     this.buildParisSector(chunk);
     this.buildNYCSector(chunk);
     this.buildNorwaySector(chunk);
+    this.buildBeachSector(chunk);
 
-    // 3. Procedural Oak Trees in wild outer areas
+    // 4. Procedural Oak Trees in wild outer areas
     for (let lx = 2; lx < CHUNK_WIDTH - 2; lx++) {
       for (let lz = 2; lz < CHUNK_DEPTH - 2; lz++) {
         const wx = ox + lx;
@@ -326,6 +438,138 @@ export class World {
 
     chunk.isGenerated = true;
     this.queueRemesh(chunk);
+  }
+
+  /**
+   * Builds the world-spanning Highway Network, Suspension Bridges over water/valleys,
+   * and Minecraft-style Timber/Stone Mountain Tunnels
+   */
+  buildRoadAndTunnelNetwork(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+    const ASPHALT_BLK = BLOCKS.ASPHALT || BLOCKS.COBBLESTONE;
+    const roadY = 24;
+
+    for (let lx = 0; lx < CHUNK_WIDTH; lx++) {
+      for (let lz = 0; lz < CHUNK_DEPTH; lz++) {
+        const wx = ox + lx;
+        const wz = oz + lz;
+
+        // Skip high Norway Fjord bridge here (handled in buildNorwaySector at Y=50)
+        if (wz >= 440 && wz <= 560 && Math.abs(wx) <= 55) continue;
+        // Skip inner monument plazas so custom district flooring is preserved
+        if (Math.hypot(wx, wz) <= 18) continue;
+        if (Math.hypot(wx - 250, wz - 250) <= 32) continue;
+        if (Math.hypot(wx + 250, wz - 250) <= 32) continue;
+        if (Math.hypot(wx - 250, wz + 250) <= 32) continue;
+        if (Math.hypot(wx + 250, wz + 250) <= 32) continue;
+
+        const onRoad = this.isRoadAt(wx, wz);
+        const inTunnel = this.isTunnelAt(wx, wz);
+
+        if (!onRoad && !inTunnel) continue;
+
+        const naturalH = this.getNaturalHeightAt(wx, wz);
+
+        if (onRoad) {
+          // Determine if this voxel is on the outer curb or center dashed line
+          const distCenter = Math.hypot(wx, wz);
+          let isCurb = false;
+          let isCenterStripe = false;
+
+          if (distCenter >= 18.5 && distCenter <= 23.5) {
+            isCurb = (distCenter < 19.6 || distCenter > 22.6);
+            isCenterStripe = (Math.abs(distCenter - 21.0) < 0.55 && ((wx + wz) % 3 === 0));
+          } else if (Math.abs(wx) <= 3 && Math.abs(wz) > 3) {
+            isCurb = (Math.abs(wx) === 3);
+            isCenterStripe = (wx === 0 && (Math.abs(wz) % 4 <= 1));
+          } else if (Math.abs(wz) <= 3 && Math.abs(wx) > 3) {
+            isCurb = (Math.abs(wz) === 3);
+            isCenterStripe = (wz === 0 && (Math.abs(wx) % 4 <= 1));
+          } else if (wx >= 226 && wx <= 232) {
+            isCurb = (wx === 226 || wx === 232);
+            isCenterStripe = (wx === 229 && (Math.abs(wz) % 4 <= 1));
+          } else if (wx >= -232 && wx <= -226) {
+            isCurb = (wx === -232 || wx === -226);
+            isCenterStripe = (wx === -229 && (Math.abs(wz) % 4 <= 1));
+          }
+
+          // Roadbed foundation
+          chunk.setBlockLocal(lx, roadY - 1, lz, BLOCKS.COBBLESTONE);
+          const surfaceBlock = isCurb ? BLOCKS.STONE : (isCenterStripe ? BLOCKS.SNOW : ASPHALT_BLK);
+          chunk.setBlockLocal(lx, roadY, lz, surfaceBlock);
+
+          // Clear 4 blocks of headroom above road for traffic & player movement
+          for (let y = roadY + 1; y <= roadY + 4; y++) {
+            chunk.setBlockLocal(lx, y, lz, BLOCKS.AIR);
+          }
+
+          // Bridge structure when crossing valleys or water (naturalH < roadY - 1)
+          if (naturalH < roadY - 1 && !inTunnel) {
+            if (isCurb) {
+              // Bridge parapet railing & suspension cable posts
+              chunk.setBlockLocal(lx, roadY + 1, lz, BLOCKS.COBBLESTONE);
+              if ((wx + wz) % 6 === 0) {
+                chunk.setBlockLocal(lx, roadY + 2, lz, BLOCKS.IRON_ORE);
+                chunk.setBlockLocal(lx, roadY + 3, lz, BLOCKS.GOLD_ORE);
+              }
+              // Sturdy bridge piers down to riverbed/seabed every 8 blocks
+              if (Math.abs(wx) % 8 === 0 || Math.abs(wz) % 8 === 0) {
+                for (let py = Math.max(4, naturalH); py < roadY - 1; py++) {
+                  chunk.setBlockLocal(lx, py, lz, BLOCKS.COBBLESTONE);
+                }
+              }
+            }
+          } else if (!inTunnel && isCurb && ((Math.abs(wx) + Math.abs(wz)) % 16 === 0)) {
+            // Highway streetlights along open roads
+            chunk.setBlockLocal(lx, roadY + 1, lz, BLOCKS.IRON_ORE);
+            chunk.setBlockLocal(lx, roadY + 2, lz, BLOCKS.IRON_ORE);
+            chunk.setBlockLocal(lx, roadY + 3, lz, BLOCKS.IRON_ORE);
+            chunk.setBlockLocal(lx, roadY + 4, lz, BLOCKS.GOLD_ORE);
+          }
+        }
+
+        // Minecraft-style Mountain Tunnel Architecture
+        if (inTunnel) {
+          // Ensure rocky mountain overburden above the tunnel roof (Y = 30..36)
+          const roofTop = Math.max(naturalH, roadY + 11);
+          for (let y = roadY + 6; y <= roofTop; y++) {
+            if (y === roofTop) {
+              chunk.setBlockLocal(lx, y, lz, BLOCKS.GRASS);
+            } else if (y >= roofTop - 1) {
+              chunk.setBlockLocal(lx, y, lz, BLOCKS.DIRT);
+            } else {
+              chunk.setBlockLocal(lx, y, lz, BLOCKS.STONE);
+            }
+          }
+
+          const isRib = (Math.abs(wx) % 4 === 0 || Math.abs(wz) % 4 === 0);
+
+          if (!onRoad) {
+            // Outer tunnel wall (at distance 4 from tunnel center)
+            for (let y = roadY; y <= roadY + 6; y++) {
+              chunk.setBlockLocal(lx, y, lz, isRib ? BLOCKS.OAK_LOG : BLOCKS.COBBLESTONE);
+            }
+          } else {
+            // Inside tunnel bore: arched ceiling at Y = roadY + 5 (29)
+            const isCenter = (wx === 0 || wz === 0 || wx === 229 || wx === -229);
+            if (isCenter && isRib) {
+              // Glowing Minecraft tunnel ceiling lantern
+              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.GOLD_ORE);
+            } else if (isRib) {
+              // Timber mineshaft support crossbeam
+              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.WOOD_PLANK);
+            } else {
+              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.COBBLESTONE);
+            }
+            // Clear any stray mountain blocks above roadY..roadY+4 inside tunnel
+            for (let y = roadY + 1; y <= roadY + 4; y++) {
+              chunk.setBlockLocal(lx, y, lz, BLOCKS.AIR);
+            }
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -538,8 +782,8 @@ export class World {
   buildJapanSector(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
-    // Bounding check for Sector 1
-    if (ox + 16 < 210 || ox > 290 || oz + 16 < 210 || oz > 290) return;
+    // Bounding check for Expanded Sector 1
+    if (ox + 16 < 200 || ox > 300 || oz + 16 < 200 || oz > 300) return;
 
     const baseY = 24;
     const cX = 250; // Pagoda center
@@ -712,6 +956,8 @@ export class World {
     this.buildSakuraTree(chunk, 243, 247);
     this.buildSakuraTree(chunk, 263, 250);
     this.buildSakuraTree(chunk, 237, 250);
+    this.buildSakuraTree(chunk, 282, 255);
+    this.buildSakuraTree(chunk, 260, 278);
 
     // --- 4. Zen Pond & Arched Wooden Bridge ---
     for (let x = 238; x <= 244; x++) {
@@ -812,6 +1058,142 @@ export class World {
         this.setVoxelInWorld(chunk, bx, y, bz, (y === baseY + 6) ? BLOCKS.OAK_LEAVES : BLOCKS.OAK_LOG);
       }
     }
+
+    // --- 9. Himeji White Heron Samurai Castle Keep (Tenshu) at (274, 274) ---
+    const kX = 274, kZ = 274;
+    // Sloped stone samurai foundation wall (Ishigaki, Y: 25..28, 13x13)
+    for (let y = baseY + 1; y <= baseY + 4; y++) {
+      const r = (y <= baseY + 2) ? 6 : 5;
+      for (let x = kX - r; x <= kX + r; x++) {
+        for (let z = kZ - r; z <= kZ + r; z++) {
+          const isEdge = (Math.abs(x - kX) === r || Math.abs(z - kZ) === r);
+          this.setVoxelInWorld(chunk, x, y, z, isEdge ? BLOCKS.COBBLESTONE : BLOCKS.STONE);
+        }
+      }
+    }
+    // Castle Keep Tier 1 (White plaster walls & dark wood framing, Y: 29..32, 9x9)
+    for (let y = baseY + 5; y <= baseY + 8; y++) {
+      for (let x = kX - 4; x <= kX + 4; x++) {
+        for (let z = kZ - 4; z <= kZ + 4; z++) {
+          const isCorner = (Math.abs(x - kX) === 4 && Math.abs(z - kZ) === 4);
+          const isEdge = (Math.abs(x - kX) === 4 || Math.abs(z - kZ) === 4);
+          if (isCorner) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          } else if (isEdge) {
+            const isWindow = (y === baseY + 7 && ((x + z) % 2 === 0));
+            this.setVoxelInWorld(chunk, x, y, z, isWindow ? BLOCKS.GLASS : BLOCKS.SNOW);
+          }
+        }
+      }
+    }
+    // Tier 1 Gray Tiled Roof Eaves (Y: 33, 11x11)
+    for (let x = kX - 5; x <= kX + 5; x++) {
+      for (let z = kZ - 5; z <= kZ + 5; z++) {
+        if (Math.abs(x - kX) >= 4 || Math.abs(z - kZ) >= 4) {
+          this.setVoxelInWorld(chunk, x, baseY + 9, z, BLOCKS.STONE);
+        }
+      }
+    }
+    // Castle Keep Tier 2 (Y: 34..37, 7x7)
+    for (let y = baseY + 10; y <= baseY + 13; y++) {
+      for (let x = kX - 3; x <= kX + 3; x++) {
+        for (let z = kZ - 3; z <= kZ + 3; z++) {
+          const isCorner = (Math.abs(x - kX) === 3 && Math.abs(z - kZ) === 3);
+          const isEdge = (Math.abs(x - kX) === 3 || Math.abs(z - kZ) === 3);
+          if (isCorner) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          } else if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, (y === baseY + 12) ? BLOCKS.GLASS : BLOCKS.SNOW);
+          }
+        }
+      }
+    }
+    // Tier 2 Roof Eaves (Y: 38, 9x9)
+    for (let x = kX - 4; x <= kX + 4; x++) {
+      for (let z = kZ - 4; z <= kZ + 4; z++) {
+        if (Math.abs(x - kX) >= 3 || Math.abs(z - kZ) >= 3) {
+          this.setVoxelInWorld(chunk, x, baseY + 14, z, BLOCKS.STONE);
+        }
+      }
+    }
+    // Castle Keep Tier 3 Watchtower & Golden Shachihoko Roof Finials (Y: 39..43, 5x5)
+    for (let y = baseY + 15; y <= baseY + 17; y++) {
+      for (let x = kX - 2; x <= kX + 2; x++) {
+        for (let z = kZ - 2; z <= kZ + 2; z++) {
+          const isEdge = (Math.abs(x - kX) === 2 || Math.abs(z - kZ) === 2);
+          if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.SNOW);
+          }
+        }
+      }
+    }
+    for (let x = kX - 3; x <= kX + 3; x++) {
+      for (let z = kZ - 3; z <= kZ + 3; z++) {
+        this.setVoxelInWorld(chunk, x, baseY + 18, z, BLOCKS.STONE);
+      }
+    }
+    for (let x = kX - 2; x <= kX + 2; x++) {
+      this.setVoxelInWorld(chunk, x, baseY + 19, kZ, BLOCKS.STONE);
+    }
+    this.setVoxelInWorld(chunk, kX - 2, baseY + 20, kZ, BLOCKS.GOLD_ORE);
+    this.setVoxelInWorld(chunk, kX + 2, baseY + 20, kZ, BLOCKS.GOLD_ORE);
+
+    // --- 10. Kyoto Machiya Wooden Townhouses & Matcha Tea House at (232, 272) ---
+    for (const mZ of [266, 274]) {
+      const mX = 233;
+      for (let x = mX - 3; x <= mX + 3; x++) {
+        for (let z = mZ - 2; z <= mZ + 2; z++) {
+          this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.WOOD_PLANK);
+          const isEdge = (Math.abs(x - mX) === 3 || Math.abs(z - mZ) === 2);
+          const isDoor = (x === mX + 3 && z === mZ);
+          for (let y = baseY + 2; y <= baseY + 6; y++) {
+            if (isDoor && y <= baseY + 3) {
+              this.setVoxelInWorld(chunk, x, y, z, (y === baseY + 3) ? BLOCKS.BRICK : BLOCKS.AIR); // Crimson noren curtain
+            } else if (isEdge) {
+              this.setVoxelInWorld(chunk, x, y, z, (y === baseY + 3 || y === baseY + 5) ? BLOCKS.GLASS : BLOCKS.WOOD_PLANK);
+            }
+          }
+          // Gabled Machiya tile roof
+          this.setVoxelInWorld(chunk, x, baseY + 7, z, BLOCKS.COBBLESTONE);
+        }
+      }
+      // Glowing paper lantern outside shopfront
+      this.setVoxelInWorld(chunk, mX + 4, baseY + 3, mZ - 1, BLOCKS.GOLD_ORE);
+      this.setVoxelInWorld(chunk, mX + 4, baseY + 3, mZ + 1, BLOCKS.GOLD_ORE);
+    }
+
+    // --- 11. Fushimi Inari Senbon Torii Tunnel along Southern Approach (X=250, Z=222..237) ---
+    for (let tz = 223; tz <= 238; tz++) {
+      this.setVoxelInWorld(chunk, 249, baseY, tz, BLOCKS.COBBLESTONE);
+      this.setVoxelInWorld(chunk, 250, baseY, tz, BLOCKS.STONE);
+      this.setVoxelInWorld(chunk, 251, baseY, tz, BLOCKS.COBBLESTONE);
+      if (tz % 3 === 1) {
+        for (let y = baseY + 1; y <= baseY + 4; y++) {
+          this.setVoxelInWorld(chunk, 248, y, tz, BLOCKS.BRICK);
+          this.setVoxelInWorld(chunk, 252, y, tz, BLOCKS.BRICK);
+        }
+        for (let x = 247; x <= 253; x++) {
+          this.setVoxelInWorld(chunk, x, baseY + 4, tz, BLOCKS.BRICK);
+        }
+        this.setVoxelInWorld(chunk, 250, baseY + 4, tz, BLOCKS.GOLD_ORE);
+      }
+    }
+
+    // --- 12. Taiko Festival Drum Watchtower (Yagura) at (272, 234) ---
+    const yX = 272, yZ = 234;
+    for (let y = baseY + 1; y <= baseY + 7; y++) {
+      this.setVoxelInWorld(chunk, yX - 2, y, yZ - 2, BLOCKS.OAK_LOG);
+      this.setVoxelInWorld(chunk, yX + 2, y, yZ - 2, BLOCKS.OAK_LOG);
+      this.setVoxelInWorld(chunk, yX - 2, y, yZ + 2, BLOCKS.OAK_LOG);
+      this.setVoxelInWorld(chunk, yX + 2, y, yZ + 2, BLOCKS.OAK_LOG);
+    }
+    for (let x = yX - 2; x <= yX + 2; x++) {
+      for (let z = yZ - 2; z <= yZ + 2; z++) {
+        this.setVoxelInWorld(chunk, x, baseY + 5, z, BLOCKS.WOOD_PLANK);
+        this.setVoxelInWorld(chunk, x, baseY + 8, z, BLOCKS.BRICK);
+      }
+    }
+    this.setVoxelInWorld(chunk, yX, baseY + 6, yZ, BLOCKS.GOLD_ORE); // Festival Taiko drum
   }
 
   /**
@@ -847,7 +1229,7 @@ export class World {
   buildShanghaiSector(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
-    if (ox + 16 < -290 || ox > -210 || oz + 16 < 210 || oz > 290) return;
+    if (ox + 16 < -300 || ox > -200 || oz + 16 < 200 || oz > 300) return;
 
     const baseY = 24;
     const sX = -250; // Shanghai Tower center
@@ -1023,6 +1405,92 @@ export class World {
     // Flared eave tips
     this.setVoxelInWorld(chunk, pfX - 6, baseY + 8, pfZ, BLOCKS.WOOD_PLANK);
     this.setVoxelInWorld(chunk, pfX + 6, baseY + 8, pfZ, BLOCKS.WOOD_PLANK);
+
+    // --- 6. Shanghai World Financial Center ("Bottle Opener" Skyscraper) at (-274, 246) ---
+    const swX = -274, swZ = 246;
+    for (let y = baseY + 1; y <= baseY + 36; y++) {
+      for (let x = swX - 4; x <= swX + 4; x++) {
+        for (let z = swZ - 3; z <= swZ + 3; z++) {
+          // Iconic trapezoidal "bottle opener" skybridge aperture near crown (Y: 51..56)
+          const inAperture = (y >= baseY + 27 && y <= baseY + 32 && Math.abs(x - swX) <= 2);
+          if (inAperture) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            continue;
+          }
+          const isEdge = (Math.abs(x - swX) === 4 || Math.abs(z - swZ) === 3);
+          const isSkybridge = ((y === baseY + 26 || y === baseY + 33 || y === baseY + 34) && Math.abs(x - swX) <= 2);
+          if (isSkybridge) {
+            this.setVoxelInWorld(chunk, x, y, z, (y === baseY + 33) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
+          } else if (isEdge) {
+            const isCorner = (Math.abs(x - swX) === 4 && Math.abs(z - swZ) === 3);
+            this.setVoxelInWorld(chunk, x, y, z, isCorner ? BLOCKS.IRON_ORE : BLOCKS.GLASS);
+          }
+        }
+      }
+    }
+    this.setVoxelInWorld(chunk, swX - 4, baseY + 37, swZ, BLOCKS.GOLD_ORE);
+    this.setVoxelInWorld(chunk, swX + 4, baseY + 37, swZ, BLOCKS.GOLD_ORE);
+
+    // --- 7. Imperial Forbidden City Hall of Supreme Harmony at (-232, 274) ---
+    const fcX = -232, fcZ = 274;
+    // White marble two-tier terrace (Y: 25..26, 15x11)
+    for (let x = fcX - 7; x <= fcX + 7; x++) {
+      for (let z = fcZ - 5; z <= fcZ + 5; z++) {
+        this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.SNOW);
+        if (Math.abs(x - fcX) <= 6 && Math.abs(z - fcZ) <= 4) {
+          this.setVoxelInWorld(chunk, x, baseY + 2, z, BLOCKS.STONE);
+        }
+      }
+    }
+    // Crimson imperial colonnade & palace walls (Y: 27..31, 11x7)
+    for (let y = baseY + 3; y <= baseY + 7; y++) {
+      for (let x = fcX - 5; x <= fcX + 5; x++) {
+        for (let z = fcZ - 3; z <= fcZ + 3; z++) {
+          const isEdge = (Math.abs(x - fcX) === 5 || Math.abs(z - fcZ) === 3);
+          const isDoor = (Math.abs(x - fcX) <= 1 && z === fcZ - 3 && y <= baseY + 5);
+          if (isDoor) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+          } else if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.BRICK);
+          }
+        }
+      }
+    }
+    // Double-eaved golden imperial roof (Y: 32..35)
+    for (let x = fcX - 6; x <= fcX + 6; x++) {
+      for (let z = fcZ - 4; z <= fcZ + 4; z++) {
+        this.setVoxelInWorld(chunk, x, baseY + 8, z, BLOCKS.GOLD_ORE);
+      }
+    }
+    for (let x = fcX - 5; x <= fcX + 5; x++) {
+      for (let z = fcZ - 3; z <= fcZ + 3; z++) {
+        this.setVoxelInWorld(chunk, x, baseY + 9, z, BLOCKS.WOOD_PLANK);
+        this.setVoxelInWorld(chunk, x, baseY + 10, z, BLOCKS.GOLD_ORE);
+      }
+    }
+    for (let x = fcX - 4; x <= fcX + 4; x++) {
+      this.setVoxelInWorld(chunk, x, baseY + 11, fcZ, BLOCKS.GOLD_ORE);
+    }
+
+    // --- 8. Huangpu River Bund Basin & Illuminated Cruise Ship at (-276, 272) ---
+    for (let x = -284; x <= -268; x++) {
+      for (let z = 264; z <= 284; z++) {
+        const isQuay = (x === -284 || x === -268 || z === 264 || z === 284);
+        this.setVoxelInWorld(chunk, x, baseY, z, isQuay ? BLOCKS.COBBLESTONE : BLOCKS.WATER);
+      }
+    }
+    // Bund River Cruise Ship (X: -278..-274, Z: 268..280)
+    for (let z = 268; z <= 280; z++) {
+      const r = (z === 268 || z === 280) ? 1 : 2;
+      for (let x = -276 - r; x <= -276 + r; x++) {
+        this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, x, baseY + 2, z, BLOCKS.SNOW);
+        if (z >= 270 && z <= 278) {
+          this.setVoxelInWorld(chunk, x, baseY + 3, z, BLOCKS.GLASS);
+          this.setVoxelInWorld(chunk, x, baseY + 4, z, (z % 2 === 0) ? BLOCKS.GOLD_ORE : BLOCKS.SNOW);
+        }
+      }
+    }
   }
 
   /**
@@ -1032,7 +1500,7 @@ export class World {
   buildParisSector(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
-    if (ox + 16 < 210 || ox > 290 || oz + 16 < -290 || oz > -210) return;
+    if (ox + 16 < 200 || ox > 300 || oz + 16 < -300 || oz > -200) return;
 
     const baseY = 24;
     const eX = 250; // Eiffel Tower center
@@ -1207,6 +1675,92 @@ export class World {
         }
       }
     }
+
+    // --- 4. Grand Louvre Glass Pyramid & Courtyard Reflecting Pools at (232, -264) ---
+    const lvX = 232, lvZ = -264;
+    for (let x = lvX - 8; x <= lvX + 8; x++) {
+      for (let z = lvZ - 8; z <= lvZ + 8; z++) {
+        const isPool = (Math.abs(x - lvX) > 6 || Math.abs(z - lvZ) > 6) && (Math.abs(x - lvX) <= 8 && Math.abs(z - lvZ) <= 8);
+        this.setVoxelInWorld(chunk, x, baseY, z, isPool ? BLOCKS.WATER : BLOCKS.COBBLESTONE);
+      }
+    }
+    // Stepped Crystalline Glass & Steel Lattice Pyramid (Y: 25..31)
+    for (let step = 0; step <= 6; step++) {
+      const r = 6 - step;
+      const y = baseY + 1 + step;
+      for (let x = lvX - r; x <= lvX + r; x++) {
+        for (let z = lvZ - r; z <= lvZ + r; z++) {
+          const isEdge = (Math.abs(x - lvX) === r || Math.abs(z - lvZ) === r);
+          const isDiag = (Math.abs(x - lvX) === Math.abs(z - lvZ));
+          if (step === 6) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.GOLD_ORE); // Illuminated pyramid apex
+          } else if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, isDiag ? BLOCKS.IRON_ORE : BLOCKS.GLASS);
+          }
+        }
+      }
+    }
+
+    // --- 5. Notre-Dame de Paris Gothic Cathedral at (274, -268) ---
+    const ndX = 274, ndZ = -268;
+    // Cathedral Nave & Twin Western Bell Towers (X: 269..279, Z: -276..-260)
+    for (let x = ndX - 5; x <= ndX + 5; x++) {
+      for (let z = ndZ - 8; z <= ndZ + 8; z++) {
+        const isWestFacade = (z >= ndZ + 5);
+        const isTower = isWestFacade && (Math.abs(x - ndX) >= 2);
+        const maxH = isTower ? baseY + 19 : baseY + 12;
+        const isWall = (Math.abs(x - ndX) === 5 || z === ndZ - 8 || z === ndZ + 8 || (isTower && (Math.abs(x - ndX) === 2 || z === ndZ + 5)));
+        const isPortal = (z === ndZ + 8 && Math.abs(x - ndX) <= 1 && true);
+
+        for (let y = baseY + 1; y <= maxH; y++) {
+          if (isPortal && y <= baseY + 4) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+          } else if (z === ndZ + 8 && Math.abs(x - ndX) <= 2 && y >= baseY + 7 && y <= baseY + 11) {
+            // Iconic Gothic Rose Window
+            const isRoseCenter = (x === ndX && y === baseY + 9);
+            this.setVoxelInWorld(chunk, x, y, z, isRoseCenter ? BLOCKS.GOLD_ORE : BLOCKS.GLASS);
+          } else if (isWall) {
+            const isButtress = (z % 3 === 0 && Math.abs(x - ndX) === 5);
+            const isStainedGlass = (!isTower && Math.abs(x - ndX) === 5 && (z % 3 !== 0) && y >= baseY + 4 && y <= baseY + 9);
+            this.setVoxelInWorld(chunk, x, y, z, isStainedGlass ? BLOCKS.GLASS : (isButtress ? BLOCKS.COBBLESTONE : BLOCKS.STONE));
+          }
+        }
+      }
+    }
+    // Pitched Cathedral Lead Roof & Central Gothic Flèche Spire (Y: 37..48)
+    for (let z = ndZ - 8; z <= ndZ + 4; z++) {
+      for (let s = 0; s <= 4; s++) {
+        this.setVoxelInWorld(chunk, ndX - 4 + s, baseY + 13 + s, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, ndX + 4 - s, baseY + 13 + s, z, BLOCKS.COBBLESTONE);
+      }
+    }
+    for (let y = baseY + 17; y <= baseY + 24; y++) {
+      this.setVoxelInWorld(chunk, ndX, y, ndZ - 2, (y === baseY + 24) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
+    }
+
+    // --- 6. Haussmannian Apartment Block & Parisian Corner Bistro at (232, -234) ---
+    const bX = 232, bZ = -234;
+    for (let x = bX - 4; x <= bX + 4; x++) {
+      for (let z = bZ - 3; z <= bZ + 3; z++) {
+        const isEdge = (Math.abs(x - bX) === 4 || Math.abs(z - bZ) === 3);
+        for (let y = baseY + 1; y <= baseY + 10; y++) {
+          if (y === baseY + 10) {
+            // Zinc mansard roof
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
+          } else if (isEdge) {
+            const isWindow = (y % 3 === 0 && (x + z) % 2 === 0);
+            this.setVoxelInWorld(chunk, x, y, z, isWindow ? BLOCKS.GLASS : BLOCKS.SAND);
+          }
+        }
+      }
+    }
+    // Red-and-white striped Parisian café awning along southern sidewalk (z = bZ + 4)
+    for (let x = bX - 4; x <= bX + 4; x++) {
+      this.setVoxelInWorld(chunk, x, baseY + 3, bZ + 4, (x % 2 === 0) ? BLOCKS.BRICK : BLOCKS.SNOW);
+    }
+    // Outdoor café bistro tables
+    this.setVoxelInWorld(chunk, bX - 2, baseY + 1, bZ + 5, BLOCKS.WOOD_PLANK);
+    this.setVoxelInWorld(chunk, bX + 2, baseY + 1, bZ + 5, BLOCKS.WOOD_PLANK);
   }
 
   /**
@@ -1216,7 +1770,7 @@ export class World {
   buildNYCSector(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
-    if (ox + 16 < -290 || ox > -210 || oz + 16 < -290 || oz > -210) return;
+    if (ox + 16 < -300 || ox > -200 || oz + 16 < -300 || oz > -200) return;
 
     const baseY = 24;
     const nX = -250; // Empire State center
@@ -1391,6 +1945,98 @@ export class World {
       this.setVoxelInWorld(chunk, -250, baseY, z, BLOCKS.SNOW);
       this.setVoxelInWorld(chunk, -252, baseY, z, BLOCKS.SNOW);
     }
+
+    // --- 6. Chrysler Building (Art Deco Sunburst Crown Tower) at (-274, -242) ---
+    const chX = -274, chZ = -242;
+    for (let y = baseY + 1; y <= baseY + 22; y++) {
+      const r = (y <= baseY + 8) ? 4 : 3;
+      for (let x = chX - r; x <= chX + r; x++) {
+        for (let z = chZ - r; z <= chZ + r; z++) {
+          const isEdge = (Math.abs(x - chX) === r || Math.abs(z - chZ) === r);
+          const isCorner = (Math.abs(x - chX) === r && Math.abs(z - chZ) === r);
+          if (isCorner) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.IRON_ORE);
+          } else if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, (y % 2 === 0) ? BLOCKS.GLASS : BLOCKS.SNOW);
+          }
+        }
+      }
+    }
+    // Terraced Stainless-Steel Sunburst Arches (Y: 47..54)
+    for (let y = baseY + 23; y <= baseY + 30; y++) {
+      const r = y <= baseY + 26 ? 2 : 1;
+      for (let x = chX - r; x <= chX + r; x++) {
+        for (let z = chZ - r; z <= chZ + r; z++) {
+          const isCenterCross = (x === chX || z === chZ);
+          this.setVoxelInWorld(chunk, x, y, z, isCenterCross ? BLOCKS.GOLD_ORE : BLOCKS.SNOW);
+        }
+      }
+    }
+    for (let y = baseY + 31; y <= baseY + 36; y++) {
+      this.setVoxelInWorld(chunk, chX, y, chZ, (y === baseY + 36) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
+    }
+
+    // --- 7. One World Trade Center (Freedom Tower) at (-230, -272) ---
+    const wtX = -230, wtZ = -272;
+    for (let y = baseY + 1; y <= baseY + 31; y++) {
+      for (let x = wtX - 3; x <= wtX + 3; x++) {
+        for (let z = wtZ - 3; z <= wtZ + 3; z++) {
+          // Chamfered corners above podium
+          if (y > baseY + 8 && Math.abs(x - wtX) === 3 && Math.abs(z - wtZ) === 3) continue;
+          const isEdge = (Math.abs(x - wtX) === 3 || Math.abs(z - wtZ) === 3 || (y > baseY + 8 && Math.abs(x - wtX) + Math.abs(z - wtZ) === 5));
+          if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, (y % 5 === 0) ? BLOCKS.IRON_ORE : BLOCKS.GLASS);
+          }
+        }
+      }
+    }
+    for (let y = baseY + 32; y <= baseY + 38; y++) {
+      this.setVoxelInWorld(chunk, wtX, y, wtZ, (y === baseY + 38) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
+    }
+
+    // --- 8. Times Square Neon Billboard Towers & Red TKTS Steps at (-250, -230) ---
+    // Red TKTS Amphitheater Steps (X: -253..-247, Z: -234..-229)
+    for (let step = 0; step < 5; step++) {
+      const z = -234 + step;
+      for (let x = -253; x <= -247; x++) {
+        for (let y = baseY + 1; y <= baseY + 1 + step; y++) {
+          this.setVoxelInWorld(chunk, x, y, z, (x === -250) ? BLOCKS.GOLD_ORE : BLOCKS.BRICK);
+        }
+      }
+    }
+    // Giant Neon Advertising Screens at (-256, -232) and (-244, -232)
+    for (const bx of [-257, -243]) {
+      for (let y = baseY + 1; y <= baseY + 14; y++) {
+        for (let z = -235; z <= -229; z++) {
+          const neonBlock = ((y + z) % 3 === 0) ? BLOCKS.GOLD_ORE : (((y + z) % 3 === 1) ? BLOCKS.BRICK : BLOCKS.GLASS);
+          this.setVoxelInWorld(chunk, bx, y, z, neonBlock);
+        }
+      }
+    }
+
+    // --- 9. Central Park Oasis, Lake & Bethesda Fountain at (-276, -274) ---
+    for (let x = -284; x <= -268; x++) {
+      for (let z = -282; z <= -266; z++) {
+        const d = Math.hypot(x + 276, z + 274);
+        if (d <= 2.2) {
+          this.setVoxelInWorld(chunk, x, baseY, z, BLOCKS.COBBLESTONE);
+          if (x === -276 && z === -274) {
+            this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.STONE);
+            this.setVoxelInWorld(chunk, x, baseY + 2, z, BLOCKS.GOLD_ORE);
+            this.setVoxelInWorld(chunk, x, baseY + 3, z, BLOCKS.WATER);
+          }
+        } else if (d <= 5.5) {
+          // Central Park Lake & Bow Bridge along z = -274
+          if (z === -274) {
+            this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.WOOD_PLANK);
+          } else {
+            this.setVoxelInWorld(chunk, x, baseY, z, BLOCKS.WATER);
+          }
+        } else {
+          this.setVoxelInWorld(chunk, x, baseY, z, BLOCKS.GRASS);
+        }
+      }
+    }
   }
 
   /**
@@ -1400,7 +2046,7 @@ export class World {
   buildNorwaySector(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
-    if (ox + 16 < -55 || ox > 55 || oz + 16 < 440 || oz > 560) return;
+    if (ox + 16 < -60 || ox > 60 || oz + 16 < 435 || oz > 565) return;
 
     // 1. Water filling inside the deep fjord gorge (Z in 440..560, X in -7..7, Y: 14..18)
     for (let x = Math.max(ox, -7); x <= Math.min(ox + 15, 7); x++) {
@@ -1574,6 +2220,111 @@ export class World {
       const surfaceH = this.getHeightAt(sx, sz);
       this.buildNordicSpruceTree(chunk, sx, surfaceH, sz);
     }
+
+    // 7. High-Altitude Fjord Suspension Bridge spanning East-West Cliffs at Z = 470 (X: -19..19, Y = 49)
+    const brZ = 470;
+    const brY = 49;
+    for (let x = -19; x <= 19; x++) {
+      for (let z = brZ - 2; z <= brZ + 2; z++) {
+        const isRail = (z === brZ - 2 || z === brZ + 2);
+        this.setVoxelInWorld(chunk, x, brY, z, isRail ? BLOCKS.COBBLESTONE : BLOCKS.WOOD_PLANK);
+        if (isRail) {
+          this.setVoxelInWorld(chunk, x, brY + 1, z, BLOCKS.OAK_LOG);
+        }
+      }
+      // Suspension Towers at X = -11 and X = 11
+      if (Math.abs(x) === 11) {
+        for (let y = 40; y <= brY + 11; y++) {
+          this.setVoxelInWorld(chunk, x, y, brZ - 2, BLOCKS.STONE);
+          this.setVoxelInWorld(chunk, x, y, brZ + 2, BLOCKS.STONE);
+        }
+        for (let z = brZ - 2; z <= brZ + 2; z++) {
+          this.setVoxelInWorld(chunk, x, brY + 9, z, BLOCKS.IRON_ORE);
+          this.setVoxelInWorld(chunk, x, brY + 11, z, BLOCKS.GOLD_ORE);
+        }
+      }
+      // Parabolic main suspension cables & vertical hanger rods
+      const cableH = brY + 2 + Math.round(Math.pow((Math.abs(x) - 0) / 11, 2) * 8);
+      if (cableH <= CHUNK_HEIGHT - 2) {
+        this.setVoxelInWorld(chunk, x, cableH, brZ - 2, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, x, cableH, brZ + 2, BLOCKS.IRON_ORE);
+        if (Math.abs(x) % 3 === 0) {
+          for (let y = brY + 2; y < cableH; y++) {
+            this.setVoxelInWorld(chunk, x, y, brZ - 2, BLOCKS.IRON_ORE);
+            this.setVoxelInWorld(chunk, x, y, brZ + 2, BLOCKS.IRON_ORE);
+          }
+        }
+      }
+    }
+
+    // 8. Borgund Viking Stave Church (Stavkirke) at (-24, 488, Y = 50)
+    const stX = -24, stZ = 488, stY = 50;
+    for (let x = stX - 4; x <= stX + 4; x++) {
+      for (let z = stZ - 4; z <= stZ + 4; z++) {
+        this.setVoxelInWorld(chunk, x, stY, z, BLOCKS.COBBLESTONE);
+        for (let y = stY + 1; y <= stY + 4; y++) {
+          const isEdge = (Math.abs(x - stX) === 4 || Math.abs(z - stZ) === 4);
+          if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          }
+        }
+      }
+    }
+    // Tier 2 Stave Roof & Clerestory (Y: 55..58)
+    for (let x = stX - 2; x <= stX + 2; x++) {
+      for (let z = stZ - 2; z <= stZ + 2; z++) {
+        for (let y = stY + 5; y <= stY + 8; y++) {
+          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.WOOD_PLANK);
+        }
+      }
+    }
+    // Tier 3 Turret Spire & Dragon-Head Finials (Y: 59..62)
+    for (let y = stY + 9; y <= stY + 12; y++) {
+      this.setVoxelInWorld(chunk, stX, y, stZ, (y === stY + 12) ? BLOCKS.GOLD_ORE : BLOCKS.OAK_LOG);
+    }
+
+    // 9. Viking Drakkar Longship sailing in the Fjord at (0, 490, Y = 18)
+    const dkZ = 490;
+    for (let z = dkZ - 6; z <= dkZ + 6; z++) {
+      const halfW = (Math.abs(z - dkZ) >= 5) ? 0 : ((Math.abs(z - dkZ) >= 3) ? 1 : 2);
+      for (let x = -halfW; x <= halfW; x++) {
+        this.setVoxelInWorld(chunk, x, 18, z, BLOCKS.OAK_LOG);
+        if (Math.abs(x) === halfW) {
+          // Gunwale & alternating Viking shields
+          this.setVoxelInWorld(chunk, x, 19, z, (z % 2 === 0) ? BLOCKS.GOLD_ORE : BLOCKS.WOOD_PLANK);
+        }
+      }
+    }
+    // Carved Dragon Prow & Stern Tail
+    this.setVoxelInWorld(chunk, 0, 20, dkZ - 6, BLOCKS.OAK_LOG);
+    this.setVoxelInWorld(chunk, 0, 21, dkZ - 7, BLOCKS.GOLD_ORE);
+    this.setVoxelInWorld(chunk, 0, 20, dkZ + 6, BLOCKS.OAK_LOG);
+    this.setVoxelInWorld(chunk, 0, 21, dkZ + 7, BLOCKS.GOLD_ORE);
+    // Longship Mast & Red-and-White Striped Viking Square Sail
+    for (let y = 19; y <= 27; y++) {
+      this.setVoxelInWorld(chunk, 0, y, dkZ, BLOCKS.OAK_LOG);
+    }
+    for (let x = -3; x <= 3; x++) {
+      for (let y = 21; y <= 25; y++) {
+        this.setVoxelInWorld(chunk, x, y, dkZ - 1, (Math.abs(x) % 2 === 0) ? BLOCKS.BRICK : BLOCKS.SNOW);
+      }
+    }
+
+    // 10. Nordic Coastal Lighthouse (Fyr) at (22, 535, Y = 50)
+    const lhX = 22, lhZ = 535, lhY = 50;
+    for (let y = lhY + 1; y <= lhY + 12; y++) {
+      const r = (y <= lhY + 4) ? 2 : 1;
+      const stripeBlk = (Math.floor((y - lhY) / 2) % 2 === 0) ? BLOCKS.BRICK : BLOCKS.SNOW;
+      for (let x = lhX - r; x <= lhX + r; x++) {
+        for (let z = lhZ - r; z <= lhZ + r; z++) {
+          if (y >= lhY + 10 && y <= lhY + 11) {
+            this.setVoxelInWorld(chunk, x, y, z, (x === lhX && z === lhZ) ? BLOCKS.GOLD_ORE : BLOCKS.GLASS);
+          } else {
+            this.setVoxelInWorld(chunk, x, y, z, stripeBlk);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -1613,6 +2364,269 @@ export class World {
   }
 
   /**
+   * SECTOR 6: PLAYA PARAÍSO & LUXURY RESORT (0, -500)
+   * Golden sand shoreline, turquoise lagoon, timber boardwalk, ocean pier & sunset pavilion,
+   * Grand Luxury Resort Hotel, Tropical Chiringuito Tiki Bar, Lifeguard Tower, Volleyball Court,
+   * colorful beach umbrellas/loungers, curved coconut palm trees, and anchored Superyacht.
+   */
+  buildBeachSector(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+    if (ox + 16 < -85 || ox > 85 || oz + 16 < -590 || oz > -430) return;
+
+    // 1. Coastal Timber Boardwalk Promenade (X: -54..54, Z: -486..-480, Y = 20)
+    for (let x = -54; x <= 54; x++) {
+      for (let z = -486; z <= -480; z++) {
+        const isBorder = (z === -486 || z === -480 || Math.abs(x) === 54);
+        this.setVoxelInWorld(chunk, x, 20, z, isBorder ? BLOCKS.COBBLESTONE : BLOCKS.WOOD_PLANK);
+        if (z === -486 && x % 8 === 0 && Math.abs(x) > 4) {
+          this.setVoxelInWorld(chunk, x, 21, z, BLOCKS.OAK_LOG);
+          this.setVoxelInWorld(chunk, x, 22, z, BLOCKS.OAK_LOG);
+          this.setVoxelInWorld(chunk, x, 23, z, BLOCKS.GOLD_ORE);
+        }
+      }
+    }
+
+    // Highway-to-Boardwalk Grand Coastal Staircase along X: -3..3, Z: -450..-480
+    for (let z = -450; z >= -479; z--) {
+      const stepY = this.getRoadHeightAt(0, z);
+      for (let x = -3; x <= 3; x++) {
+        const isRail = (Math.abs(x) === 3);
+        this.setVoxelInWorld(chunk, x, stepY, z, isRail ? BLOCKS.COBBLESTONE : BLOCKS.STONE);
+        for (let y = stepY + 1; y <= stepY + 4; y++) {
+          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+        }
+      }
+    }
+
+    // 2. Ocean Pier & Over-Water Sunset Pavilion (X: -3..3, Z: -486..-542, Y = 20)
+    for (let z = -486; z >= -542; z--) {
+      for (let x = -3; x <= 3; x++) {
+        const isEdge = (Math.abs(x) === 3);
+        this.setVoxelInWorld(chunk, x, 20, z, BLOCKS.WOOD_PLANK);
+        if (isEdge && z % 4 === 0) {
+          for (let y = 13; y <= 21; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          }
+          if (z % 8 === 0) {
+            this.setVoxelInWorld(chunk, x, 22, z, BLOCKS.GOLD_ORE);
+          }
+        }
+      }
+    }
+    // Sunset Pavilion at end of Pier (0, -538)
+    for (let x = -5; x <= 5; x++) {
+      for (let z = -543; z <= -533; z++) {
+        this.setVoxelInWorld(chunk, x, 20, z, BLOCKS.WOOD_PLANK);
+        const isCorner = (Math.abs(x) === 4 && (z === -542 || z === -534));
+        if (isCorner) {
+          for (let y = 21; y <= 24; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          }
+        }
+        if (Math.abs(x) <= 5 && z >= -543 && z <= -533) {
+          const dist = Math.max(Math.abs(x), Math.abs(z + 538));
+          if (dist <= 5) {
+            this.setVoxelInWorld(chunk, x, 25, z, BLOCKS.WOOD_PLANK);
+          }
+          if (dist <= 3) {
+            this.setVoxelInWorld(chunk, x, 26, z, BLOCKS.BRICK);
+          }
+        }
+      }
+    }
+    this.setVoxelInWorld(chunk, 0, 27, -538, BLOCKS.GOLD_ORE);
+
+    // 3. Grand Luxury Coastal Resort Hotel ("Hotel Paraíso Real") at (-28, -468, baseY = 22)
+    const hX = -28, hZ = -468, hY = 22;
+    for (let x = hX - 12; x <= hX + 12; x++) {
+      for (let z = hZ - 6; z <= hZ + 6; z++) {
+        // Resort terrace foundation
+        for (let fy = 19; fy <= hY; fy++) {
+          this.setVoxelInWorld(chunk, x, fy, z, BLOCKS.STONE);
+        }
+        // U-shaped hotel wings (open courtyard facing the ocean to the south)
+        const inCourtyard = (Math.abs(x - hX) <= 5 && z <= hZ - 1);
+        if (inCourtyard) {
+          // Courtyard swimming pool
+          this.setVoxelInWorld(chunk, x, hY, z, (Math.abs(x - hX) <= 4 && z <= hZ - 2) ? BLOCKS.WATER : BLOCKS.SAND);
+          continue;
+        }
+        const isEdge = (Math.abs(x - hX) === 12 || Math.abs(z - hZ) === 6 || (Math.abs(x - hX) === 6 && z <= hZ - 1) || (z === hZ && Math.abs(x - hX) <= 5));
+        for (let y = hY + 1; y <= hY + 18; y++) {
+          const isFloorSlab = (y - hY) % 3 === 0;
+          if (isFloorSlab) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.SNOW);
+            // Oceanfront glass balconies on south face
+            if (z === hZ - 6) {
+              this.setVoxelInWorld(chunk, x, y, z - 1, BLOCKS.WOOD_PLANK);
+              this.setVoxelInWorld(chunk, x, y + 1, z - 1, BLOCKS.GLASS);
+            }
+          } else if (isEdge) {
+            const isPillar = (x % 4 === 0);
+            this.setVoxelInWorld(chunk, x, y, z, isPillar ? BLOCKS.SNOW : BLOCKS.GLASS);
+          }
+        }
+        // Rooftop Sky Lounge & Infinity Pool at Y = hY + 19 (41)
+        const isRoofEdge = (Math.abs(x - hX) === 12 || Math.abs(z - hZ) === 6);
+        this.setVoxelInWorld(chunk, x, hY + 19, z, isRoofEdge ? BLOCKS.GOLD_ORE : BLOCKS.WATER);
+      }
+    }
+
+    // 4. Tropical Chiringuito Tiki Bar ("El Dorado Beach Club") at (22, -472, baseY = 21)
+    const tkX = 22, tkZ = -472, tkY = 21;
+    for (let x = tkX - 5; x <= tkX + 5; x++) {
+      for (let z = tkZ - 5; z <= tkZ + 5; z++) {
+        this.setVoxelInWorld(chunk, x, tkY, z, BLOCKS.WOOD_PLANK);
+        const isCorner = (Math.abs(x - tkX) === 4 && Math.abs(z - tkZ) === 4);
+        if (isCorner) {
+          for (let y = tkY + 1; y <= tkY + 4; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          }
+        }
+        // Bar counter
+        if (Math.abs(x - tkX) <= 2 && Math.abs(z - tkZ) === 2) {
+          this.setVoxelInWorld(chunk, x, tkY + 1, z, BLOCKS.OAK_LOG);
+          this.setVoxelInWorld(chunk, x, tkY + 2, z, BLOCKS.WOOD_PLANK);
+        }
+      }
+    }
+    // Thatched pyramid roof (Y: 26..29)
+    for (let step = 0; step <= 3; step++) {
+      const r = 6 - step;
+      for (let x = tkX - r; x <= tkX + r; x++) {
+        for (let z = tkZ - r; z <= tkZ + r; z++) {
+          this.setVoxelInWorld(chunk, x, tkY + 5 + step, z, (step % 2 === 0) ? BLOCKS.WOOD_PLANK : BLOCKS.OAK_LEAVES);
+        }
+      }
+    }
+    this.setVoxelInWorld(chunk, tkX, tkY + 9, tkZ, BLOCKS.GOLD_ORE);
+
+    // 5. Red & White Baywatch Lifeguard Tower at (-14, -496, baseY = 19)
+    const lgX = -14, lgZ = -496;
+    const lgY = this.getHeightAt(lgX, lgZ);
+    for (const dx of [-2, 2]) {
+      for (const dz of [-2, 2]) {
+        for (let y = lgY; y <= lgY + 3; y++) {
+          this.setVoxelInWorld(chunk, lgX + dx, y, lgZ + dz, BLOCKS.OAK_LOG);
+        }
+      }
+    }
+    for (let x = lgX - 3; x <= lgX + 3; x++) {
+      for (let z = lgZ - 3; z <= lgZ + 3; z++) {
+        this.setVoxelInWorld(chunk, x, lgY + 4, z, BLOCKS.WOOD_PLANK);
+        if (Math.abs(x - lgX) <= 2 && Math.abs(z - lgZ) <= 2) {
+          const isEdge = (Math.abs(x - lgX) === 2 || Math.abs(z - lgZ) === 2);
+          for (let y = lgY + 5; y <= lgY + 7; y++) {
+            if (isEdge) {
+              this.setVoxelInWorld(chunk, x, y, z, (y === lgY + 6) ? BLOCKS.GLASS : BLOCKS.SNOW);
+            }
+          }
+          this.setVoxelInWorld(chunk, x, lgY + 8, z, BLOCKS.BRICK);
+        }
+      }
+    }
+
+    // 6. Beach Volleyball Court at (28, -494)
+    const vbX = 28, vbZ = -494;
+    const vbY = this.getHeightAt(vbX, vbZ);
+    for (let x = vbX - 6; x <= vbX + 6; x++) {
+      this.setVoxelInWorld(chunk, x, vbY + 1, vbZ, (Math.abs(x - vbX) === 6) ? BLOCKS.OAK_LOG : BLOCKS.AIR);
+      this.setVoxelInWorld(chunk, x, vbY + 2, vbZ, (Math.abs(x - vbX) === 6) ? BLOCKS.OAK_LOG : BLOCKS.SNOW);
+      this.setVoxelInWorld(chunk, x, vbY + 3, vbZ, (Math.abs(x - vbX) === 6) ? BLOCKS.OAK_LOG : BLOCKS.GLASS);
+    }
+
+    // 7. Colorful Beach Umbrellas & Sun Loungers along the Golden Sand
+    const umbrellas = [
+      [-36, -494, BLOCKS.BRICK], [-26, -496, BLOCKS.GOLD_ORE], [-8, -494, BLOCKS.BRICK],
+      [10, -494, BLOCKS.GOLD_ORE], [16, -498, BLOCKS.BRICK], [40, -495, BLOCKS.GOLD_ORE]
+    ];
+    for (const [ux, uz, colorBlk] of umbrellas) {
+      const uy = this.getHeightAt(ux, uz);
+      for (let y = uy + 1; y <= uy + 3; y++) {
+        this.setVoxelInWorld(chunk, ux, y, uz, BLOCKS.OAK_LOG);
+      }
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          if (Math.abs(dx) === 2 && Math.abs(dz) === 2) continue;
+          const stripe = ((dx + dz) % 2 === 0) ? colorBlk : BLOCKS.SNOW;
+          this.setVoxelInWorld(chunk, ux + dx, uy + 4, uz + dz, stripe);
+        }
+      }
+      this.setVoxelInWorld(chunk, ux, uy + 5, uz, colorBlk);
+      // Wooden sun loungers beside each umbrella
+      this.setVoxelInWorld(chunk, ux - 1, uy + 1, uz - 1, BLOCKS.WOOD_PLANK);
+      this.setVoxelInWorld(chunk, ux - 1, uy + 1, uz - 2, BLOCKS.SNOW);
+      this.setVoxelInWorld(chunk, ux + 1, uy + 1, uz - 1, BLOCKS.WOOD_PLANK);
+      this.setVoxelInWorld(chunk, ux + 1, uy + 1, uz - 2, BLOCKS.SNOW);
+    }
+
+    // 8. Curved Tropical Coconut Palm Trees
+    const palmSites = [
+      [-46, -488], [-34, -488], [-20, -488], [-8, -487], [8, -487], [18, -488], [34, -488], [46, -488],
+      [-42, -502], [-22, -504], [12, -503], [36, -502]
+    ];
+    for (const [px, pz] of palmSites) {
+      const py = this.getHeightAt(px, pz);
+      this.buildPalmTree(chunk, px, py, pz);
+    }
+
+    // 9. Luxury Superyacht "Sol de Oro" Anchored in Turquoise Lagoon at (-24, -536, Y = 18)
+    const yX = -24, yZ = -536;
+    for (let z = yZ - 9; z <= yZ + 9; z++) {
+      const distZ = Math.abs(z - yZ);
+      const halfW = (distZ >= 8) ? 0 : ((distZ >= 6) ? 1 : ((distZ >= 4) ? 2 : 3));
+      for (let x = yX - halfW; x <= yX + halfW; x++) {
+        // White yacht hull & teak deck
+        this.setVoxelInWorld(chunk, x, 18, z, BLOCKS.SNOW);
+        this.setVoxelInWorld(chunk, x, 19, z, (Math.abs(x - yX) === halfW) ? BLOCKS.SNOW : BLOCKS.WOOD_PLANK);
+        // Main cabin & panoramic bridge (Z: yZ - 4 .. yZ + 4)
+        if (distZ <= 4 && Math.abs(x - yX) <= 2) {
+          this.setVoxelInWorld(chunk, x, 20, z, BLOCKS.GLASS);
+          this.setVoxelInWorld(chunk, x, 21, z, BLOCKS.SNOW);
+        }
+        // Upper flybridge & radar arch
+        if (distZ <= 2 && Math.abs(x - yX) <= 1) {
+          this.setVoxelInWorld(chunk, x, 22, z, BLOCKS.GLASS);
+          this.setVoxelInWorld(chunk, x, 23, z, BLOCKS.SNOW);
+        }
+      }
+    }
+    this.setVoxelInWorld(chunk, yX, 24, yZ, BLOCKS.IRON_ORE);
+    this.setVoxelInWorld(chunk, yX, 25, yZ, BLOCKS.GOLD_ORE);
+  }
+
+  /**
+   * Helper to build a curved tropical coconut palm tree leaning toward the ocean
+   */
+  buildPalmTree(chunk, wx, baseY, wz) {
+    // Curved palm trunk leaning south toward the ocean
+    this.setVoxelInWorld(chunk, wx, baseY + 1, wz, BLOCKS.OAK_LOG);
+    this.setVoxelInWorld(chunk, wx, baseY + 2, wz, BLOCKS.OAK_LOG);
+    this.setVoxelInWorld(chunk, wx, baseY + 3, wz - 1, BLOCKS.OAK_LOG);
+    this.setVoxelInWorld(chunk, wx, baseY + 4, wz - 1, BLOCKS.OAK_LOG);
+    this.setVoxelInWorld(chunk, wx, baseY + 5, wz - 2, BLOCKS.OAK_LOG);
+    this.setVoxelInWorld(chunk, wx, baseY + 6, wz - 2, BLOCKS.OAK_LOG);
+
+    const cx = wx;
+    const cy = baseY + 7;
+    const cz = wz - 2;
+
+    // Golden coconuts clustered beneath crown
+    this.setVoxelInWorld(chunk, cx - 1, cy - 1, cz, BLOCKS.GOLD_ORE);
+    this.setVoxelInWorld(chunk, cx + 1, cy - 1, cz, BLOCKS.GOLD_ORE);
+
+    // Radiating palm fronds with drooping tips
+    this.setVoxelInWorld(chunk, cx, cy, cz, BLOCKS.OAK_LEAVES);
+    const frondDirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+    for (const [dx, dz] of frondDirs) {
+      this.setVoxelInWorld(chunk, cx + dx, cy, cz + dz, BLOCKS.OAK_LEAVES);
+      this.setVoxelInWorld(chunk, cx + dx * 2, cy, cz + dz * 2, BLOCKS.OAK_LEAVES);
+      this.setVoxelInWorld(chunk, cx + dx * 3, cy - 1, cz + dz * 3, BLOCKS.OAK_LEAVES);
+    }
+  }
+
+  /**
    * Updates chunks around player position
    */
   updateStreaming(playerX, playerZ) {
@@ -1631,8 +2645,9 @@ export class World {
       }
     }
 
-    // Unload chunks beyond (renderDistance + 2) to preserve memory
-    const maxDistSq = (rad + 2) * (rad + 2);
+    // In Boost mode, keep a wider cache of preloaded chunks in memory so rapid movement never stutters
+    const unloadPad = this.boostMode ? 4 : 2;
+    const maxDistSq = (rad + unloadPad) * (rad + unloadPad);
     for (const [key, chunk] of this.chunks.entries()) {
       const distSq = (chunk.cx - centerCX) * (chunk.cx - centerCX) +
                      (chunk.cz - centerCZ) * (chunk.cz - centerCZ);
@@ -1644,11 +2659,12 @@ export class World {
   }
 
   /**
-   * Process remesh queue (max 2 chunks per frame to guarantee 60 FPS)
+   * Process remesh queue (scales up to 6 chunks/frame in Boost mode)
    */
   updateRemesh() {
     let processed = 0;
-    while (this.remeshQueue.length > 0 && processed < 2) {
+    const budget = this.maxRemeshPerFrame || 2;
+    while (this.remeshQueue.length > 0 && processed < budget) {
       const chunk = this.remeshQueue.shift();
       if (chunk && chunk.isDirty) {
         chunk.rebuildMesh(this.materials);

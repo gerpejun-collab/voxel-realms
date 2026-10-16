@@ -260,6 +260,8 @@ export class UIManager {
       }, 700);
     };
 
+    this.triggerJoin = doJoin;
+
     if (joinBtn) {
       joinBtn.addEventListener('click', () => {
         sound.playClick();

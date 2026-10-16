@@ -238,7 +238,26 @@ class VoxelRealmsApp {
   }
 }
 
-// Launch application on DOM ready
-window.addEventListener('DOMContentLoaded', () => {
-  new VoxelRealmsApp();
-});
+// Launch application on DOM ready or immediately if already loaded
+function launchApp() {
+  try {
+    window.app = new VoxelRealmsApp();
+    console.log('🎮 VoxelRealmsApp initialized successfully.');
+    if (window.__wantsToJoin && window.app.ui && typeof window.app.ui.triggerJoin === 'function') {
+      window.app.ui.triggerJoin();
+    }
+  } catch (err) {
+    console.error('Critical failure launching VoxelRealmsApp:', err);
+    const statusPill = document.getElementById('server-status-pill');
+    if (statusPill) {
+      statusPill.innerHTML = `<span class="status-dot offline"></span> Error: ${err.message || err}`;
+    }
+  }
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', launchApp);
+} else {
+  launchApp();
+}
+

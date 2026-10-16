@@ -466,6 +466,44 @@
     </div>
   </div>
 
+  <!-- Fast Pre-Load Status Probe & Join Fallback -->
+  <script>
+    (function() {
+      const statusPill = document.getElementById('server-status-pill');
+      const lobbyCount = document.getElementById('lobby-players-count');
+      const joinBtn = document.getElementById('join-btn');
+
+      // Fast status fetch before heavy 3D assets download
+      fetch('/api/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (statusPill && !statusPill.dataset.custom) {
+            statusPill.innerHTML = '<span class="status-dot online"></span> Servidor En Línea';
+          }
+          if (lobbyCount) {
+            lobbyCount.textContent = (d.onlinePlayers || 0) + ' / ' + (d.maxPlayers || 30) + ' conectados';
+          }
+        })
+        .catch(function() {
+          if (statusPill && !statusPill.dataset.custom) {
+            statusPill.innerHTML = '<span class="status-dot offline"></span> Reconectando...';
+          }
+        });
+
+      if (joinBtn) {
+        joinBtn.addEventListener('click', function() {
+          if (!window.app) {
+            window.__wantsToJoin = true;
+            if (statusPill) {
+              statusPill.dataset.custom = '1';
+              statusPill.innerHTML = '<span class="status-dot online"></span> Cargando gráficos 3D...';
+            }
+          }
+        });
+      }
+    })();
+  </script>
+
   <!-- Main Game Script -->
   <script type="module" src="src/main.js"></script>
 </body>

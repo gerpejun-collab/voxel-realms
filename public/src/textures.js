@@ -821,7 +821,6 @@ const TextureGenerators = {
 
     for (let y = 0; y < h; y++) {
       const inWhiteBand = (y >= h * 0.34 && y <= h * 0.66);
-      const isStickSeam = (Math.floor(x => x)(0), false);
       for (let x = 0; x < w; x++) {
         const idx = (y * w + x) * 4;
         const seam = (x % Math.floor(w / 4) < 3);

@@ -51,11 +51,12 @@ app.get('/api/status', (req, res) => {
 // Serve frontend static files
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir, {
-  maxAge: '1h',
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      // Don't cache HTML so updates apply immediately
-      res.setHeader('Cache-Control', 'no-cache');
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      // Don't cache dynamic application assets so updates apply immediately without hard refresh
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
     }
   }
 }));

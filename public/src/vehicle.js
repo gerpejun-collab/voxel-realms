@@ -648,15 +648,23 @@ export class VehicleManager {
 
       // Gran Circuito SE Quadrant Starting Grid & Pit Lane (X: 50..210, Z: -190..-40)
       { id: 'car_se_scuderia', color: 0xdc2626, x: 104, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Scuderia Red #1 (Pole SE)' },
+      { id: 'car_se_redbull', color: 0x1e3a8a, x: 98, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Red Bull SE #2' },
+      { id: 'car_se_mercedes', color: 0x06b6d4, x: 92, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Mercedes SE #3' },
+      { id: 'car_se_mclaren', color: 0xf97316, x: 86, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ McLaren SE #4' },
+      { id: 'car_se_aston', color: 0x065f46, x: 80, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Aston SE #5' },
+      { id: 'car_se_alpine', color: 0x3b82f6, x: 74, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Alpine SE #6' },
+      { id: 'car_se_williams', color: 0x1d4ed8, x: 68, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Williams SE #7' },
+      { id: 'car_se_haas', color: 0xe2e8f0, x: 62, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Haas SE #8' },
+      { id: 'car_se_grid1', color: 0xa855f7, x: 110, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Grid 1 SE' },
+      { id: 'car_se_grid2', color: 0xec4899, x: 116, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Grid 2 SE' },
+      { id: 'car_se_papaya', color: 0xea580c, x: 105, y: 25, z: -72, yaw: -Math.PI / 2, name: '🏎️ Papaya Speed #5 (Pit Stall SE)' },
+      { id: 'car_se_silver', color: 0x94a3b8, x: 120, y: 25, z: -72, yaw: -Math.PI / 2, name: '🏎️ Silver Star #6 (Pit Stall SE)' },
       { id: 'car_se_azure', color: 0x2563eb, x: 98, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Azure Bolt #2 (Grid P2 SE)' },
       { id: 'car_se_gold', color: 0xeab308, x: 92, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Gold Arrow #3 (Grid P3 SE)' },
       { id: 'car_se_emerald', color: 0x16a34a, x: 86, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Emerald GP #4 (Grid P4 SE)' },
-      { id: 'car_se_papaya', color: 0xea580c, x: 105, y: 25, z: -72, yaw: -Math.PI / 2, name: '🏎️ Papaya Speed #5 (Pit Stall SE)' },
-      { id: 'car_se_silver', color: 0x94a3b8, x: 120, y: 25, z: -72, yaw: -Math.PI / 2, name: '🏎️ Silver Star #6 (Pit Stall SE)' },
 
-      // Central Spawn Plaza & Playa Paraíso Spawn Points
+      // Central Spawn Plaza & Playa Paraíso Spawn Points (Red F1 removed from Plaza per user request)
       { id: 'car_spawn_gold', color: 0xf59e0b, x: 12, y: 25, z: 12, yaw: 0, name: '🏎️ GT Veloce Oro (Plaza Central)' },
-      { id: 'car_spawn_red', color: 0xdc2626, x: -12, y: 25, z: -12, yaw: Math.PI, name: '🏎️ GT Monza Rojo (Plaza Central)' },
       { id: 'car_spawn_blue', color: 0x2563eb, x: 25, y: 25, z: 0, yaw: -Math.PI / 2, name: '🏎️ GT Paris Azul (Plaza Central)' },
       { id: 'car_beach_cyan', color: 0x06b6d4, x: 14, y: 21, z: -480, yaw: 0, name: '🏎️ Riviera Spyder (Playa Paraíso)' }
     ];
@@ -696,13 +704,19 @@ export class VehicleManager {
     this.activeCar = car;
     car.driverId = 'local';
     car.driverName = 'Tú';
+    car.isDriven = true;
 
-    // Position player exactly inside car
+    // Position player exactly inside car seat
     if (playerPhysics) {
-      playerPhysics.pos.x = car.pos.x;
-      playerPhysics.pos.y = car.pos.y;
-      playerPhysics.pos.z = car.pos.z;
+      const seat = car.getSeatPosition();
+      playerPhysics.pos.x = seat.x;
+      playerPhysics.pos.y = seat.y;
+      playerPhysics.pos.z = seat.z;
       playerPhysics.action = 'driving';
+      playerPhysics.isDriving = true;
+      if (!playerPhysics.vehicleManager) {
+        playerPhysics.vehicleManager = this;
+      }
     }
 
     if (sound && typeof sound.playClick === 'function') {
@@ -721,6 +735,7 @@ export class VehicleManager {
     const car = this.activeCar;
     car.driverId = null;
     car.driverName = null;
+    car.isDriven = false;
     this.activeCar = null;
 
     // Safely place player 1.8 blocks to the left of the car
@@ -730,10 +745,15 @@ export class VehicleManager {
       const cosY = Math.cos(car.yaw);
       playerPhysics.pos.x = car.pos.x + (cosY * exitOffset);
       playerPhysics.pos.z = car.pos.z + (-sinY * exitOffset);
+      const groundY = (this.world && typeof this.world.getHeightAt === 'function')
+        ? this.world.getHeightAt(Math.floor(playerPhysics.pos.x), Math.floor(playerPhysics.pos.z)) + 1
+        : car.pos.y;
+      playerPhysics.pos.y = Math.max(car.pos.y, groundY);
       playerPhysics.vel.x = 0;
       playerPhysics.vel.y = 0;
       playerPhysics.vel.z = 0;
       playerPhysics.action = 'idle';
+      playerPhysics.isDriving = false;
     }
 
     if (sound && typeof sound.playClick === 'function') {
@@ -779,10 +799,13 @@ export class VehicleManager {
       }
     }
 
-    // Dynamic Camera Placement
+    // Dynamic Camera Placement & Seated Avatar Sync
     if (camera && controls) {
       const sinY = Math.sin(car.yaw);
       const cosY = Math.cos(car.yaw);
+      const seatX = car.pos.x - sinY * 0.10;
+      const seatY = car.pos.y + 0.18;
+      const seatZ = car.pos.z - cosY * 0.10;
 
       if (this.cameraMode === 'cockpit') {
         // 1st-Person Interior Cockpit Camera over steering wheel and dashboard
@@ -794,9 +817,17 @@ export class VehicleManager {
         // Look ahead down the nose cone with pitch control
         camera.rotation.set(controls.pitch - 0.05, car.yaw, car.roll * 0.5, 'YXZ');
 
-        // Hide local avatar head in cockpit mode so it doesn't block player sightline
+        // Hide local avatar in cockpit mode so it doesn't block player sightline
         if (controls.localAvatar && controls.localAvatar.group) {
           controls.localAvatar.group.visible = false;
+          controls.localAvatar.setTargetState(
+            [seatX, seatY, seatZ],
+            [car.yaw, controls.pitch],
+            'driving'
+          );
+          if (typeof controls.localAvatar.update === 'function') {
+            controls.localAvatar.update(dt);
+          }
         }
       } else {
         // 3rd-Person Chase Camera trailing behind the car
@@ -817,10 +848,13 @@ export class VehicleManager {
         if (controls.localAvatar && controls.localAvatar.group) {
           controls.localAvatar.group.visible = true;
           controls.localAvatar.setTargetState(
-            [car.pos.x, car.pos.y + 0.15, car.pos.z],
+            [seatX, seatY, seatZ],
             [car.yaw, controls.pitch],
             'driving'
           );
+          if (typeof controls.localAvatar.update === 'function') {
+            controls.localAvatar.update(dt);
+          }
         }
       }
     }
@@ -891,7 +925,8 @@ export class VehicleManager {
     if (remoteAvatars && data.playerId) {
       const avatar = remoteAvatars.get(data.playerId);
       if (avatar) {
-        avatar.setTargetState([data.x, data.y + 0.15, data.z], [data.yaw, data.pitch || 0], 'driving');
+        const seat = car.getSeatPosition();
+        avatar.setTargetState([seat.x, seat.y, seat.z], [data.yaw, data.pitch || 0], 'driving');
       }
     }
   }
@@ -911,9 +946,57 @@ export class VehicleManager {
     }
   }
 
+  /**
+   * Resolves solid collision between the pedestrian player and non-driven / remote drivable cars
+   */
+  resolvePlayerCarCollisions(playerPhysics) {
+    if (!playerPhysics || !playerPhysics.pos || this.isDriving()) return;
+    const pPos = playerPhysics.pos;
+    for (const car of this.cars.values()) {
+      if (car === this.activeCar) continue;
+      if (Math.abs(pPos.y - car.pos.y) > 2.2) continue;
+
+      const dx = pPos.x - car.pos.x;
+      const dz = pPos.z - car.pos.z;
+      if (dx * dx + dz * dz > 16) continue;
+
+      // Forward direction of DrivableCar is (-sin(yaw), -cos(yaw)); Right is (cos(yaw), -sin(yaw))
+      const hx = -Math.sin(car.yaw);
+      const hz = -Math.cos(car.yaw);
+      const rx = Math.cos(car.yaw);
+      const rz = -Math.sin(car.yaw);
+
+      const localFwd = dx * hx + dz * hz;
+      const localRight = dx * rx + dz * rz;
+
+      const halfLen = 2.05; // 1.75m car half-length + 0.30m player radius
+      const halfWid = 1.18; // 0.88m car half-width + 0.30m player radius
+
+      if (Math.abs(localFwd) < halfLen && Math.abs(localRight) < halfWid) {
+        const penFwd = halfLen - Math.abs(localFwd);
+        const penRight = halfWid - Math.abs(localRight);
+        if (penRight < penFwd) {
+          const sign = localRight >= 0 ? 1 : -1;
+          pPos.x += rx * (penRight * sign);
+          pPos.z += rz * (penRight * sign);
+        } else {
+          const sign = localFwd >= 0 ? 1 : -1;
+          pPos.x += hx * (penFwd * sign);
+          pPos.z += hz * (penFwd * sign);
+        }
+      }
+    }
+  }
+
   update(dt, controls, multiplayer = null) {
     if (multiplayer && multiplayer.remoteAvatars) {
       this.syncRemoteDrivers(multiplayer.remoteAvatars);
+    }
+    if (controls && controls.physics) {
+      if (!controls.physics.vehicleManager) {
+        controls.physics.vehicleManager = this;
+      }
+      this.resolvePlayerCarCollisions(controls.physics);
     }
   }
 }

@@ -286,6 +286,7 @@ export class Avatar {
    * Model falls naturally and stands firmly on the newly exposed floor.
    */
   updateGroundDetection(world = this.world) {
+    if (this.action === 'driving') return 25;
     if (world) this.world = world;
     const px = this.group.position.x;
     const pz = this.group.position.z;
@@ -318,6 +319,7 @@ export class Avatar {
    * If BLOCKS.AIR, sets onGround = false and applies downward gravitational velocity.
    */
   updateGroundSupport(world = this.world) {
+    if (this.action === 'driving') return true;
     if (world) this.world = world;
     if (!this.world) return false;
 
@@ -355,17 +357,20 @@ export class Avatar {
   }
 
   setTargetState(pos, rot, action) {
+    if (action) {
+      this.action = action;
+    }
     if (pos) {
       const px = pos[0];
       let py = pos[1];
       const pz = pos[2];
 
-      if (this.world) {
+      if (this.world && this.action !== 'driving') {
         const groundY = this.getGroundHeight(px, pz, py);
         // Eliminate burying or sinking glitch: player model must never sink below true voxel ground
         if (py < groundY) {
           py = groundY;
-        } else if (action !== 'jumping') {
+        } else if (this.action !== 'jumping') {
           // If not actively jumping and the supporting block was excavated, stay grounded on exposed floor
           const feetBlockY = Math.floor(py - 0.05);
           const hasSupport = typeof this.world.getBlock === 'function' ?
@@ -382,8 +387,11 @@ export class Avatar {
       this.targetYaw = rot[0];
       this.targetPitch = rot[1];
     }
-    if (action) {
-      this.action = action;
+    if (this.action === 'driving') {
+      this.group.position.copy(this.targetPos);
+      this.group.rotation.y = this.targetYaw;
+      this.velY = 0;
+      this.onGround = true;
     }
   }
 
@@ -392,9 +400,15 @@ export class Avatar {
   }
 
   update(dt) {
-    // Distance snap if teleported/respawned
+    // Distance snap if teleported/respawned or if seated inside a car
     const distSq = this.group.position.distanceToSquared(this.targetPos);
-    if (distSq > 100) {
+    if (this.action === 'driving') {
+      // Snap directly to cockpit seat position so avatar never lags behind the moving car
+      this.group.position.copy(this.targetPos);
+      this.group.rotation.y = this.targetYaw;
+      this.velY = 0;
+      this.onGround = true;
+    } else if (distSq > 100) {
       this.group.position.copy(this.targetPos);
       this.velY = 0;
       this.onGround = true;
@@ -432,12 +446,16 @@ export class Avatar {
       }
     }
 
-    // Smooth yaw rotation
-    let angleDiff = this.targetYaw - this.group.rotation.y;
-    // Normalize angle difference to [-PI, PI]
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    this.group.rotation.y += angleDiff * Math.min(1.0, dt * 14.0);
+    // Smooth yaw rotation (instant lock when driving so avatar rotates with car chassis)
+    if (this.action === 'driving') {
+      this.group.rotation.y = this.targetYaw;
+    } else {
+      let angleDiff = this.targetYaw - this.group.rotation.y;
+      // Normalize angle difference to [-PI, PI]
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      this.group.rotation.y += angleDiff * Math.min(1.0, dt * 14.0);
+    }
 
     // Head pitch
     this.headGroup.rotation.x = this.targetPitch;
@@ -454,16 +472,34 @@ export class Avatar {
 
     if (this.action === 'driving') {
       // Seated driving pose inside racing car cockpit
-      this.torso.position.y = 0.72;
+      this.torso.position.y = 0.65;
       this.torso.rotation.x = 0.08;
+      this.headGroup.position.y = 1.02;
+      this.leftArmPivot.position.y = 0.92;
+      this.rightArmPivot.position.y = 0.92;
+      this.leftLegPivot.position.y = 0.35;
+      this.rightLegPivot.position.y = 0.35;
       // Arms gripping steering wheel forward
-      this.leftArmPivot.rotation.set(-1.15, 0.28, 0.15);
-      this.rightArmPivot.rotation.set(-1.15, -0.28, -0.15);
+      this.leftArmPivot.rotation.x = -1.15;
+      this.leftArmPivot.rotation.y = 0.28;
+      this.leftArmPivot.rotation.z = 0.15;
+      this.rightArmPivot.rotation.x = -1.15;
+      this.rightArmPivot.rotation.y = -0.28;
+      this.rightArmPivot.rotation.z = -0.15;
       // Legs bent forward at 90 degrees inside cockpit tub
-      this.leftLegPivot.rotation.set(-1.48, 0.08, 0.05);
-      this.rightLegPivot.rotation.set(-1.48, -0.08, -0.05);
+      this.leftLegPivot.rotation.x = -1.48;
+      this.leftLegPivot.rotation.y = 0.08;
+      this.leftLegPivot.rotation.z = 0.05;
+      this.rightLegPivot.rotation.x = -1.48;
+      this.rightLegPivot.rotation.y = -0.08;
+      this.rightLegPivot.rotation.z = -0.05;
     } else {
       this.torso.position.y = 1.125;
+      this.headGroup.position.y = 1.50;
+      this.leftArmPivot.position.y = 1.375;
+      this.rightArmPivot.position.y = 1.375;
+      this.leftLegPivot.position.y = 0.75;
+      this.rightLegPivot.position.y = 0.75;
 
       if (this.action === 'swimming') {
         this.animTime += dt * 6.0;

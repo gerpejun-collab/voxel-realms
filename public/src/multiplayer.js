@@ -11,11 +11,16 @@ export class MultiplayerClient {
     this.ws = null;
     this.myId = null;
     this.myName = 'Player';
+    this.myEmail = '';
+    this.adminKey = '';
+    this.isAdmin = false;
     this.connected = false;
     this.reconnecting = false;
     this.reconnectAttempts = 0;
+    this.kickedByAdminReset = false;
 
     this.remoteAvatars = new Map(); // id -> Avatar
+    this.playerDirectory = new Map(); // id -> { id, name, pos, joinedAt }
     this.pendingModifications = new Map(); // "x,y,z" -> originalBlock (for rollback on rejection)
     this.timeOfDay = 0.32; // Perpetual bright sunny day
 
@@ -41,10 +46,25 @@ export class MultiplayerClient {
     this.onVehicleDrive = null;
     this.onVehicleEnter = null;
     this.onVehicleExit = null;
+    this.onAdminState = null;
+    this.onServerReset = null;
   }
 
-  connect(playerName) {
+  get isConnected() {
+    return this.connected;
+  }
+
+  connect(playerName, options = {}) {
     this.myName = playerName || 'Player';
+    if (options && typeof options.email === 'string') {
+      this.myEmail = options.email;
+    } else if (typeof playerName === 'string' && playerName.includes('@')) {
+      this.myEmail = playerName.trim();
+    }
+    if (options && typeof options.adminKey === 'string') {
+      this.adminKey = options.adminKey;
+    }
+    this.kickedByAdminReset = false;
 
     // Build WebSocket URL matching current host and secure protocol
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -63,8 +83,11 @@ export class MultiplayerClient {
       this.reconnectAttempts = 0;
       if (this.onConnected) this.onConnected();
 
-      // Send join request
-      this.send('join', { name: this.myName });
+      // Send join request (including stealth admin credentials if present)
+      const joinPayload = { name: this.myName };
+      if (this.myEmail) joinPayload.email = this.myEmail;
+      if (this.adminKey) joinPayload.adminKey = this.adminKey;
+      this.send('join', joinPayload);
     };
 
     this.ws.onmessage = (event) => {
@@ -95,8 +118,15 @@ export class MultiplayerClient {
       avatar.dispose();
     }
     this.remoteAvatars.clear();
+    this.playerDirectory.clear();
 
     if (this.onDisconnected) this.onDisconnected();
+
+    // Do not auto-reconnect if kicked to login screen by an admin server reset
+    if (this.kickedByAdminReset) {
+      this.reconnecting = false;
+      return;
+    }
 
     // Auto-reconnect with exponential backoff
     if (this.reconnectAttempts < 6) {
@@ -104,8 +134,8 @@ export class MultiplayerClient {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
       setTimeout(() => {
-        if (!this.connected) {
-          this.connect(this.myName);
+        if (!this.connected && !this.kickedByAdminReset) {
+          this.connect(this.myName, { email: this.myEmail, adminKey: this.adminKey });
         }
       }, delay);
     }
@@ -125,23 +155,49 @@ export class MultiplayerClient {
       case 'init':
         this.myId = data.id;
         this.timeOfDay = data.timeOfDay ?? 0.32;
+        if (data.isAdmin || (data.player && data.player.isAdmin)) {
+          this.isAdmin = true;
+        }
+        if (data.player && data.player.name) {
+          this.myName = data.player.name;
+        }
 
         // Apply world seed if different
         if (data.seed && this.world.seed !== data.seed) {
           this.world.seed = data.seed;
         }
 
-        // Apply pre-existing block deltas from server
+        // Apply pre-existing block deltas from server (guarded against redundant remeshing)
         if (Array.isArray(data.deltas)) {
           for (const [x, y, z, blockType] of data.deltas) {
-            this.world.applyBlockDelta(x, y, z, blockType);
+            if (this.world.getBlock(x, y, z) !== blockType) {
+              this.world.applyBlockDelta(x, y, z, blockType);
+            } else if (this.world.blockDeltas && typeof this.world.blockDeltas.set === 'function') {
+              this.world.blockDeltas.set(`${x},${y},${z}`, blockType);
+            }
           }
+        }
+
+        this.playerDirectory.clear();
+        if (data.player) {
+          this.playerDirectory.set(data.id, {
+            id: data.id,
+            name: data.player.name || this.myName,
+            pos: Array.isArray(data.player.pos) ? [...data.player.pos] : [0, 25, 0],
+            joinedAt: data.player.joinedAt || Date.now()
+          });
         }
 
         // Spawn existing remote players
         if (Array.isArray(data.players)) {
           for (const p of data.players) {
             this.addRemotePlayer(p);
+            this.playerDirectory.set(p.id, {
+              id: p.id,
+              name: p.name || 'Player',
+              pos: Array.isArray(p.pos) ? [...p.pos] : [0, 25, 0],
+              joinedAt: p.joinedAt || Date.now()
+            });
           }
         }
 
@@ -153,6 +209,13 @@ export class MultiplayerClient {
         if (this.onPlayerCountChange) {
           this.onPlayerCountChange(this.remoteAvatars.size + 1);
         }
+        if (this.isAdmin && this.onAdminState) {
+          this.onAdminState({
+            isAdmin: true,
+            onlineCount: this.remoteAvatars.size + 1,
+            players: Array.from(this.playerDirectory.values())
+          });
+        }
         if (this.onNotification) {
           this.onNotification(`Bienvenido a Voxel Realms, ${this.myName}!`);
         }
@@ -160,8 +223,23 @@ export class MultiplayerClient {
 
       case 'player_joined':
         this.addRemotePlayer(data);
+        if (data && data.id) {
+          this.playerDirectory.set(data.id, {
+            id: data.id,
+            name: data.name || 'Player',
+            pos: Array.isArray(data.pos) ? [...data.pos] : [0, 25, 0],
+            joinedAt: data.joinedAt || Date.now()
+          });
+        }
         if (this.onPlayerCountChange) {
           this.onPlayerCountChange(this.remoteAvatars.size + 1);
+        }
+        if (this.isAdmin && this.onAdminState) {
+          this.onAdminState({
+            isAdmin: true,
+            onlineCount: this.remoteAvatars.size + 1,
+            players: Array.from(this.playerDirectory.values())
+          });
         }
         if (this.onNotification) {
           this.onNotification(`${data.name} se ha unido al reino.`);
@@ -170,8 +248,18 @@ export class MultiplayerClient {
 
       case 'player_left':
         this.removeRemotePlayer(data.id);
+        if (data && data.id) {
+          this.playerDirectory.delete(data.id);
+        }
         if (this.onPlayerCountChange) {
           this.onPlayerCountChange(this.remoteAvatars.size + 1);
+        }
+        if (this.isAdmin && this.onAdminState) {
+          this.onAdminState({
+            isAdmin: true,
+            onlineCount: this.remoteAvatars.size + 1,
+            players: Array.from(this.playerDirectory.values())
+          });
         }
         if (this.onNotification) {
           this.onNotification(`${data.name || 'Un jugador'} ha salido del reino.`);
@@ -184,6 +272,19 @@ export class MultiplayerClient {
         }
         if (Array.isArray(data.players)) {
           for (const p of data.players) {
+            const existingMeta = this.playerDirectory.get(p.id);
+            if (existingMeta) {
+              if (Array.isArray(p.pos)) existingMeta.pos = [...p.pos];
+              if (p.name) existingMeta.name = p.name;
+              if (p.joinedAt) existingMeta.joinedAt = p.joinedAt;
+            } else if (p.id) {
+              this.playerDirectory.set(p.id, {
+                id: p.id,
+                name: p.name || (p.id === this.myId ? this.myName : 'Player'),
+                pos: Array.isArray(p.pos) ? [...p.pos] : [0, 25, 0],
+                joinedAt: p.joinedAt || Date.now()
+              });
+            }
             if (p.id !== this.myId) {
               const avatar = this.remoteAvatars.get(p.id);
               if (avatar) {
@@ -191,6 +292,79 @@ export class MultiplayerClient {
               }
             }
           }
+          if (this.isAdmin && this.onAdminState) {
+            this.onAdminState({
+              isAdmin: true,
+              onlineCount: this.playerDirectory.size || (this.remoteAvatars.size + 1),
+              players: Array.from(this.playerDirectory.values())
+            });
+          }
+        }
+        break;
+
+      case 'admin_state':
+        if (data && data.isAdmin) {
+          this.isAdmin = true;
+          if (Array.isArray(data.players)) {
+            for (const p of data.players) {
+              if (p && p.id) {
+                this.playerDirectory.set(p.id, {
+                  id: p.id,
+                  name: p.name || 'Player',
+                  pos: Array.isArray(p.pos) ? [...p.pos] : [0, 25, 0],
+                  joinedAt: p.joinedAt || Date.now()
+                });
+              }
+            }
+          }
+          if (this.onAdminState) {
+            this.onAdminState({
+              isAdmin: true,
+              onlineCount: data.onlineCount || this.playerDirectory.size,
+              players: Array.from(this.playerDirectory.values())
+            });
+          }
+        }
+        break;
+
+      case 'server_reset':
+        this.kickedByAdminReset = true;
+        this.connected = false;
+        this.reconnecting = false;
+        for (const avatar of this.remoteAvatars.values()) {
+          avatar.dispose();
+        }
+        this.remoteAvatars.clear();
+        this.playerDirectory.clear();
+        if (this.world && typeof this.world.resetToInitialTerrain === 'function') {
+          this.world.resetToInitialTerrain();
+        }
+        if (this.ws) {
+          try { this.ws.close(); } catch (_) {}
+          this.ws = null;
+        }
+        const resetReason = (data && (data.message || data.reason)) ? (data.message || data.reason) : 'El admin ha reiniciado el server';
+        if (typeof document !== 'undefined') {
+          const banner = document.getElementById('server-reset-banner');
+          if (banner) {
+            banner.textContent = resetReason;
+            banner.classList.remove('hidden');
+          }
+          const lobby = document.getElementById('lobby-overlay');
+          if (lobby) {
+            lobby.classList.remove('hidden');
+          }
+          const hud = document.getElementById('hud');
+          if (hud) {
+            hud.classList.add('hidden');
+          }
+          const pauseMenu = document.getElementById('pause-menu');
+          if (pauseMenu) {
+            pauseMenu.classList.add('hidden');
+          }
+        }
+        if (this.onServerReset) {
+          this.onServerReset(resetReason);
         }
         break;
 
@@ -253,7 +427,7 @@ export class MultiplayerClient {
 
       case 'tnt_primed':
         if (data && this.onTntPrime) {
-          this.onTntPrime(data.x, data.y, data.z, data.fuseMs || 1600);
+          this.onTntPrime(data.x, data.y, data.z, data.fuseMs || 1600, data.playerId || null);
         }
         break;
 
@@ -291,6 +465,13 @@ export class MultiplayerClient {
         this.pendingModifications.delete(key);
 
         const previousBlock = this.world.getBlock(x, y, z);
+        if (previousBlock === blockType) {
+          // Guard: block already matches target blockType; do not trigger redundant synchronous chunk remeshing
+          if (this.world.blockDeltas && typeof this.world.blockDeltas.set === 'function') {
+            this.world.blockDeltas.set(key, blockType);
+          }
+          break;
+        }
 
         // Spawn debris particles if block was destroyed
         if (blockType === 0 && previousBlock !== 0) {
@@ -562,6 +743,16 @@ export class MultiplayerClient {
   sendVehicleExit(vehicleId) {
     if (!this.connected || !vehicleId) return;
     this.send('vehicle_exit', { vehicleId });
+  }
+
+  sendAdminAuth(email, adminKey) {
+    this.myEmail = email || this.myEmail;
+    this.adminKey = adminKey || this.adminKey;
+    this.send('admin_auth', { email: this.myEmail, adminKey: this.adminKey });
+  }
+
+  sendAdminResetServer() {
+    this.send('admin_reset_server', { email: this.myEmail, adminKey: this.adminKey });
   }
 
   update(dt) {

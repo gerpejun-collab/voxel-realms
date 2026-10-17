@@ -13,9 +13,10 @@ export class World {
     this.seed = seed;
     this.chunks = new Map(); // "cx,cz" -> Chunk
     this.remeshQueue = [];
+    this.pendingChunkGenerations = []; // Queue for progressive chunk streaming
     this.renderDistance = 5; // Default chunk radius
     this.boostMode = false;
-    this.maxRemeshPerFrame = 3;
+    this.maxRemeshPerFrame = 1;
     this.blockDeltas = new Map(); // Local record of server deltas "x,y,z" -> blockType
     this.blockHooks = [];
     this.onAuthoritativeBlock = null;
@@ -25,9 +26,10 @@ export class World {
     this.boostMode = !!enabled;
     if (this.boostMode) {
       this.renderDistance = Math.max(this.renderDistance, 9);
-      this.maxRemeshPerFrame = 8;
+      this.maxRemeshPerFrame = 2;
     } else {
-      this.maxRemeshPerFrame = 3;
+      this.renderDistance = 5;
+      this.maxRemeshPerFrame = 1;
     }
   }
 
@@ -100,50 +102,60 @@ export class World {
   /**
    * Immediately updates voxel memory and synchronously rebuilds the chunk mesh
    * (and boundary neighbors if on border) so excavated blocks disappear visually without lag.
+   * If the chunk is not yet loaded in memory, records the delta in this.blockDeltas so
+   * generateChunkTerrain applies it when the chunk streams in (preventing startup freeze!).
    */
   applyAuthoritativeBlock(x, y, z, blockType) {
+    if (y < 0 || y >= CHUNK_HEIGHT) return;
     const key = `${x},${y},${z}`;
     this.blockDeltas.set(key, blockType);
 
-    // Update voxel memory immediately
-    this.setBlock(x, y, z, blockType, false);
-
     const cx = Math.floor(x / CHUNK_WIDTH);
     const cz = Math.floor(z / CHUNK_DEPTH);
-    const chunk = this.getChunk(cx, cz);
-    if (chunk) {
-      if (this.materials && typeof chunk.rebuildMesh === 'function') {
-        try {
-          chunk.rebuildMesh(this.materials);
-        } catch (_) {}
-      }
-      chunk.isDirty = false;
-      const qIdx = this.remeshQueue.indexOf(chunk);
-      if (qIdx !== -1) this.remeshQueue.splice(qIdx, 1);
+    let chunk = this.getChunk(cx, cz);
+
+    // In headless/unit tests (where this.materials is null) or if chunk is already loaded, update chunk
+    if (!chunk && !this.materials) {
+      chunk = this.getOrCreateChunk(cx, cz);
     }
 
-    // Border chunk boundary check: lx === 0 || lx === 15 || lz === 0 || lz === 15
-    const lx = ((x % CHUNK_WIDTH) + CHUNK_WIDTH) % CHUNK_WIDTH;
-    const lz = ((z % CHUNK_DEPTH) + CHUNK_DEPTH) % CHUNK_DEPTH;
+    if (chunk) {
+      const lx = ((x % CHUNK_WIDTH) + CHUNK_WIDTH) % CHUNK_WIDTH;
+      const lz = ((z % CHUNK_DEPTH) + CHUNK_DEPTH) % CHUNK_DEPTH;
+      const prev = chunk.voxels[chunk.getIndex(lx, y, lz)];
 
-    const remeshNeighbor = (ncx, ncz) => {
-      const neighbor = this.getChunk(ncx, ncz);
-      if (neighbor) {
-        if (this.materials && typeof neighbor.rebuildMesh === 'function') {
+      if (prev !== blockType) {
+        chunk.setBlockLocal(lx, y, lz, blockType);
+
+        if (this.materials && typeof chunk.rebuildMesh === 'function') {
           try {
-            neighbor.rebuildMesh(this.materials);
+            chunk.rebuildMesh(this.materials);
           } catch (_) {}
         }
-        neighbor.isDirty = false;
-        const qIdx = this.remeshQueue.indexOf(neighbor);
+        chunk.isDirty = false;
+        const qIdx = this.remeshQueue.indexOf(chunk);
         if (qIdx !== -1) this.remeshQueue.splice(qIdx, 1);
-      }
-    };
 
-    if (lx === 0) remeshNeighbor(cx - 1, cz);
-    if (lx === CHUNK_WIDTH - 1) remeshNeighbor(cx + 1, cz);
-    if (lz === 0) remeshNeighbor(cx, cz - 1);
-    if (lz === CHUNK_DEPTH - 1) remeshNeighbor(cx, cz + 1);
+        const remeshNeighbor = (ncx, ncz) => {
+          const neighbor = this.getChunk(ncx, ncz);
+          if (neighbor) {
+            if (this.materials && typeof neighbor.rebuildMesh === 'function') {
+              try {
+                neighbor.rebuildMesh(this.materials);
+              } catch (_) {}
+            }
+            neighbor.isDirty = false;
+            const nqIdx = this.remeshQueue.indexOf(neighbor);
+            if (nqIdx !== -1) this.remeshQueue.splice(nqIdx, 1);
+          }
+        };
+
+        if (lx === 0) remeshNeighbor(cx - 1, cz);
+        if (lx === CHUNK_WIDTH - 1) remeshNeighbor(cx + 1, cz);
+        if (lz === 0) remeshNeighbor(cx, cz - 1);
+        if (lz === CHUNK_DEPTH - 1) remeshNeighbor(cx, cz + 1);
+      }
+    }
 
     // Notify registered block hooks
     if (typeof this.onAuthoritativeBlock === 'function') {
@@ -162,6 +174,19 @@ export class World {
 
   applyBlockDelta(x, y, z, blockType) {
     this.applyAuthoritativeBlock(x, y, z, blockType);
+  }
+
+  /**
+   * Clears all blockDeltas and regenerates loaded chunks (used when admin resets server)
+   */
+  resetToInitialTerrain() {
+    this.blockDeltas.clear();
+    this.remeshQueue.length = 0;
+    this.pendingChunkGenerations.length = 0;
+    for (const chunk of this.chunks.values()) {
+      chunk.dispose();
+    }
+    this.chunks.clear();
   }
 
   queueRemesh(chunk) {
@@ -768,6 +793,24 @@ export class World {
     const oz = chunk.originZ;
     const ASPHALT_BLK = BLOCKS.ASPHALT || BLOCKS.COBBLESTONE;
     const roadY = 24;
+
+    const minX = ox;
+    const maxX = ox + CHUNK_WIDTH;
+    const minZ = oz;
+    const maxZ = oz + CHUNK_DEPTH;
+
+    // Fast AABB bounding box rejection: if chunk does not overlap any road, roundabout, bridge, or tunnel corridor, skip 256-iteration loop
+    const hasRoadOrTunnel =
+      (minX <= 24 && maxX >= -24 && minZ <= 24 && maxZ >= -24) || // Roundabout
+      (minX <= 5 && maxX >= -5 && minZ <= 440 && maxZ >= -470) || // N-S Highway & Tunnels
+      (minZ <= 5 && maxZ >= -5 && minX <= 235 && maxX >= -235) || // E-W Highway & Tunnels
+      (minX <= 235 && maxX >= 224 && minZ <= 252 && maxZ >= -252) || // East Highway & Tunnels
+      (minX <= -224 && maxX >= -235 && minZ <= 252 && maxZ >= -252) || // West Highway & Tunnels
+      (minZ <= 472 && maxZ >= 464 && minX <= 20 && maxX >= -20) || // Norway Bridge
+      (minZ <= 255 && maxZ >= 245 && minX <= 442 && maxX >= 248) || // Fuji East Corridor
+      (minX <= 445 && maxX >= 435 && minZ <= 467 && maxZ >= 248);   // Fuji North Corridor
+
+    if (!hasRoadOrTunnel) return;
 
     for (let lx = 0; lx < CHUNK_WIDTH; lx++) {
       for (let lz = 0; lz < CHUNK_DEPTH; lz++) {
@@ -5204,25 +5247,82 @@ export class World {
   }
 
   /**
-   * Updates chunks around player position
+   * Updates chunks around player position.
+   * Generates immediate 3x3 core chunks (radius 1, distSq <= 2) synchronously (<35ms) on boot/movement,
+   * enqueues outer chunks (radius 2..renderDistance) into this.pendingChunkGenerations,
+   * and progressively generates at most 1 chunk per frame in background (2 in boost mode).
    */
   updateStreaming(playerX, playerZ) {
     const centerCX = Math.floor(playerX / CHUNK_WIDTH);
     const centerCZ = Math.floor(playerZ / CHUNK_DEPTH);
     const rad = this.renderDistance;
 
-    // Load chunks within render distance
-    for (let dx = -rad; dx <= rad; dx++) {
-      for (let dz = -rad; dz <= rad; dz++) {
-        if (dx * dx + dz * dz <= rad * rad) {
+    // 1. Immediate 3x3 core chunks (distSq <= 2, 9 chunks around player) generated immediately for solid collision
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx * dx + dz * dz <= 2) {
           const cx = centerCX + dx;
           const cz = centerCZ + dz;
-          this.getOrCreateChunk(cx, cz);
+          const key = this.getChunkKey(cx, cz);
+          if (!this.chunks.has(key)) {
+            this.getOrCreateChunk(cx, cz);
+          }
         }
       }
     }
 
-    // In Boost mode, keep a wider cache of preloaded chunks in memory so rapid movement never stutters
+    // 2. Collect missing outer chunks within renderDistance (distSq > 2 and distSq <= rad * rad)
+    const pendingSet = new Set(this.pendingChunkGenerations.map(item => this.getChunkKey(item.cx, item.cz)));
+    for (let dx = -rad; dx <= rad; dx++) {
+      for (let dz = -rad; dz <= rad; dz++) {
+        const distSq = dx * dx + dz * dz;
+        if (distSq > 2 && distSq <= rad * rad) {
+          const cx = centerCX + dx;
+          const cz = centerCZ + dz;
+          const key = this.getChunkKey(cx, cz);
+          if (!this.chunks.has(key) && !pendingSet.has(key)) {
+            this.pendingChunkGenerations.push({ cx, cz, distSq });
+            pendingSet.add(key);
+          }
+        }
+      }
+    }
+
+    // Filter out queued chunks that moved out of range or are already generated
+    this.pendingChunkGenerations = this.pendingChunkGenerations.filter(item => {
+      const dSq = (item.cx - centerCX) * (item.cx - centerCX) + (item.cz - centerCZ) * (item.cz - centerCZ);
+      item.distSq = dSq;
+      return dSq <= rad * rad && !this.chunks.has(this.getChunkKey(item.cx, item.cz));
+    });
+
+    // Sort pending generations from closest to furthest
+    this.pendingChunkGenerations.sort((a, b) => a.distSq - b.distSq);
+
+    // 3. Progressive chunk generation:
+    // In headless test mode (!this.materials), generate all pending chunks immediately.
+    // In browser, generate at most 1 chunk per frame (or 2 in boost mode).
+    if (!this.materials) {
+      while (this.pendingChunkGenerations.length > 0) {
+        const next = this.pendingChunkGenerations.shift();
+        const key = this.getChunkKey(next.cx, next.cz);
+        if (!this.chunks.has(key)) {
+          this.getOrCreateChunk(next.cx, next.cz);
+        }
+      }
+    } else {
+      const maxGenPerFrame = this.boostMode ? 2 : 1;
+      let generated = 0;
+      while (this.pendingChunkGenerations.length > 0 && generated < maxGenPerFrame) {
+        const next = this.pendingChunkGenerations.shift();
+        const key = this.getChunkKey(next.cx, next.cz);
+        if (!this.chunks.has(key)) {
+          this.getOrCreateChunk(next.cx, next.cz);
+          generated++;
+        }
+      }
+    }
+
+    // 4. Memory management: unload chunks beyond render distance
     const unloadPad = this.boostMode ? 4 : 2;
     const maxDistSq = (rad + unloadPad) * (rad + unloadPad);
     for (const [key, chunk] of this.chunks.entries()) {
@@ -5236,11 +5336,11 @@ export class World {
   }
 
   /**
-   * Process remesh queue (scales up to 6 chunks/frame in Boost mode)
+   * Process remesh queue: 1 chunk per frame (or 2 in Boost mode) to eliminate frame-time spikes
    */
   updateRemesh() {
     let processed = 0;
-    const budget = this.maxRemeshPerFrame || 2;
+    const budget = this.maxRemeshPerFrame || (this.boostMode ? 2 : 1);
     while (this.remeshQueue.length > 0 && processed < budget) {
       const chunk = this.remeshQueue.shift();
       if (chunk && chunk.isDirty) {

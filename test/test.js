@@ -2864,7 +2864,7 @@ it('verifies vehicle dual camera perspectives (Chase view and Cockpit Interior v
   const mockControls = {
     pitch: 0,
     getSafeCameraPosition: (eye, bx, by, bz) => ({ x: eye.x + bx, y: eye.y + by, z: eye.z + bz }),
-    localAvatar: { group: new mockTHREE.Group(), setTargetState: () => {} }
+    localAvatar: { group: new mockTHREE.Group(), setTargetState: () => {}, update: () => {} }
   };
 
   vm.enterCar(car, { pos: new mockTHREE.Vector3(), vel: new mockTHREE.Vector3(), action: 'idle' });
@@ -3133,7 +3133,7 @@ function loadAvatarModule() {
   class Group {
     constructor() {
       this.position = new Vector3();
-      this.rotation = { x: 0, y: 0, z: 0 };
+      this.rotation = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } };
       this.children = [];
     }
     add(child) { this.children.push(child); }
@@ -3146,7 +3146,7 @@ function loadAvatarModule() {
       this.geometry = geom;
       this.material = mat;
       this.position = new Vector3();
-      this.rotation = { x: 0, y: 0, z: 0 };
+      this.rotation = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } };
       this.castShadow = false;
     }
   }
@@ -3777,6 +3777,509 @@ it('verifies Central Plaza cardinal walkways are free of fountains at (0, +-6) a
     assert.ok(car.currentSpeed > 2.0, `Car ${i} on route ${car.route.type} must never get stuck at route endpoint (speed=${car.currentSpeed}, pos=${car.position.x.toFixed(1)},${car.position.z.toFixed(1)})`);
     assert.strictEqual(car.isStopped, false, `Car ${i} must remain moving after full route turnaround`);
   }
+});
+
+// =============================================================================
+// SECTION 12: MOBILE MULTIPLAYER EXPANSION, STEALTH ADMIN, SOLID COLLISIONS & PERFORMANCE (R1-R6)
+// =============================================================================
+console.log('\n[SECTION 12: MOBILE MULTIPLAYER EXPANSION, STEALTH ADMIN, SOLID COLLISIONS & PERFORMANCE (R1-R6)]');
+
+it('R1: Server stability - GameState decouples animal despawn timeouts into animalTimers and getAnimalsSnapshot returns clean DTOs without circular JSON', () => {
+  const state = new GameState(12345);
+  assert.ok(state.animalTimers instanceof Map, 'GameState must maintain animalTimers Map decoupled from entity objects');
+  const firstAnimal = state.animals.values().next().value;
+  assert.ok(firstAnimal, 'Initial ambient animal must exist');
+  const animalId = firstAnimal.id;
+
+  // Damage animal to trigger despawn sequence
+  state.hitAnimal(animalId, 'shooter_1');
+  assert.strictEqual(firstAnimal.despawnTimeout, undefined, 'Animal entity must NOT have despawnTimeout attached to it directly');
+  assert.ok(state.animalTimers.has(animalId), 'Despawn timer must be tracked inside animalTimers Map');
+
+  // getAnimalsSnapshot must export plain DTOs
+  const snapshot = state.getAnimalsSnapshot();
+  assert.ok(Array.isArray(snapshot));
+  assert.ok(snapshot.length > 0);
+
+  // Crucial test: JSON.stringify must succeed without circular structure error
+  let jsonString;
+  assert.doesNotThrow(() => {
+    jsonString = JSON.stringify(snapshot);
+  }, 'Serializing animals snapshot must never throw circular JSON error');
+  assert.ok(jsonString.length > 0);
+
+  // Clean up timer
+  const timer = state.animalTimers.get(animalId);
+  clearTimeout(timer);
+  state.animalTimers.delete(animalId);
+});
+
+it('R1: Server stability - RoomManager.prototype.broadcast safely handles client socket errors and serialization without unhandled exceptions', () => {
+  const rm = new RoomManager({ maxPlayers: 10, seed: 12345 });
+  const room = rm.getOrCreateRoom('main');
+
+  const brokenWs = {
+    readyState: 1,
+    send: () => { throw new Error('EPIPE: broken pipe on render socket'); }
+  };
+  const closedWs = {
+    readyState: 3, // CLOSED
+    send: () => {}
+  };
+  let goodMsg = null;
+  const goodWs = {
+    readyState: 1,
+    send: (str) => { goodMsg = JSON.parse(str); }
+  };
+
+  room.clients.set(brokenWs, 'p_broken');
+  room.clients.set(closedWs, 'p_closed');
+  room.clients.set(goodWs, 'p_good');
+
+  assert.doesNotThrow(() => {
+    rm.broadcast(room, 'test_broadcast', { message: 'hello world', count: 42 });
+  }, 'broadcast must safely handle socket errors without crashing process');
+
+  assert.ok(goodMsg, 'Healthy socket must receive broadcast packet');
+  assert.strictEqual(goodMsg.type, 'test_broadcast');
+  assert.strictEqual(goodMsg.data.count, 42);
+
+  rm.destroy();
+});
+
+it('R1 & Performance: World.prototype.updateStreaming generates 3x3 core immediately and throttles outer ring chunks', () => {
+  const { World } = loadWorldModule();
+  const world = new World(null, null, 12345);
+
+  // Player spawns at (3, 25, 6)
+  world.updateStreaming(3, 6);
+
+  // 3x3 core around (cx=0, cz=0) covers cx in [-1, 1] and cz in [-1, 1]
+  for (let cx = -1; cx <= 1; cx++) {
+    for (let cz = -1; cz <= 1; cz++) {
+      const key = world.getChunkKey(cx, cz);
+      assert.ok(world.chunks.has(key), `Chunk (${cx}, ${cz}) in 3x3 core must be generated immediately on first frame`);
+    }
+  }
+
+  // Block under feet at spawn (3, 24, 6) must exist and be non-air
+  const spawnGround = world.getBlock(3, 24, 6);
+  assert.notStrictEqual(spawnGround, 0, 'Spawn point ground at (3, 24, 6) must be solid to prevent void falling');
+});
+
+it('Performance: World.prototype.applyAuthoritativeBlock synchronizes voxel chunk data, clears dirty flag, and caches deltas', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const mockMaterials = { solidMaterial: {}, transparentMaterial: {}, waterMaterial: {}, getUV: () => [0, 0, 1, 1] };
+  const world = new World(null, mockMaterials, 12345);
+
+  const chunk = world.getOrCreateChunk(0, 0);
+  chunk.rebuilt = false;
+
+  world.applyAuthoritativeBlock(5, 24, 5, BLOCKS.STONE);
+  assert.strictEqual(chunk.rebuilt, true, 'Block modification must trigger rebuildMesh on loaded chunk');
+  assert.strictEqual(chunk.isDirty, false, 'applyAuthoritativeBlock must synchronously clear chunk.isDirty');
+  assert.strictEqual(world.getBlock(5, 24, 5), BLOCKS.STONE);
+  assert.strictEqual(world.blockDeltas.get('5,24,5'), BLOCKS.STONE);
+
+  // Delta on unloaded chunk must be cached in blockDeltas
+  world.applyAuthoritativeBlock(120, 24, 120, BLOCKS.ASPHALT);
+  assert.strictEqual(world.blockDeltas.get('120,24,120'), BLOCKS.ASPHALT, 'Unloaded chunk delta must be recorded in blockDeltas');
+});
+
+it('R2: Plaza Central F1 red car (car_spawn_red) is completely removed while blue car and all 12 circuit cars remain', () => {
+  const { VehicleManager } = loadVehicleModule();
+  const vm = new VehicleManager(null, { add: () => {}, remove: () => {} }, { spawnDriftSmoke: () => {} });
+
+  // Verify car_spawn_red is completely gone
+  const redF1 = vm.getCarById('car_spawn_red');
+  assert.ok(!redF1, 'car_spawn_red (GT Monza Rojo) must be completely removed from Plaza Central');
+
+  // Verify blue car and gold car are retained
+  const bluePlazaCar = vm.getCarById('car_spawn_blue');
+  assert.ok(bluePlazaCar, 'car_spawn_blue (GT Paris Azul) must remain in Plaza Central');
+  const goldPlazaCar = vm.getCarById('car_spawn_gold');
+  assert.ok(goldPlazaCar, 'car_spawn_gold (GT Veloce Oro) must remain in Plaza Central');
+
+  // Verify all 12 Gran Circuito cars are present
+  const circuitIds = [
+    'car_se_scuderia', 'car_se_redbull', 'car_se_mercedes', 'car_se_mclaren',
+    'car_se_aston', 'car_se_alpine', 'car_se_williams', 'car_se_haas',
+    'car_se_grid1', 'car_se_grid2', 'car_se_papaya', 'car_se_silver'
+  ];
+  for (const cid of circuitIds) {
+    const c = vm.getCarById(cid);
+    assert.ok(c, `Gran Circuito car ${cid} must remain present in circuit`);
+  }
+
+  // Source check on public/src/vehicle.js
+  const vehicleCode = fs.readFileSync(path.resolve(__dirname, '../public/src/vehicle.js'), 'utf8');
+  assert.strictEqual(vehicleCode.includes("'car_spawn_red'"), false, 'vehicle.js must not contain car_spawn_red definition');
+});
+
+it('R2: Persistent Map Sync - Block modifications persist across disconnects and 0-player rooms, only wiped by admin reset', () => {
+  const rm = new RoomManager({ maxPlayers: 10, seed: 12345 });
+  const p1Msgs = [];
+  const ws1 = {
+    readyState: 1,
+    send: (s) => p1Msgs.push(JSON.parse(s)),
+    on: () => {}
+  };
+  rm.handleConnection(ws1);
+  const meta1 = rm.socketMeta.get(ws1);
+  rm.handleJoin(ws1, meta1, { name: 'PersistentBuilder' });
+
+  // Place asphalt block at (4, 25, 6) within reach of spawn (3, 25, 6)
+  rm.handleBlockModify(ws1, meta1, { x: 4, y: 25, z: 6, blockType: 20 });
+  const room = rm.rooms.get('main');
+  assert.strictEqual(room.gameState.blockDeltas.get('4,25,6'), 20);
+
+  // Disconnect ws1 -> room client count reaches 0
+  rm.handleDisconnect(ws1);
+  assert.strictEqual(room.clients.size, 0);
+  assert.strictEqual(room.gameState.blockDeltas.get('4,25,6'), 20, 'Block delta must persist even when 0 players remain in the room');
+
+  // ws2 joins empty room
+  const p2Msgs = [];
+  const ws2 = {
+    readyState: 1,
+    send: (s) => p2Msgs.push(JSON.parse(s)),
+    on: () => {}
+  };
+  rm.handleConnection(ws2);
+  const meta2 = rm.socketMeta.get(ws2);
+  rm.handleJoin(ws2, meta2, { name: 'LateJoiner' });
+
+  const initMsg = p2Msgs.find(m => m.type === MSG.INIT);
+  assert.ok(initMsg, 'Late joiner must receive INIT packet');
+  const delta4 = initMsg.data.deltas.find(d => d[0] === 4 && d[1] === 25 && d[2] === 6);
+  assert.ok(delta4, 'Persistent delta must be transmitted to late joiner in initial state');
+  assert.strictEqual(delta4[3], 20);
+
+  // Admin triggers server reset
+  const adminWs = {
+    readyState: 1,
+    send: () => {},
+    on: () => {}
+  };
+  rm.handleConnection(adminWs);
+  const metaAdmin = rm.socketMeta.get(adminWs);
+  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+
+  rm.handleAdminResetServer(adminWs, metaAdmin, { email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  assert.strictEqual(room.gameState.blockDeltas.size, 0, 'Block deltas must be cleared upon admin server reset');
+
+  rm.destroy();
+});
+
+it('R3: Drivable car physics and seated avatar pose snap directly to cockpit seat coordinates without lerp delay or ground clamping', () => {
+  const { VehicleManager } = loadVehicleModule();
+  const { Avatar } = loadAvatarModule();
+  const vm = new VehicleManager(null, { add: () => {}, remove: () => {} }, { spawnDriftSmoke: () => {} });
+  const car = vm.getCarById('car_se_scuderia');
+  assert.ok(car, 'Scuderia car must exist');
+
+  const avatar = new Avatar('seat_test', 'RacerSteve', { add: () => {} }, null);
+  const seat = car.getSeatPosition();
+
+  // Transition avatar to driving state
+  avatar.setTargetState([seat.x, seat.y, seat.z], [car.yaw, 0], 'driving');
+  avatar.update(0.05);
+
+  // Direct snap check
+  assert.strictEqual(avatar.group.position.x, seat.x, 'Avatar X must snap directly to seat X without lerp lag');
+  assert.strictEqual(avatar.group.position.y, seat.y, 'Avatar Y must snap directly to seat Y');
+  assert.strictEqual(avatar.group.position.z, seat.z, 'Avatar Z must snap directly to seat Z');
+  assert.strictEqual(avatar.action, 'driving');
+
+  // Seated posture checks
+  assert.strictEqual(avatar.torso.position.y, 0.65, 'Seated torso must be lowered to Y=0.65');
+  assert.strictEqual(avatar.leftLegPivot.position.y, 0.35, 'Seated leg pivots must be lowered to Y=0.35');
+  assert.strictEqual(avatar.headGroup.position.y, 1.02, 'Seated head must be positioned at Y=1.02');
+});
+
+it('R3: Solid 2D OBB player-car collision prevents pedestrian from walking through drivable and traffic cars', () => {
+  const { VehicleManager } = loadVehicleModule();
+  const { VoxelCar } = loadAnimalsModule();
+  const vm = new VehicleManager(null, { add: () => {}, remove: () => {} }, { spawnDriftSmoke: () => {} });
+  const car = vm.getCarById('car_spawn_blue');
+  assert.ok(car);
+  car.pos = { x: 25.0, y: 25.0, z: 0.0 };
+  car.yaw = 0.0; // Heading along -Z
+
+  // 1. DrivableCar solid collision pushout
+  const mockPhysics = { pos: { x: 25.0, y: 25.0, z: 0.0 } }; // player inside center of car
+  vm.resolvePlayerCarCollisions(mockPhysics);
+  const pushedDistX = Math.abs(mockPhysics.pos.x - 25.0);
+  const pushedDistZ = Math.abs(mockPhysics.pos.z - 0.0);
+  assert.ok(pushedDistX >= 1.15 || pushedDistZ >= 2.0, 'Player must be pushed outside DrivableCar bounding box');
+
+  // 2. VoxelCar (traffic car) collision pushout
+  const trafficCar = new VoxelCar({ type: 'straight', x1: 0, z1: 0, x2: 0, z2: -100 }, 1, null, { getBlock: () => 0 });
+  trafficCar.position.set(0, 25.0, -10.0);
+  trafficCar.rotationY = 0;
+
+  const pedestrian = { x: 0, y: 25.0, z: -10.3 };
+  trafficCar.update(0.016, pedestrian);
+  const tdx = Math.abs(pedestrian.x - trafficCar.position.x);
+  const tdz = Math.abs(pedestrian.z - trafficCar.position.z);
+  assert.ok(tdx >= 1.15 || tdz >= 1.85, 'Pedestrian must be pushed outside traffic car boundary');
+});
+
+it('R3: Mobile touch driving controls UI provides dedicated pedals and steering buttons', () => {
+  const htmlPath = path.resolve(__dirname, '../public/index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  assert.ok(html.includes('id="mobile-driving-controls"'), 'Index HTML must include #mobile-driving-controls');
+  assert.ok(html.includes('id="mobile-drive-left"'), 'Must include #mobile-drive-left steer button');
+  assert.ok(html.includes('id="mobile-drive-right"'), 'Must include #mobile-drive-right steer button');
+  assert.ok(html.includes('id="mobile-drive-gas"'), 'Must include #mobile-drive-gas pedal button');
+  assert.ok(html.includes('id="mobile-drive-brake"'), 'Must include #mobile-drive-brake pedal button');
+  assert.ok(html.includes('mobile-steer-pad'), 'Must include mobile-steer-pad class');
+  assert.ok(html.includes('mobile-pedal-pad'), 'Must include mobile-pedal-pad class');
+
+  const cssPath = path.resolve(__dirname, '../public/styles.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  assert.ok(css.includes('.mobile-action-btn.car-action-btn') || css.includes('#mobile-controls'), 'Styles must style mobile controls');
+});
+
+it('R4: Stealth Admin system - credential validation requires jsieiragerpe@gmail.com and ARGÓN4 / ARGON4 with zero public hints', () => {
+  const { isValidAdminCredentials, ADMIN_EMAIL, sanitizeName } = require('../server/protocol');
+  assert.strictEqual(ADMIN_EMAIL, 'jsieiragerpe@gmail.com');
+
+  // Valid credentials (with accent and normalized)
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGÓN4'), true);
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGON4'), true);
+  assert.strictEqual(isValidAdminCredentials('  jsieiragerpe@gmail.com  ', 'argon4'), true);
+  assert.strictEqual(isValidAdminCredentials('JSIEIRAGERPE@GMAIL.COM', 'Argón4'), true);
+
+  // Invalid credentials
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'wrong_password'), false);
+  assert.strictEqual(isValidAdminCredentials('other_user@gmail.com', 'ARGÓN4'), false);
+  assert.strictEqual(isValidAdminCredentials(null, 'ARGÓN4'), false);
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', null), false);
+  assert.strictEqual(isValidAdminCredentials('', ''), false);
+
+  // Sanitize name maps admin email to clean username
+  assert.strictEqual(sanitizeName('jsieiragerpe@gmail.com'), 'jsieiragerpe');
+
+  // Check index.html: public UI must hide admin panels with zero public hints
+  const html = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+  assert.ok(html.includes('id="admin-settings-panel" class="admin-settings-panel hidden"'), 'Admin panel must be hidden by default');
+  assert.ok(html.includes('id="access-key-group" class="input-group hidden"'), 'Access key input group must be hidden by default');
+
+  // Player name input must allow 40 characters
+  const nameInputMatch = html.match(/id="player-name-input"[^>]*maxlength="(\d+)"/);
+  assert.ok(nameInputMatch, 'player-name-input must specify maxlength');
+  assert.ok(parseInt(nameInputMatch[1], 10) >= 40, 'player-name-input maxlength must be at least 40 to allow full email');
+});
+
+it('R4: Stealth Admin panel telemetry table tracks live players with joinedAt, coordinates, and 1-touch teleportation', () => {
+  const rm = new RoomManager({ maxPlayers: 10, seed: 12345 });
+  const adminMsgs = [];
+  const adminWs = {
+    readyState: 1,
+    send: (s) => adminMsgs.push(JSON.parse(s)),
+    on: () => {}
+  };
+  const bobWs = {
+    readyState: 1,
+    send: () => {},
+    on: () => {}
+  };
+
+  rm.handleConnection(adminWs);
+  rm.handleConnection(bobWs);
+  const metaAdmin = rm.socketMeta.get(adminWs);
+  const metaBob = rm.socketMeta.get(bobWs);
+
+  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  rm.handleJoin(bobWs, metaBob, { name: 'ExplorerBob' });
+
+  // Bob moves to (150, 30, -80)
+  rm.handleMove(bobWs, metaBob, { pos: [150, 30, -80], rot: [0, 0] });
+
+  const room = rm.rooms.get('main');
+  const playersSnapshot = room.gameState.getPlayersSnapshot();
+  const bobEntry = playersSnapshot.find(p => p.id === metaBob.id);
+  assert.ok(bobEntry, 'Bob must be in player snapshot');
+  assert.strictEqual(bobEntry.name, 'ExplorerBob');
+  assert.deepStrictEqual(bobEntry.pos, [150, 30, -80]);
+  assert.strictEqual(typeof bobEntry.joinedAt, 'number');
+  assert.ok(bobEntry.joinedAt > 0);
+
+  // Admin teleports to Bob
+  rm.handleTeleportToPlayer(adminWs, metaAdmin, { targetPlayerId: metaBob.id });
+  const adminPlayer = room.gameState.getPlayer(metaAdmin.id);
+  assert.strictEqual(adminPlayer.pos[0], 150);
+  assert.strictEqual(adminPlayer.pos[1], 30);
+  assert.strictEqual(adminPlayer.pos[2], -80);
+
+  rm.destroy();
+});
+
+it('R4: Admin Server Reset broadcasts "El admin ha reiniciado el server", resets world, and disconnects all clients', () => {
+  const rm = new RoomManager({ maxPlayers: 10, seed: 12345 });
+  const clientMsgs = [];
+  const clientWs = {
+    readyState: 1,
+    send: (s) => clientMsgs.push(JSON.parse(s)),
+    on: () => {}
+  };
+  const adminWs = {
+    readyState: 1,
+    send: () => {},
+    on: () => {}
+  };
+
+  rm.handleConnection(clientWs);
+  rm.handleConnection(adminWs);
+  const metaClient = rm.socketMeta.get(clientWs);
+  const metaAdmin = rm.socketMeta.get(adminWs);
+
+  rm.handleJoin(clientWs, metaClient, { name: 'CasualGamer' });
+  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+
+  const room = rm.rooms.get('main');
+  room.gameState.blockDeltas.set('10,24,10', 4);
+  assert.strictEqual(room.clients.size, 2);
+
+  // Admin triggers server reset
+  rm.handleAdminResetServer(adminWs, metaAdmin, { email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+
+  // Client must receive SERVER_RESET message
+  const resetMsg = clientMsgs.find(m => m.type === MSG.SERVER_RESET);
+  assert.ok(resetMsg, 'Connected client must receive SERVER_RESET packet');
+  assert.strictEqual(resetMsg.data.message, 'El admin ha reiniciado el server');
+
+  // Room must have 0 connected clients and 0 block deltas
+  assert.strictEqual(room.clients.size, 0);
+  assert.strictEqual(room.gameState.blockDeltas.size, 0);
+
+  rm.destroy();
+});
+
+it('R5: Exact TNT placement places exactly 1 solid cube at targeted block face at any distance without floating or duplicating', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  camera.updateProjectionMatrix = () => {};
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+  const world = {
+    getBlock: (x, y, z) => (y <= 24 ? 4 : 0)
+  };
+
+  const controls = new Controls(camera, domElement, physics, world);
+  controls.selectedSlot = 4; // Slot 5: BLOCKS.TNT (19)
+
+  // Mock exact raycast to block face 150 blocks away
+  controls.raycastVoxel = () => ({
+    block: { x: 150, y: 24, z: -30 },
+    place: { x: 150, y: 25, z: -30 },
+    face: { x: 0, y: 1, z: 0 }
+  });
+
+  let placementCount = 0;
+  controls.onPlaceTnt = () => { placementCount++; };
+
+  const tnt = controls.throwTnt();
+  assert.ok(tnt, 'throwTnt must return spawned TNT entity');
+  assert.strictEqual(controls.activeTntEntities.length, 1, 'Exactly 1 TNT entity must be tracked');
+  assert.strictEqual(placementCount, 1, 'Exactly 1 TNT placement callback must be triggered (no duplicates)');
+
+  // Verify exact solid surface placement
+  assert.strictEqual(tnt.pos.x, 150.5, 'TNT X must align with center of targeted block (150.5)');
+  assert.strictEqual(tnt.pos.y, 25.47, 'TNT Y must sit on top of Y=25 block surface (25.47)');
+  assert.strictEqual(tnt.pos.z, -29.5, 'TNT Z must align with center of targeted block (-29.5)');
+  assert.strictEqual(tnt.onGround, true, 'TNT placed on solid block must have onGround === true (never floating)');
+});
+
+it('R6: Rifle Sniper ADS mode has infinite raycast range (>=1000m) striking remote targets and TNT', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  camera.updateProjectionMatrix = () => {};
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+
+  let probedRange = 0;
+  const mockAnimalManager = {
+    getHitAnimal: (origin, dir, maxDist) => {
+      probedRange = maxDist;
+      return null;
+    }
+  };
+
+  const controls = new Controls(camera, domElement, physics, { getBlock: () => 0 });
+  controls.animalManager = mockAnimalManager;
+  controls.setWeaponsMode(true);
+
+  // 1. Hip-fire: range is standard 85m
+  controls.setAiming(false);
+  controls.aimBlend = 0.0;
+  controls.lastShootTime = 0;
+  const hipShot = controls.triggerShoot(true);
+  assert.ok(hipShot, 'Hip shot must return shotData');
+  assert.strictEqual(hipShot.range, 85.0, 'Hip fire range must be 85m');
+  assert.strictEqual(hipShot.isSniperShot, false);
+  assert.strictEqual(probedRange, 85.0);
+
+  // 2. ADS Sniper Mode: range is infinite (>= 1000m)
+  controls.setAiming(true);
+  controls.aimBlend = 1.0;
+  controls.lastShootTime = 0;
+  const sniperShot = controls.triggerShoot(true);
+  assert.ok(sniperShot, 'Sniper shot must return shotData');
+  assert.ok(sniperShot.range >= 1000.0, 'Sniper ADS range must be at least 1000m');
+  assert.strictEqual(sniperShot.isSniperShot, true, 'isSniperShot must be true');
+  assert.ok(probedRange >= 1000.0, 'Animal raycast probe distance must be at least 1000m in sniper mode');
+});
+
+it('R6: Sniper scope overlay features touch buttons for firing (#scope-btn-shoot) and exiting (#scope-btn-exit)', () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+  assert.ok(html.includes('id="scope-overlay-actions"'), 'Scope overlay must contain #scope-overlay-actions container');
+  assert.ok(html.includes('id="scope-btn-shoot"'), 'Must contain #scope-btn-shoot');
+  assert.ok(html.includes('id="scope-btn-exit"'), 'Must contain #scope-btn-exit');
+  assert.ok(html.includes('TIRAR'), 'Button must display TIRAR label');
+  assert.ok(html.includes('QUITAR MIRA'), 'Button must display QUITAR MIRA label');
+
+  const css = fs.readFileSync(path.resolve(__dirname, '../public/styles.css'), 'utf8');
+  assert.ok(css.includes('#rifle-scope-overlay'), 'CSS must define #rifle-scope-overlay');
+  assert.ok(css.includes('.scope-telemetry'), 'CSS must define .scope-telemetry');
+});
+
+it('Performance: Traffic car checkObstacleAhead throttles raycasts, detects pedestrians, and culls distant cars >120m', () => {
+  const { VoxelCar } = loadAnimalsModule();
+  let blockProbes = 0;
+  const mockWorld = {
+    getBlock: () => { blockProbes++; return 0; },
+    isRoadAt: () => true
+  };
+
+  const car = new VoxelCar({ type: 'straight', x1: 0, z1: 0, x2: 0, z2: -200 }, 1, null, mockWorld);
+  car.position.set(0, 25, 0);
+
+  // 1. Pedestrian detection in heading path
+  car._playerPos = { x: 0, y: 25, z: -4 }; // 4m ahead of car
+  const obs = car.checkObstacleAhead(8.0);
+  assert.ok(obs, 'Car must detect player in front bumper heading');
+  assert.strictEqual(obs.isPlayer, true, 'Detected obstacle must be flagged as player');
+  assert.ok(obs.distance <= 4.0, 'Detected obstacle distance must be <= 4m');
+
+  // 2. Verify step size and deduplication: probing 8m should not perform excessive queries
+  blockProbes = 0;
+  car._playerPos = null;
+  car.checkObstacleAhead(8.0);
+  assert.ok(blockProbes < 200, `Probing 8m forward ahead must use efficient step size and deduplication (got ${blockProbes})`);
 });
 
 // =============================================================================

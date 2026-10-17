@@ -108,7 +108,8 @@ class VoxelRealmsApp {
     // Setup Block Interaction & Weapons Events
     this.setupInteractions();
 
-    // Initial safe player spawn at open plaza viewpoint facing the Golden Altar & Statues
+    // Initial safe player spawn at open plaza viewpoint facing the Golden Altar & Statues:
+    // Synchronously pre-generates 3x3 core chunks (<35ms) around spawn (0, 0) and queues outer chunks for progressive background streaming
     this.world.updateStreaming(0, 0);
     this.physics.respawn(3, 6);
     this.controls.yaw = 0.45;
@@ -158,15 +159,21 @@ class VoxelRealmsApp {
         return; // Block placement would trap player
       }
 
-      this.multiplayer.sendBlockModify(placePos.x, placePos.y, placePos.z, selectedBlockId);
-      if ((selectedBlockId === BLOCKS.TNT || selectedBlockId === 19) && this.controls && typeof this.controls.onPlaceTnt === 'function') {
-        this.controls.onPlaceTnt(placePos);
+      // If placing TNT from the hotbar, trigger a single primed TNT on that exact surface instead of placing a static block + second primed mesh
+      if (selectedBlockId === BLOCKS.TNT || selectedBlockId === 19) {
+        if (this.controls && typeof this.controls.triggerTnt === 'function') {
+          this.controls.triggerTnt();
+        }
+        return;
       }
+
+      this.multiplayer.sendBlockModify(placePos.x, placePos.y, placePos.z, selectedBlockId);
     };
 
     // Rifle Shoot (Authentic 3D rifle, luminous tracer, animal blood particles & shoot-to-detonate TNT)
-    this.controls.onWeaponShoot = ({ origin, dir, muzzlePos, voxelHit }) => {
+    this.controls.onWeaponShoot = ({ origin, dir, muzzlePos, voxelHit, range, isSniperShot }) => {
       const tracerStart = muzzlePos || origin;
+      const effectiveRange = typeof range === 'number' ? range : ((isSniperShot || (this.controls && this.controls.isAiming)) ? 1000 : 85);
 
       // 1. Particle muzzle flash & smoke at gun barrel
       if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
@@ -177,7 +184,7 @@ class VoxelRealmsApp {
       let targetPlayerId = null;
       let targetPlayerHit = null;
       if (this.multiplayer && typeof this.multiplayer.getRaycastPlayerHit === 'function') {
-        targetPlayerHit = this.multiplayer.getRaycastPlayerHit(origin, dir, 85);
+        targetPlayerHit = this.multiplayer.getRaycastPlayerHit(origin, dir, effectiveRange);
         if (targetPlayerHit) {
           targetPlayerId = targetPlayerHit.id;
         }
@@ -186,7 +193,7 @@ class VoxelRealmsApp {
       // 3. Raycast animal / rare NPC hit
       let hitAnim = null;
       if (this.animalManager && typeof this.animalManager.getHitAnimal === 'function') {
-        hitAnim = this.animalManager.getHitAnimal(origin, dir, 75);
+        hitAnim = this.animalManager.getHitAnimal(origin, dir, effectiveRange);
       }
 
       // 4. Raycast voxel block hit (check for BLOCKS.TNT)
@@ -194,7 +201,7 @@ class VoxelRealmsApp {
 
       // Distance arbitration: find closest impact target
       const playerDist = targetPlayerHit ? targetPlayerHit.distance : Infinity;
-      const animalDist = hitAnim ? (hitAnim.distance || 75) : Infinity;
+      const animalDist = hitAnim ? (hitAnim.distance || effectiveRange) : Infinity;
       const voxelDist = voxelHit ? Math.hypot(voxelHit.x + 0.5 - origin.x, voxelHit.y + 0.5 - origin.y, voxelHit.z + 0.5 - origin.z) : Infinity;
 
       let targetPoint = null;
@@ -248,10 +255,11 @@ class VoxelRealmsApp {
         }
       } else {
         // No surface hit: tracer travels into the distance
+        const tracerDist = Math.min(effectiveRange, 220);
         targetPoint = {
-          x: origin.x + dir.x * 75,
-          y: origin.y + dir.y * 75,
-          z: origin.z + dir.z * 75
+          x: origin.x + dir.x * tracerDist,
+          y: origin.y + dir.y * tracerDist,
+          z: origin.z + dir.z * tracerDist
         };
       }
 
@@ -286,21 +294,19 @@ class VoxelRealmsApp {
       }
     };
 
-    // TNT placement & trigger (spawns visible 3D thrown & primed TNT block with burning fuse)
+    // TNT placement & trigger (spawns a SINGLE 3D primed TNT block on the targeted surface)
     this.controls.onPlaceTnt = (coords) => {
       if (!coords) return;
-      const hasThrownEntity = Array.isArray(this.controls.activeTntEntities) &&
-        this.controls.activeTntEntities.some(t => !t.isDead && Math.hypot(t.pos.x - coords.x, t.pos.z - coords.z) < 2.5);
+      const hasThrownEntity = Boolean(coords.entitySpawned) || (
+        Array.isArray(this.controls.activeTntEntities) &&
+        this.controls.activeTntEntities.some(t => !t.isDead && Math.hypot(t.pos.x - coords.x, t.pos.z - coords.z) < 3.5)
+      );
 
       if (!hasThrownEntity && this.particleManager && typeof this.particleManager.spawnPrimedTnt === 'function') {
-        const eye = this.physics && typeof this.physics.getEyePosition === 'function'
-          ? this.physics.getEyePosition()
-          : { x: coords.x, y: coords.y + 1.2, z: coords.z };
         const isOnline = Boolean(this.multiplayer && this.multiplayer.isConnected);
 
-        this.particleManager.spawnPrimedTnt(eye, coords, 1500, (bx, by, bz) => {
+        this.particleManager.spawnPrimedTnt(coords, coords, 3000, (bx, by, bz) => {
           if (!isOnline) {
-            // Offline / local fallback detonation: carve blast crater & spawn explosion FX
             if (this.world && typeof this.world.applyBlockDelta === 'function') {
               for (let dx = -2; dx <= 2; dx++) {
                 for (let dy = -2; dy <= 2; dy++) {
@@ -323,18 +329,24 @@ class VoxelRealmsApp {
       }
 
       if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
-        this.multiplayer.sendTntTrigger(coords.x, coords.y, coords.z, 1500);
+        this.multiplayer.sendTntTrigger(coords.x, coords.y, coords.z, 3000);
       }
     };
 
     // Synchronized remote TNT prime & animal burst handlers across clients
     if (this.multiplayer) {
-      this.multiplayer.onTntPrime = (x, y, z, fuseMs = 1500) => {
+      this.multiplayer.onTntPrime = (x, y, z, fuseMs = 3000, playerId = null) => {
+        // Ignore echo for our own TNT so we never spawn a duplicate second cube!
+        if (playerId && this.multiplayer.myId && playerId === this.multiplayer.myId) return;
+        const hasLocalTntEntity = Array.isArray(this.controls.activeTntEntities) &&
+          this.controls.activeTntEntities.some(t => !t.isDead && Math.hypot(t.pos.x - (x + 0.5), t.pos.z - (z + 0.5)) < 3.5);
+        if (hasLocalTntEntity) return;
+
         if (this.particleManager && typeof this.particleManager.spawnPrimedTnt === 'function') {
           const alreadyActive = Array.isArray(this.particleManager.primedTnts) &&
             this.particleManager.primedTnts.some(t => Math.abs(t.bx - x) <= 1 && Math.abs(t.by - y) <= 1 && Math.abs(t.bz - z) <= 1);
           if (!alreadyActive) {
-            this.particleManager.spawnPrimedTnt({ x, y: y + 0.6, z }, { x, y, z }, fuseMs);
+            this.particleManager.spawnPrimedTnt({ x, y, z }, { x, y, z }, fuseMs);
           }
         }
       };

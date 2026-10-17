@@ -8,6 +8,7 @@ class GameState {
     this.players = new Map(); // id -> player object
     this.blockDeltas = new Map(); // "x,y,z" -> blockType
     this.animals = new Map(); // animalId -> { id, type, x, y, z, yaw, state }
+    this.animalTimers = new Map(); // animalId -> Timeout (kept off animal objects to prevent circular JSON!)
     this.nextAnimalId = 1;
     this.startTime = Date.now();
     this.dayDurationSeconds = 600; // 10 minute full day/night cycle
@@ -139,6 +140,8 @@ class GameState {
       rot: [0, 0],     // [yaw, pitch]
       action: 'idle',
       weaponsEnabled: false,
+      isAdmin: false,
+      joinedAt: Date.now(),
       lastUpdate: Date.now()
     };
 
@@ -299,6 +302,10 @@ class GameState {
   /**
    * Burst/destroy an animal when hit by weapon or TNT
    */
+  damageAnimal(animalId, damage = 10, shooterId = null) {
+    return this.hitAnimal(animalId, shooterId);
+  }
+
   hitAnimal(animalId, shooterId = null) {
     const anim = this.animals.get(animalId);
     if (!anim) {
@@ -312,11 +319,13 @@ class GameState {
     anim.despawnAt = Date.now() + 3000;
     anim.shooterId = shooterId;
 
-    if (!anim.despawnTimeout) {
-      anim.despawnTimeout = setTimeout(() => {
+    if (!this.animalTimers.has(animalId)) {
+      const timer = setTimeout(() => {
+        this.animalTimers.delete(animalId);
         this.animals.delete(animalId);
         this.reconcileAreaAnimals();
       }, 3000);
+      this.animalTimers.set(animalId, timer);
     }
 
     return {
@@ -384,7 +393,19 @@ class GameState {
     for (const [id, anim] of this.animals.entries()) {
       const dist = Math.hypot(anim.x - rx, (anim.y || 25) - ry, anim.z - rz);
       if (dist <= blastRange) {
-        hitAnimals.push(anim);
+        if (this.animalTimers.has(id)) {
+          clearTimeout(this.animalTimers.get(id));
+          this.animalTimers.delete(id);
+        }
+        hitAnimals.push({
+          id: anim.id,
+          type: anim.type,
+          x: anim.x,
+          y: anim.y,
+          z: anim.z,
+          yaw: anim.yaw,
+          state: 'dying'
+        });
         this.animals.delete(id);
       }
     }
@@ -405,12 +426,47 @@ class GameState {
   }
 
   getAnimalsSnapshot() {
-    return Array.from(this.animals.values());
+    const list = [];
+    for (const anim of this.animals.values()) {
+      const isDead = anim.state === 'dying' || anim.state === 'dead';
+      const isKnockedDown = anim.state === 'dying' || anim.state === 'knockdown';
+      list.push({
+        id: anim.id,
+        type: anim.type,
+        x: anim.x,
+        y: anim.y,
+        z: anim.z,
+        pos: [anim.x, anim.y, anim.z],
+        yaw: typeof anim.yaw === 'number' ? anim.yaw : 0,
+        health: isDead ? 0 : 10,
+        isDead: Boolean(isDead),
+        isKnockedDown: Boolean(isKnockedDown),
+        state: anim.state || 'idle',
+        despawnAt: anim.despawnAt || undefined,
+        shooterId: anim.shooterId || undefined
+      });
+    }
+    return list;
+  }
+
+  /**
+   * Reset all block modifications and restore initial world state (admin action)
+   */
+  resetWorld() {
+    this.blockDeltas.clear();
+    this.blockDeltas = new Map();
+    for (const timer of this.animalTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.animalTimers.clear();
+    this.animals.clear();
+    this.nextAnimalId = 1;
+    this.initAmbientAnimals();
   }
 
   /**
    * Apply a block modification if valid.
-   * Player must be within reach distance (max 10 blocks) of target.
+   * Player must be within reach distance (max 10 blocks, or extended for TNT/admin) of target.
    */
   modifyBlock(playerId, x, y, z, blockType) {
     const player = this.players.get(playerId);
@@ -419,8 +475,9 @@ class GameState {
       const dy = player.pos[1] - (y + 0.5);
       const dz = player.pos[2] - (z + 0.5);
       const distSq = dx * dx + dy * dy + dz * dz;
-      // Allow up to 10 blocks distance
-      if (distSq > 100) {
+      // Allow up to 100 blocks distance for standard blocks, or up to 1000 blocks for TNT (blockType 19) / admin
+      const maxDistSq = (blockType === 19 || player.isAdmin) ? (1000 * 1000) : (100 * 100);
+      if (distSq > maxDistSq) {
         return { success: false, reason: 'Out of reach' };
       }
 
@@ -503,7 +560,8 @@ class GameState {
           pos: p.pos,
           rot: p.rot,
           action: p.action,
-          weaponsEnabled: !!p.weaponsEnabled
+          weaponsEnabled: !!p.weaponsEnabled,
+          joinedAt: p.joinedAt || Date.now()
         });
       }
     }
@@ -530,19 +588,24 @@ class GameState {
   getPlayersSnapshot() {
     const list = [];
     for (const [id, p] of this.players.entries()) {
+      const rx = Math.round(p.pos[0] * 100) / 100;
+      const ry = Math.round(p.pos[1] * 100) / 100;
+      const rz = Math.round(p.pos[2] * 100) / 100;
       list.push({
         id: p.id,
-        pos: [
-          Math.round(p.pos[0] * 100) / 100,
-          Math.round(p.pos[1] * 100) / 100,
-          Math.round(p.pos[2] * 100) / 100
-        ],
+        name: p.name,
+        pos: [rx, ry, rz],
+        x: rx,
+        y: ry,
+        z: rz,
         rot: [
           Math.round(p.rot[0] * 100) / 100,
           Math.round(p.rot[1] * 100) / 100
         ],
         action: p.action,
-        weaponsEnabled: !!p.weaponsEnabled
+        weaponsEnabled: !!p.weaponsEnabled,
+        isAdmin: !!p.isAdmin,
+        joinedAt: p.joinedAt || Date.now()
       });
     }
     return list;

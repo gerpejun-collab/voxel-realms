@@ -197,6 +197,59 @@ export class UIManager {
 
         this.showNotification('Te has teletransportado hacia ' + (targetName || 'Jugador'));
       };
+
+      this.multiplayer.onAdminState = (state) => {
+        const adminPanel = document.getElementById('admin-settings-panel');
+        if (!adminPanel) return;
+        if (!state || !state.isAdmin) {
+          adminPanel.classList.add('hidden');
+          return;
+        }
+
+        adminPanel.classList.remove('hidden');
+        const badge = document.getElementById('admin-online-badge');
+        if (badge) {
+          badge.textContent = `${state.onlineCount || 1} conectado(s)`;
+        }
+
+        const tbody = document.getElementById('admin-players-tbody');
+        if (tbody && Array.isArray(state.players)) {
+          tbody.innerHTML = '';
+          for (const p of state.players) {
+            const tr = document.createElement('tr');
+            const dateStr = p.joinedAt ? new Date(p.joinedAt).toLocaleTimeString() : '--:--:--';
+            const px = p.pos ? Math.floor(p.pos[0]) : 0;
+            const py = p.pos ? Math.floor(p.pos[1]) : 25;
+            const pz = p.pos ? Math.floor(p.pos[2]) : 0;
+            tr.innerHTML = `
+              <td><strong>${p.name || 'Player'}</strong> ${p.id === this.multiplayer.myId ? '(Tú)' : ''}</td>
+              <td>${dateStr}</td>
+              <td><button class="mc-btn admin-tp-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;">(${px}, ${py}, ${pz}) 🚀</button></td>
+            `;
+            const tpBtn = tr.querySelector('.admin-tp-btn');
+            if (tpBtn) {
+              tpBtn.addEventListener('click', () => {
+                sound.playClick();
+                if (p.id === this.multiplayer.myId) return;
+                this.multiplayer.requestTeleportToPlayer(p.id);
+                this.pauseMenu.classList.add('hidden');
+                if (!this.controls.isMobile) this.controls.lock();
+              });
+            }
+            tbody.appendChild(tr);
+          }
+        }
+      };
+
+      const adminResetBtn = document.getElementById('admin-reset-server-btn');
+      if (adminResetBtn) {
+        adminResetBtn.addEventListener('click', () => {
+          sound.playClick();
+          if (confirm('¿Estás seguro de reiniciar el servidor, borrar todos los cambios del mapa y expulsar a todos los jugadores?')) {
+            this.multiplayer.requestAdminResetServer();
+          }
+        });
+      }
     }
 
     this.initLobby();
@@ -265,7 +318,21 @@ export class UIManager {
         });
     };
     updateServerStatus();
-    setInterval(updateServerStatus, 5000);
+    const accessKeyGroup = document.getElementById('access-key-group');
+    const accessKeyInput = document.getElementById('access-key-input');
+
+    if (nameInput && accessKeyGroup) {
+      const checkAdminEmail = () => {
+        const val = (nameInput.value || '').trim().toLowerCase();
+        if (val === 'jsieiragerpe@gmail.com') {
+          accessKeyGroup.classList.remove('hidden');
+        } else {
+          accessKeyGroup.classList.add('hidden');
+        }
+      };
+      nameInput.addEventListener('input', checkAdminEmail);
+      checkAdminEmail();
+    }
 
     // Join Game
     const doJoin = () => {
@@ -288,7 +355,13 @@ export class UIManager {
         document.body.classList.add('mobile-mode');
       }
 
-      this.multiplayer.connect(name);
+      const isSpecialEmail = name.trim().toLowerCase() === 'jsieiragerpe@gmail.com';
+      const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
+
+      this.multiplayer.connect(name, {
+        email: isSpecialEmail ? name.trim() : undefined,
+        adminKey: isSpecialEmail ? adminKeyVal : undefined
+      });
       this.controls.lock();
 
       // Show friendly tutorial prompt in chat

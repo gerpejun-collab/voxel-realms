@@ -889,18 +889,10 @@ function isSolidOrObstacle(block) {
  * with forward obstacle probing (2.5 blocks ahead), smooth deceleration, and obstacle avoidance.
  */
 export class VoxelCar {
-  constructor(route, arg1, arg2) {
+  constructor(route, ...args) {
     this.route = route;
-    if (arg1 && typeof arg1.getBlock === 'function') {
-      this.world = arg1;
-      this.scene = (arg2 && typeof arg2.add === 'function') ? arg2 : null;
-    } else if (arg2 && typeof arg2.getBlock === 'function') {
-      this.world = arg2;
-      this.scene = (arg1 && typeof arg1.add === 'function') ? arg1 : null;
-    } else {
-      this.scene = (arg1 && typeof arg1.add === 'function') ? arg1 : null;
-      this.world = arg2;
-    }
+    this.world = args.find(a => a && typeof a.getBlock === 'function') || null;
+    this.scene = args.find(a => a && typeof a.add === 'function') || null;
 
     this.group = new THREE.Group();
     this.wheels = [];
@@ -925,6 +917,11 @@ export class VoxelCar {
     this.trafficManager = null;
     this.taillights = [];
     this.headlights = [];
+
+    // Throttled obstacle check state & caching (80ms throttle)
+    this._obstacleCheckTimer = 0.08; // Ready for immediate check
+    this._cachedObstacleAhead = null;
+    this._obstacleCheckInterval = 0.08;
 
     // Set initial position and orientation based on initialProgress
     const initialPos = this.computePositionAtProgress(this.progress);
@@ -997,6 +994,15 @@ export class VoxelCar {
       return null;
     }
 
+    // Distance culling: bypass expensive 3D checks if player is > 120m away
+    if (this._playerPos && typeof this._playerPos.x === 'number' && typeof this._playerPos.z === 'number') {
+      const distToPlayer = Math.hypot(this.position.x - this._playerPos.x, this.position.z - this._playerPos.z);
+      if (distToPlayer > 120.0) {
+        this._cachedObstacleAhead = null;
+        return null;
+      }
+    }
+
     const heading = this.getHeadingVector();
     const hx = heading.x;
     const hz = heading.z;
@@ -1052,7 +1058,7 @@ export class VoxelCar {
         for (const iy of yLevels) {
           const block = this.world.getBlock(bx, iy, bz);
           if (isSolidOrObstacle(block)) {
-            return {
+            const res = {
               distance: 0.0,
               blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
               x: sampleX,
@@ -1060,18 +1066,25 @@ export class VoxelCar {
               z: sampleZ,
               isObstacle: true
             };
+            this._cachedObstacleAhead = res;
+            return res;
           }
         }
       }
     }
 
-    // Step along 3 forward rays from 0.1m up to maxDist in 0.1m increments
-    for (let d = 0.1; d <= maxDist + 0.001; d += 0.1) {
-      const roundedD = Math.round(d * 10) / 10;
+    // Step along 3 forward rays from 0.25m up to maxDist in 0.25m increments, deduplicating integer voxel coords
+    let lastBx0 = null, lastBz0 = null;
+    let lastBx1 = null, lastBz1 = null;
+    let lastBx2 = null, lastBz2 = null;
+
+    for (let d = 0.25; d <= maxDist + 0.001; d += 0.25) {
+      const roundedD = Math.round(d * 100) / 100;
       const distFromCenter = frontBumper + roundedD;
       if (distFromCenter > remainingRouteDist + 0.25) break;
 
-      for (const lat of lateralOffsets) {
+      for (let li = 0; li < 3; li++) {
+        const lat = lateralOffsets[li];
         let sampleX, sampleZ;
         if (isCircle) {
           const arcAngle = currentAngle + (distFromCenter / routeRadius);
@@ -1084,6 +1097,19 @@ export class VoxelCar {
 
         const bx = Math.round(sampleX);
         const bz = Math.round(sampleZ);
+
+        // Skip redundant check if this ray is still inside the exact same integer voxel column
+        if (li === 0) {
+          if (bx === lastBx0 && bz === lastBz0) continue;
+          lastBx0 = bx; lastBz0 = bz;
+        } else if (li === 1) {
+          if (bx === lastBx1 && bz === lastBz1) continue;
+          lastBx1 = bx; lastBz1 = bz;
+        } else {
+          if (bx === lastBx2 && bz === lastBz2) continue;
+          lastBx2 = bx; lastBz2 = bz;
+        }
+
         if (Math.abs(lat) > 0.01 && typeof this.world.isRoadAt === 'function' && !this.world.isRoadAt(bx, bz)) {
           continue;
         }
@@ -1099,7 +1125,7 @@ export class VoxelCar {
           const block = this.world.getBlock(bx, iy, bz);
 
           if (isSolidOrObstacle(block)) {
-            return {
+            const res = {
               distance: roundedD,
               blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
               x: sampleX,
@@ -1107,7 +1133,33 @@ export class VoxelCar {
               z: sampleZ,
               isObstacle: true
             };
+            this._cachedObstacleAhead = res;
+            return res;
           }
+        }
+      }
+    }
+
+    // Dynamic player ahead detection so traffic cars brake/halt for pedestrians instead of passing through them
+    if (this._playerPos && typeof this._playerPos.x === 'number' && typeof this._playerPos.z === 'number') {
+      const py = typeof this._playerPos.y === 'number' ? this._playerPos.y : 25;
+      if (Math.abs(py - curY) <= 3.0) {
+        const toPX = this._playerPos.x - curX;
+        const toPZ = this._playerPos.z - curZ;
+        const forwardProj = toPX * hx + toPZ * hz;
+        const lateralProj = Math.abs(toPX * perpX + toPZ * perpZ);
+        if (forwardProj > -0.5 && forwardProj <= maxDist + frontBumper && lateralProj < 1.25) {
+          const pDist = Math.max(0.0, Math.round((forwardProj - frontBumper - 0.35) * 10) / 10);
+          const res = {
+            distance: pDist,
+            isPlayer: true,
+            x: this._playerPos.x,
+            y: py,
+            z: this._playerPos.z,
+            isObstacle: true
+          };
+          this._cachedObstacleAhead = res;
+          return res;
         }
       }
     }
@@ -1126,7 +1178,7 @@ export class VoxelCar {
         const lateralProj = Math.abs(toX * perpX + toZ * perpZ);
         if (forwardProj > frontBumper && forwardProj <= maxDist + frontBumper && lateralProj < 1.35) {
           const carDist = Math.max(0.1, Math.round((forwardProj - frontBumper * 2) * 10) / 10);
-          return {
+          const res = {
             distance: carDist,
             isVehicle: true,
             x: other.position.x,
@@ -1134,10 +1186,13 @@ export class VoxelCar {
             z: other.position.z,
             isObstacle: true
           };
+          this._cachedObstacleAhead = res;
+          return res;
         }
       }
     }
 
+    this._cachedObstacleAhead = null;
     return null;
   }
 
@@ -1385,8 +1440,16 @@ export class VoxelCar {
     }
   }
 
-  update(dt = 0.016) {
+  update(dt = 0.016, playerPos = null) {
     const clampedDt = Math.min(Math.max(dt, 0), 0.1);
+    if (playerPos) {
+      this._playerPos = playerPos;
+    }
+
+    let distToPlayer = null;
+    if (this._playerPos && typeof this._playerPos.x === 'number' && typeof this._playerPos.z === 'number') {
+      distToPlayer = Math.hypot(this.position.x - this._playerPos.x, this.position.z - this._playerPos.z);
+    }
 
     // Heading and orientation
     this.rotationY = this.computeRotationAtProgress(this.progress);
@@ -1395,9 +1458,24 @@ export class VoxelCar {
     const hz = heading.z;
 
     // Obstacle detection raycasting (up to 8 blocks ahead)
-    const obsAhead = this.checkObstacleAhead(8.0);
-    // Legacy probe for compatibility with test assertions on checkObstacle(2.5)
-    const probeBlocked = this.checkObstacle(this.probeDistance);
+    // Distance culling (>120m) & 80ms throttling with cached distance
+    let obsAhead = null;
+    if (distToPlayer !== null && distToPlayer > 120.0) {
+      // Far car: maintain cruising speed, bypass expensive raycasts
+      obsAhead = null;
+      this._cachedObstacleAhead = null;
+    } else {
+      this._obstacleCheckTimer = (this._obstacleCheckTimer || 0) + clampedDt;
+      if (this._obstacleCheckTimer >= this._obstacleCheckInterval || this._cachedObstacleAhead === null || !playerPos) {
+        this._cachedObstacleAhead = this.checkObstacleAhead(8.0);
+        this._obstacleCheckTimer = 0;
+      }
+      obsAhead = this._cachedObstacleAhead;
+    }
+
+    // Derive probeBlocked from obsAhead without redundant world.getBlock loops
+    const probeDist = typeof this.probeDistance === 'number' ? this.probeDistance : 2.5;
+    const probeBlocked = obsAhead !== null && obsAhead.distance <= probeDist;
     const obstacleDetected = (obsAhead !== null) || probeBlocked;
 
     this.hasObstacle = obstacleDetected;
@@ -1497,7 +1575,13 @@ export class VoxelCar {
         this.setTaillightsBraking(true);
       } else {
         this.progress = candidateProgress;
-        this.position.set(candPos.x, candPos.y, candPos.z);
+        if (typeof this.position.set === 'function') {
+          this.position.set(candPos.x, candPos.y, candPos.z);
+        } else {
+          this.position.x = candPos.x;
+          this.position.y = candPos.y;
+          this.position.z = candPos.z;
+        }
         this.rotationY = this.computeRotationAtProgress(this.progress);
       }
     } else {
@@ -1506,6 +1590,35 @@ export class VoxelCar {
         ? this.world.getRoadHeightAt(Math.round(this.position.x), Math.round(this.position.z)) + 1
         : (this.position.y || 25);
       this.position.y = roadY;
+    }
+
+    // Solid player-vs-car body collision: prevent player from walking inside or being ghosted through by the car
+    if (playerPos && typeof playerPos.x === 'number' && typeof playerPos.z === 'number') {
+      const py = typeof playerPos.y === 'number' ? playerPos.y : 25;
+      if (Math.abs(py - this.position.y) < 2.2) {
+        const dx = playerPos.x - this.position.x;
+        const dz = playerPos.z - this.position.z;
+        // Transform into car's local frame (hx, hz is forward; perpX=hz, perpZ=-hx is right)
+        const perpX = hz;
+        const perpZ = -hx;
+        const localFwd = dx * hx + dz * hz;
+        const localLat = dx * perpX + dz * perpZ;
+        const halfLen = 1.85; // 1.55m car half-length + 0.3m player radius
+        const halfWid = 1.15; // 0.85m car half-width + 0.3m player radius
+        if (Math.abs(localFwd) < halfLen && Math.abs(localLat) < halfWid) {
+          const penFwd = halfLen - Math.abs(localFwd);
+          const penLat = halfWid - Math.abs(localLat);
+          if (penLat < penFwd) {
+            const signLat = localLat >= 0 ? 1 : -1;
+            playerPos.x += perpX * (penLat * signLat);
+            playerPos.z += perpZ * (penLat * signLat);
+          } else {
+            const signFwd = localFwd >= 0 ? 1 : -1;
+            playerPos.x += hx * (penFwd * signFwd);
+            playerPos.z += hz * (penFwd * signFwd);
+          }
+        }
+      }
     }
 
     // Update 3D scene group transform
@@ -1583,9 +1696,9 @@ export class TrafficManager {
     return this.cars;
   }
 
-  update(dt) {
+  update(dt, playerPos = null) {
     for (const car of this.cars) {
-      car.update(dt);
+      car.update(dt, playerPos);
     }
   }
 }
@@ -1816,7 +1929,7 @@ export class AnimalManager {
       }
     }
     if (this.traffic) {
-      this.traffic.update(dt);
+      this.traffic.update(dt, playerPos);
     }
   }
 }

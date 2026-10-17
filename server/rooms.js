@@ -10,7 +10,8 @@ const {
   validateTeleportPacket,
   isValidWeaponShoot,
   isValidTntTrigger,
-  isValidVehicleDrive
+  isValidVehicleDrive,
+  isValidAdminCredentials
 } = require('./protocol');
 const { GameState } = require('./game-state');
 
@@ -48,17 +49,25 @@ class RoomManager {
   }
 
   send(ws, type, data) {
-    if (ws.readyState === 1) { // 1 = WebSocket.OPEN
+    if (ws && ws.readyState === 1) { // 1 = WebSocket.OPEN
       try {
-        ws.send(JSON.stringify({ type, data }));
+        const payload = JSON.stringify({ type, data });
+        ws.send(payload);
       } catch (err) {
-        // Socket error, handled on close
+        // Socket or serialization error, safely ignored
       }
     }
   }
 
   broadcast(room, type, data, excludeWs = null) {
-    const payload = JSON.stringify({ type, data });
+    if (!room || !room.clients) return;
+    let payload;
+    try {
+      payload = JSON.stringify({ type, data });
+    } catch (err) {
+      console.error('[RoomManager.broadcast] serialization error:', err);
+      return;
+    }
     for (const clientWs of room.clients.keys()) {
       if (clientWs !== excludeWs && clientWs.readyState === 1) {
         try {
@@ -177,6 +186,14 @@ class RoomManager {
       case MSG.VEHICLE_EXIT:
         this.handleVehicleExit(ws, meta, data);
         break;
+
+      case MSG.ADMIN_AUTH:
+        this.handleAdminAuth(ws, meta, data);
+        break;
+
+      case MSG.ADMIN_RESET_SERVER:
+        this.handleAdminResetServer(ws, meta, data);
+        break;
     }
   }
 
@@ -184,15 +201,20 @@ class RoomManager {
     const roomId = 'main';
     const room = this.getOrCreateRoom(roomId);
 
-    if (room.clients.size >= this.maxPlayers) {
+    const rawIdentifier = typeof data?.email === 'string' ? data.email : (typeof data?.name === 'string' ? data.name : '');
+    const isAdmin = isValidAdminCredentials(rawIdentifier, data?.adminKey || '');
+
+    if (room.clients.size >= this.maxPlayers && !isAdmin) {
       this.send(ws, MSG.ERROR, { message: 'El servidor está lleno (máximo alcanzado). Intenta más tarde.' });
       return;
     }
 
     const cleanName = sanitizeName(data?.name);
     const player = room.gameState.addPlayer(meta.id, cleanName);
+    player.isAdmin = isAdmin;
 
     meta.roomId = roomId;
+    meta.isAdmin = isAdmin;
     room.clients.set(ws, meta.id);
 
     // Send initial world state & existing players to the new player
@@ -200,8 +222,13 @@ class RoomManager {
     this.send(ws, MSG.INIT, {
       id: meta.id,
       player,
+      isAdmin,
       ...initialState
     });
+
+    if (isAdmin) {
+      this.sendAdminState(ws, room);
+    }
 
     // Notify other players
     this.broadcast(room, MSG.PLAYER_JOINED, {
@@ -210,8 +237,88 @@ class RoomManager {
       pos: player.pos,
       rot: player.rot,
       action: player.action,
-      weaponsEnabled: !!player.weaponsEnabled
+      weaponsEnabled: !!player.weaponsEnabled,
+      joinedAt: player.joinedAt
     }, ws);
+  }
+
+  sendAdminState(ws, room) {
+    if (!room) return;
+    this.send(ws, MSG.ADMIN_STATE, {
+      isAdmin: true,
+      onlineCount: room.clients.size,
+      players: room.gameState.getPlayersSnapshot()
+    });
+  }
+
+  handleAdminAuth(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
+    const player = room.gameState.getPlayer(meta.id);
+    if (!player) return;
+
+    const identifier = data?.email || data?.name || '';
+    const adminKey = data?.adminKey || '';
+    if (isValidAdminCredentials(identifier, adminKey)) {
+      player.isAdmin = true;
+      meta.isAdmin = true;
+      this.sendAdminState(ws, room);
+    } else {
+      this.send(ws, MSG.ERROR, { message: 'Clave incorrecta.' });
+    }
+  }
+
+  handleAdminResetServer(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
+    const player = room.gameState.getPlayer(meta.id);
+    const identifier = data?.email || data?.name || '';
+    const key = data?.adminKey || data?.key || '';
+    const authorized = (player && player.isAdmin) || meta.isAdmin || isValidAdminCredentials(identifier, key);
+    if (!authorized) {
+      this.send(ws, MSG.ERROR, { message: 'No autorizado.' });
+      return;
+    }
+
+    // Clear pending TNT timers
+    for (const timer of this.pendingTntTimers) {
+      clearTimeout(timer);
+    }
+    this.pendingTntTimers.clear();
+    this.playerHitCooldowns.clear();
+
+    // Reset world state (clears blockDeltas and restores animals)
+    room.gameState.resetWorld();
+
+    const resetMsg = 'El admin ha reiniciado el server';
+    // Broadcast MSG.SERVER_RESET with reason "El admin ha reiniciado el server"
+    try {
+      this.broadcast(room, MSG.SERVER_RESET, {
+        message: resetMsg,
+        reason: resetMsg
+      });
+    } catch (err) {
+      console.error('[RoomManager] Error broadcasting SERVER_RESET:', err);
+    }
+
+    // Cleanly disconnect clients and reset session metadata
+    const sockets = Array.from(room.clients.keys());
+    for (const clientWs of sockets) {
+      const clientMeta = this.socketMeta.get(clientWs);
+      if (clientMeta) {
+        room.gameState.removePlayer(clientMeta.id);
+        clientMeta.roomId = null;
+        clientMeta.isAdmin = false;
+      }
+      room.clients.delete(clientWs);
+      try {
+        if (typeof clientWs.close === 'function') {
+          clientWs.close();
+        }
+      } catch (_) {}
+    }
   }
 
   handleMove(ws, meta, data) {
@@ -309,11 +416,13 @@ class RoomManager {
       this.broadcast(room, MSG.ANIMAL_BURST, payload);
 
       // Despawn synchronization after 3 seconds: broadcast final removal
-      setTimeout(() => {
+      const despawnBroadcastTimer = setTimeout(() => {
+        this.pendingTntTimers.delete(despawnBroadcastTimer);
         this.broadcast(room, MSG.ANIMALS_UPDATE, {
           animals: room.gameState.getAnimalsSnapshot()
         });
       }, 3050);
+      this.pendingTntTimers.add(despawnBroadcastTimer);
     }
 
     // 3. Shoot-to-detonate TNT block immediately
@@ -566,23 +675,27 @@ class RoomManager {
 
   tick() {
     for (const room of this.rooms.values()) {
-      if (room.clients.size === 0) continue;
-      const snapshot = room.gameState.getPlayersSnapshot();
-      const timeOfDay = room.gameState.getTimeOfDay();
+      if (!room || !room.clients || room.clients.size === 0) continue;
+      try {
+        const snapshot = room.gameState.getPlayersSnapshot();
+        const timeOfDay = room.gameState.getTimeOfDay();
 
-      const payload = JSON.stringify({
-        type: MSG.PLAYERS_UPDATE,
-        data: { players: snapshot, timeOfDay }
-      });
+        const payload = JSON.stringify({
+          type: MSG.PLAYERS_UPDATE,
+          data: { players: snapshot, timeOfDay }
+        });
 
-      for (const clientWs of room.clients.keys()) {
-        if (clientWs.readyState === 1) {
-          try {
-            clientWs.send(payload);
-          } catch (e) {
-            // handled on close
+        for (const clientWs of room.clients.keys()) {
+          if (clientWs.readyState === 1) {
+            try {
+              clientWs.send(payload);
+            } catch (e) {
+              // handled on close
+            }
           }
         }
+      } catch (err) {
+        console.error('[RoomManager.tick] serialization error:', err);
       }
     }
   }
@@ -595,6 +708,14 @@ class RoomManager {
       clearTimeout(timer);
     }
     this.pendingTntTimers.clear();
+    for (const room of this.rooms.values()) {
+      if (room.gameState && room.gameState.animalTimers) {
+        for (const timer of room.gameState.animalTimers.values()) {
+          clearTimeout(timer);
+        }
+        room.gameState.animalTimers.clear();
+      }
+    }
   }
 }
 

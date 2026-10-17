@@ -205,9 +205,15 @@ export class MultiplayerClient {
 
       case 'weapon_shot_fx':
         if (data && data.shooterId !== this.myId) {
-          const o = Array.isArray(data.origin) ? { x: data.origin[0], y: data.origin[1], z: data.origin[2] } : null;
-          const hp = Array.isArray(data.hitPos) ? { x: data.hitPos[0], y: data.hitPos[1], z: data.hitPos[2] } : null;
-          const d = Array.isArray(data.dir) ? { x: data.dir[0], y: data.dir[1], z: data.dir[2] } : { x: 0, y: 0, z: -1 };
+          const o = Array.isArray(data.origin)
+            ? { x: data.origin[0], y: data.origin[1], z: data.origin[2] }
+            : (data.origin && typeof data.origin === 'object' ? data.origin : null);
+          const hp = Array.isArray(data.hitPos)
+            ? { x: data.hitPos[0], y: data.hitPos[1], z: data.hitPos[2] }
+            : (data.hitPos && typeof data.hitPos === 'object' ? data.hitPos : null);
+          const d = Array.isArray(data.dir)
+            ? { x: data.dir[0], y: data.dir[1], z: data.dir[2] }
+            : (data.dir && typeof data.dir === 'object' ? data.dir : { x: 0, y: 0, z: -1 });
           if (o && this.particles && typeof this.particles.spawnMuzzleFlash === 'function') {
             this.particles.spawnMuzzleFlash(o);
           }

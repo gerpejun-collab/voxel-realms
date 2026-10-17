@@ -49,6 +49,7 @@ class VoxelRealmsApp {
 
     // 6. Initialize Ambient Voxel Animals, Rare NPCs & Highway Traffic
     this.animalManager = new AnimalManager(this.sceneManager.scene, this.world);
+    this.controls.animalManager = this.animalManager;
 
     // 7. Initialize UI Overlay & HUD
     this.ui = new UIManager(
@@ -60,26 +61,10 @@ class VoxelRealmsApp {
       this.animalManager
     );
 
-    // Connect Multiplayer Animal Synchronizer & Bursts
+    // Connect Multiplayer Animal Synchronizer
     if (this.multiplayer) {
       this.multiplayer.onAnimalsUpdate = (animals) => {
         this.animalManager.syncAnimalsFromServer(animals);
-      };
-      this.multiplayer.onAnimalBurst = (burstData) => {
-        if (!burstData) return;
-        const isMe = burstData.shooterId && this.multiplayer && (burstData.shooterId === this.multiplayer.myId);
-        if (!isMe) {
-          if (this.particleManager && typeof this.particleManager.spawnBloodImpact === 'function') {
-            this.particleManager.spawnBloodImpact(burstData.x, burstData.y, burstData.z, burstData.dir);
-          } else if (this.particleManager && typeof this.particleManager.spawnAnimalBurst === 'function') {
-            this.particleManager.spawnAnimalBurst(burstData.x, burstData.y, burstData.z, burstData.dir);
-          }
-          if (this.animalManager && typeof this.animalManager.triggerAnimalHit === 'function') {
-            this.animalManager.triggerAnimalHit(burstData.animalId, burstData.dir);
-          } else if (this.animalManager && typeof this.animalManager.burstAnimal === 'function') {
-            this.animalManager.burstAnimal(burstData.animalId, { x: burstData.x, z: burstData.z }, burstData.dir);
-          }
-        }
       };
     }
 
@@ -255,6 +240,11 @@ class VoxelRealmsApp {
         this.multiplayer.sendTntTrigger(voxelHit.x, voxelHit.y, voxelHit.z, 0);
       }
     };
+    this.controls.sendTntTrigger = (x, y, z, fuseMs = 0) => {
+      if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
+        this.multiplayer.sendTntTrigger(x, y, z, fuseMs);
+      }
+    };
 
     // TNT placement & trigger
     this.controls.onPlaceTnt = (coords) => {
@@ -268,15 +258,18 @@ class VoxelRealmsApp {
     if (this.multiplayer) {
       this.multiplayer.onAnimalBurst = (data) => {
         if (!data) return;
-        const hitDir = data.dir || [0, 0, -1];
-        if (this.animalManager && typeof this.animalManager.burstAnimal === 'function') {
-          this.animalManager.burstAnimal(data.animalId, this.physics.pos, hitDir);
-        }
-        if (this.particleManager && typeof this.particleManager.spawnBloodParticles === 'function') {
-          const bx = data.x !== undefined ? data.x : 0;
-          const by = data.y !== undefined ? data.y : 25;
-          const bz = data.z !== undefined ? data.z : 0;
-          this.particleManager.spawnBloodParticles(bx, by, bz, hitDir);
+        const isMe = data.shooterId && this.multiplayer && (data.shooterId === this.multiplayer.myId);
+        if (!isMe) {
+          const hitDir = data.dir || [0, 0, -1];
+          if (this.animalManager && typeof this.animalManager.burstAnimal === 'function') {
+            this.animalManager.burstAnimal(data.animalId, this.physics.pos, hitDir);
+          }
+          if (this.particleManager && typeof this.particleManager.spawnBloodParticles === 'function') {
+            const bx = data.x !== undefined ? data.x : 0;
+            const by = data.y !== undefined ? data.y : 25;
+            const bz = data.z !== undefined ? data.z : 0;
+            this.particleManager.spawnBloodParticles(bx, by, bz, hitDir);
+          }
         }
       };
     }

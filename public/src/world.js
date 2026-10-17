@@ -269,6 +269,7 @@ export class World {
     if (wz >= 440 && wz <= 560 && Math.abs(wx) <= 55) return true; // Norway Fjords
     if (wz >= -560 && wz <= -440 && Math.abs(wx) <= 75) return true; // Playa Paraíso Beach Sector
     if (Math.abs(wx - (-500)) <= 125 && Math.abs(wz - (-500)) <= 125) return true; // Grand Prix Racing Circuit
+    if (wx >= 45 && wx <= 215 && wz >= -195 && wz <= -35) return true; // Gran Circuito SE Quadrant
     if (Math.hypot(wx - 350, wz - 350) <= 70 || Math.hypot(wx - 500, wz - 500) <= 88) return true; // Mount Fuji Volcano & Reflection Lakes
     if (this.isRoadAt(wx, wz) || this.isTunnelAt(wx, wz)) return true;
     return false;
@@ -284,6 +285,7 @@ export class World {
     if (Math.hypot(wx - 250, wz + 250) <= 56) return true;
     if (Math.hypot(wx + 250, wz + 250) <= 56) return true;
     if (Math.abs(wx - (-500)) <= 120 && Math.abs(wz - (-500)) <= 120) return true;
+    if (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40) return true; // Gran Circuito Plateau
     return false;
   }
 
@@ -412,6 +414,21 @@ export class World {
         // Turquoise lagoon & ocean bed (below WATER_LEVEL=18)
         return 13;
       }
+    }
+
+    // 2.4. Gran Circuito Internacional de Velocidad in SE Quadrant (wx in 50..210, wz in -190..-40)
+    if (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40) {
+      // Circuit Azure Lake for Lake Bridge (wx in 185..210, wz in -140..-100)
+      if (wx >= 185 && wx <= 210 && wz >= -140 && wz <= -100) {
+        return 14; // Lake bed below WATER_LEVEL=18
+      }
+      // Mountain Ridge for Racing Tunnel (wx in 70..130, wz in -165..-145)
+      if (wx >= 70 && wx <= 130 && wz >= -165 && wz <= -145) {
+        const mDist = Math.abs(wz - (-155));
+        const ridge = 38 + Math.floor(Math.abs(Math.sin(wx * 0.2 + wz * 0.2)) * 4) - Math.floor(mDist * 0.5);
+        return Math.max(26, Math.min(42, ridge));
+      }
+      return 24; // Leveled circuit plateau
     }
 
     // 2.5. Grand Prix Racing Circuit at (-500, -500) (wx in -625..-375, wz in -625..-375)
@@ -566,6 +583,15 @@ export class World {
               } else {
                 block = BLOCKS.STONE;
               }
+            } else if (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40) {
+              // Gran Circuito SE Quadrant
+              if (surfaceY <= WATER_LEVEL + 1) {
+                block = BLOCKS.SAND;
+              } else if (surfaceY >= 35) {
+                block = BLOCKS.STONE;
+              } else {
+                block = BLOCKS.GRASS;
+              }
             } else if (Math.abs(wx - (-500)) <= 125 && Math.abs(wz - (-500)) <= 125) {
               // Grand Prix Racing Circuit
               if (surfaceY <= WATER_LEVEL + 1) {
@@ -608,6 +634,8 @@ export class World {
               block = BLOCKS.COBBLESTONE;
             } else if (wz >= -560 && wz <= -440 && Math.abs(wx) <= 75) {
               block = BLOCKS.SAND;
+            } else if (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40) {
+              block = (surfaceY <= WATER_LEVEL + 1) ? BLOCKS.SAND : BLOCKS.COBBLESTONE;
             } else if (Math.abs(wx - (-500)) <= 125 && Math.abs(wz - (-500)) <= 125) {
               block = (surfaceY <= WATER_LEVEL + 1) ? BLOCKS.SAND : BLOCKS.COBBLESTONE;
             } else if (Math.hypot(wx - 350, wz - 350) <= 68 || Math.hypot(wx - 500, wz - 500) <= 88) {
@@ -645,7 +673,8 @@ export class World {
         // Fill ocean water in Playa Paraíso, Grand Prix azure lake, and wild water bodies
         const isBeachOcean = (wz >= -560 && wz <= -488 && Math.abs(wx) <= 75);
         const isCircuitLake = (Math.abs(wx - (-500)) <= 125 && Math.abs(wz - (-500)) <= 125 && surfaceY < WATER_LEVEL);
-        if (surfaceY < WATER_LEVEL && (isBeachOcean || isCircuitLake || !this.isInsideMonument(wx, wz))) {
+        const isCircuitLakeSE = (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40 && surfaceY < WATER_LEVEL);
+        if (surfaceY < WATER_LEVEL && (isBeachOcean || isCircuitLake || isCircuitLakeSE || !this.isInsideMonument(wx, wz))) {
           for (let y = surfaceY + 1; y <= WATER_LEVEL; y++) {
             chunk.voxels[chunk.getIndex(lx, y, lz)] = BLOCKS.WATER;
           }
@@ -683,6 +712,7 @@ export class World {
     this.buildNorwaySector(chunk);
     this.buildBeachSector(chunk);
     if (typeof this.buildGrandPrixSector === 'function') this.buildGrandPrixSector(chunk);
+    if (typeof this.buildGranCircuito === 'function') this.buildGranCircuito(chunk);
     if (typeof this.buildMountFujiSector === 'function') this.buildMountFujiSector(chunk);
     if (typeof this.buildMountainCaverns === 'function') this.buildMountainCaverns(chunk);
 
@@ -3673,6 +3703,292 @@ export class World {
               this.setVoxelInWorld(chunk, rcX + dx, y, rcZ + dz, (y === 14) ? BLOCKS.SAND : cType);
             }
           }
+        }
+      }
+    }
+  }
+
+  /**
+   * GRAN CIRCUITO INTERNACIONAL DE VELOCIDAD (SE Quadrant: 50..210, -190..-40)
+   * Dedicated Grand Prix circuit in South-East quadrant between Central Spawn (0,0) and Paris (+250, -250).
+   * 14-block wide racing track (12-block ASPHALT + 1-block alternating BRICK/SNOW rumble curbs).
+   * Features:
+   * 1. Main Straight (X in 60..180, Z in -66..-54): 12 lanes asphalt at Y=24, curbs at Z=-66 and Z=-53.
+   * 2. Starting Grid Gantry at X=110 across track (Y=25..31) with starting lights (BRICK & GOLD_ORE).
+   * 3. Checkered start/finish line at X=110 across all 12 lanes (ASPHALT & SNOW).
+   * 4. Staggered starting grid boxes at X=104, 98, 92, 86, 80.
+   * 5. Covered Grandstand Stadium (Tribuna Principal) north of straight (Z in -51..-42, X in 80..150) with 8 stepped seating tiers (Y=25..32) and cantilever roof at Y=34.
+   * 6. Pit Lane & Team Garages south of straight (Z in -76..-69, X in 90..145) with concrete pit wall at Z=-68.
+   * 7. Turn 1 & 2 (Curva Grande) sweeping corner (X in 180..205, Z in -60..-100).
+   * 8. Bridge Over Water (Puente del Circuito) across Azure Lake (X in 195..205, Z in -100..-140) with concrete piers and suspension towers.
+   * 9. Turn 3 & 4 (Horquilla del Lago - Hairpin) around lake shore (X in 130..200, Z in -140..-175).
+   * 10. Mountain Racing Tunnel (Túnel de la Montaña) through hill (X in 70..130, Z in -162..-148) with arched roof and ceiling floodlights.
+   * 11. S-bend Chicane (Chicana del Estadio) with 150m/100m/50m braking markers (X in 55..75, Z in -120..-66) returning to main straight.
+   */
+  buildGranCircuito(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+    if (ox + 16 < 45 || ox > 215 || oz + 16 < -195 || oz > -35) return;
+
+    const ASPHALT = BLOCKS.ASPHALT || BLOCKS.COBBLESTONE;
+    const CURB_RED = BLOCKS.BRICK;
+    const CURB_WHITE = BLOCKS.SNOW;
+    const getCurb = (s) => (Math.floor(Math.abs(s) / 2) % 2 === 0 ? CURB_RED : CURB_WHITE);
+    const trackY = 24;
+
+    // Helper to pave a 12-block wide segment with 1-block outer curbs and clear 5 blocks headroom (Y=25..29)
+    const setTrackVoxel = (wx, wz) => {
+      this.setVoxelInWorld(chunk, wx, trackY - 1, wz, BLOCKS.COBBLESTONE);
+      this.setVoxelInWorld(chunk, wx, trackY, wz, ASPHALT);
+      for (let y = trackY + 1; y <= trackY + 5; y++) {
+        this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
+      }
+    };
+
+    const setCurbVoxel = (wx, wz, s) => {
+      this.setVoxelInWorld(chunk, wx, trackY - 1, wz, BLOCKS.COBBLESTONE);
+      this.setVoxelInWorld(chunk, wx, trackY, wz, getCurb(s));
+    };
+
+    // -------------------------------------------------------------------------
+    // 1. MAIN STRAIGHT (X in 60..180, Z in -66..-54): Track width 14 (12 ASPHALT + 2 Curbs)
+    // -------------------------------------------------------------------------
+    const msX1 = Math.max(60, ox);
+    const msX2 = Math.min(180, ox + 15);
+    if (msX1 <= msX2) {
+      for (let x = msX1; x <= msX2; x++) {
+        for (let z = -65; z <= -54; z++) {
+          setTrackVoxel(x, z);
+        }
+        setCurbVoxel(x, -66, x);
+        setCurbVoxel(x, -53, x);
+      }
+    }
+
+    // Starting Grid Gantry at X = 110 (Y=25..31)
+    if (110 >= ox && 110 <= ox + 15) {
+      for (let y = trackY + 1; y <= trackY + 7; y++) {
+        this.setVoxelInWorld(chunk, 110, y, -67, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, 110, y, -52, BLOCKS.IRON_ORE);
+      }
+      for (let z = -67; z <= -52; z++) {
+        this.setVoxelInWorld(chunk, 110, trackY + 7, z, BLOCKS.IRON_ORE);
+      }
+      for (const lz of [-63, -61, -59, -57, -55]) {
+        this.setVoxelInWorld(chunk, 110, trackY + 6, lz, BLOCKS.BRICK);
+        this.setVoxelInWorld(chunk, 110, trackY + 5, lz, BLOCKS.GOLD_ORE);
+      }
+
+      // Checkered start/finish line at X = 110
+      for (let z = -65; z <= -54; z++) {
+        const isWhite = ((z + 110) % 2 === 0);
+        this.setVoxelInWorld(chunk, 110, trackY, z, isWhite ? CURB_WHITE : ASPHALT);
+      }
+    }
+
+    // Staggered grid boxes behind finish line
+    for (const gx of [104, 98, 92, 86, 80]) {
+      if (gx >= ox && gx <= ox + 15) {
+        for (let z = -64; z <= -55; z++) {
+          if (z === -63 || z === -59 || z === -55) {
+            this.setVoxelInWorld(chunk, gx, trackY, z, CURB_WHITE);
+          }
+        }
+      }
+    }
+
+    // Grandstand Stadium (Tribuna Principal) North of straight (Z in -51..-42, X in 80..150)
+    const gsX1 = Math.max(80, ox);
+    const gsX2 = Math.min(150, ox + 15);
+    const gsZ1 = Math.max(-51, oz);
+    const gsZ2 = Math.min(-42, oz + 15);
+    if (gsX1 <= gsX2 && gsZ1 <= gsZ2) {
+      for (let x = gsX1; x <= gsX2; x++) {
+        for (let z = gsZ1; z <= gsZ2; z++) {
+          if (z <= -44) {
+            const tierY = trackY + 1 + (-44 - z);
+            for (let y = trackY; y < tierY; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
+            }
+            this.setVoxelInWorld(chunk, x, tierY, z, ((x + z) % 2 === 0) ? BLOCKS.WOOD_PLANK : BLOCKS.STONE);
+          }
+          if (z <= -44) {
+            this.setVoxelInWorld(chunk, x, trackY + 10, z, BLOCKS.WOOD_PLANK);
+          }
+        }
+      }
+    }
+    // Grandstand Stadium Floodlight Towers at X = 85, 115, 145, Z = -42
+    for (const lx of [85, 115, 145]) {
+      if (lx >= ox && lx <= ox + 15 && -42 >= oz && -42 <= oz + 15) {
+        for (let y = trackY + 1; y <= trackY + 12; y++) {
+          this.setVoxelInWorld(chunk, lx, y, -42, BLOCKS.IRON_ORE);
+        }
+        this.setVoxelInWorld(chunk, lx, trackY + 12, -42, BLOCKS.GOLD_ORE);
+      }
+    }
+
+    // Pit Lane & Team Garages South of straight (Z in -76..-68, X in 90..145)
+    const pitX1 = Math.max(90, ox);
+    const pitX2 = Math.min(145, ox + 15);
+    if (pitX1 <= pitX2) {
+      for (let x = pitX1; x <= pitX2; x++) {
+        this.setVoxelInWorld(chunk, x, trackY, -68, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, trackY + 1, -68, BLOCKS.STONE);
+        this.setVoxelInWorld(chunk, x, trackY + 2, -68, BLOCKS.IRON_ORE);
+
+        for (let z = -74; z <= -69; z++) {
+          setTrackVoxel(x, z);
+        }
+        setCurbVoxel(x, -75, x);
+
+        for (let z = -80; z <= -76; z++) {
+          this.setVoxelInWorld(chunk, x, trackY, z, BLOCKS.COBBLESTONE);
+          const isGarageWall = (z === -80 || x % 9 === 0);
+          if (isGarageWall) {
+            for (let y = trackY + 1; y <= trackY + 3; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.IRON_ORE);
+            }
+          }
+          this.setVoxelInWorld(chunk, x, trackY + 4, z, BLOCKS.WOOD_PLANK);
+          if (x % 9 === 4 && z === -78) {
+            this.setVoxelInWorld(chunk, x, trackY + 3, z, BLOCKS.GOLD_ORE);
+          }
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. TURN 1 & 2 (CURVA GRANDE) (X in 180..205, Z in -100..-60)
+    // -------------------------------------------------------------------------
+    const t1X1 = Math.max(180, ox);
+    const t1X2 = Math.min(205, ox + 15);
+    const t1Z1 = Math.max(-100, oz);
+    const t1Z2 = Math.min(-60, oz + 15);
+    if (t1X1 <= t1X2 && t1Z1 <= t1Z2) {
+      const centerX = 175, centerZ = -95;
+      for (let x = t1X1; x <= t1X2; x++) {
+        for (let z = t1Z1; z <= t1Z2; z++) {
+          if (z >= -66 && x <= 180) continue;
+          const r = Math.hypot(x - centerX, z - centerZ);
+          if (r >= 17 && r <= 29) {
+            setTrackVoxel(x, z);
+          } else if ((r >= 15.5 && r < 17) || (r > 29 && r <= 30.5)) {
+            setCurbVoxel(x, z, Math.round(r * 2 + x + z));
+          } else if (r > 30.5 && r <= 34.5) {
+            this.setVoxelInWorld(chunk, x, trackY, z, BLOCKS.GRAVEL);
+          }
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. BRIDGE OVER WATER (PUENTE DEL CIRCUITO) (X in 194..206, Z in -140..-100)
+    // -------------------------------------------------------------------------
+    const brZ1 = Math.max(-140, oz);
+    const brZ2 = Math.min(-100, oz + 15);
+    if (brZ1 <= brZ2) {
+      for (let z = brZ1; z <= brZ2; z++) {
+        for (let x = 194; x <= 205; x++) {
+          setTrackVoxel(x, z);
+        }
+        setCurbVoxel(193, z, z);
+        setCurbVoxel(206, z, z);
+
+        this.setVoxelInWorld(chunk, 192, trackY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, 192, trackY + 2, z, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, 207, trackY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, 207, trackY + 2, z, BLOCKS.IRON_ORE);
+
+        if (z === -135 || z === -120 || z === -105) {
+          for (let x = 193; x <= 206; x++) {
+            for (let py = 14; py < trackY; py++) {
+              this.setVoxelInWorld(chunk, x, py, z, BLOCKS.COBBLESTONE);
+            }
+          }
+        }
+      }
+      if (-120 >= oz && -120 <= oz + 15) {
+        for (const px of [192, 207]) {
+          for (let y = trackY + 1; y <= trackY + 8; y++) {
+            this.setVoxelInWorld(chunk, px, y, -120, BLOCKS.STONE);
+          }
+          this.setVoxelInWorld(chunk, px, trackY + 8, -120, BLOCKS.GOLD_ORE);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. TURN 3 & 4 (HORQUILLA DEL LAGO - HAIRPIN) (X in 130..205, Z in -175..-140)
+    // -------------------------------------------------------------------------
+    const hpX1 = Math.max(130, ox);
+    const hpX2 = Math.min(205, ox + 15);
+    const hpZ1 = Math.max(-175, oz);
+    const hpZ2 = Math.min(-140, oz + 15);
+    if (hpX1 <= hpX2 && hpZ1 <= hpZ2) {
+      const hcX = 165, hcZ = -145;
+      for (let x = hpX1; x <= hpX2; x++) {
+        for (let z = hpZ1; z <= hpZ2; z++) {
+          if (z >= -140 && x >= 193) continue;
+          const r = Math.hypot(x - hcX, z - hcZ);
+          if (z <= -145 && r >= 20 && r <= 32) {
+            setTrackVoxel(x, z);
+          } else if (z <= -145 && ((r >= 18.5 && r < 20) || (r > 32 && r <= 33.5))) {
+            setCurbVoxel(x, z, Math.round(r * 2 + x + z));
+          } else if (z <= -145 && r > 33.5 && r <= 35) {
+            this.setVoxelInWorld(chunk, x, trackY + 1, z, BLOCKS.COBBLESTONE);
+          }
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. MOUNTAIN RACING TUNNEL (TÚNEL DE LA MONTAÑA) (X in 70..130, Z in -162..-148)
+    // -------------------------------------------------------------------------
+    const tunX1 = Math.max(70, ox);
+    const tunX2 = Math.min(130, ox + 15);
+    if (tunX1 <= tunX2) {
+      for (let x = tunX1; x <= tunX2; x++) {
+        for (let z = -161; z <= -150; z++) {
+          setTrackVoxel(x, z);
+        }
+        setCurbVoxel(x, -162, x);
+        setCurbVoxel(x, -149, x);
+
+        for (let y = trackY + 1; y <= trackY + 6; y++) {
+          this.setVoxelInWorld(chunk, x, y, -163, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, y, -148, BLOCKS.COBBLESTONE);
+        }
+        for (let z = -162; z <= -149; z++) {
+          this.setVoxelInWorld(chunk, x, trackY + 6, z, BLOCKS.STONE);
+          this.setVoxelInWorld(chunk, x, trackY + 7, z, BLOCKS.STONE);
+        }
+        if (x % 6 === 0) {
+          this.setVoxelInWorld(chunk, x, trackY + 5, -155, BLOCKS.GOLD_ORE);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. CHICANE & RETURN TO MAIN STRAIGHT (X in 55..75, Z in -148..-60)
+    // -------------------------------------------------------------------------
+    const chZ1 = Math.max(-148, oz);
+    const chZ2 = Math.min(-60, oz + 15);
+    if (chZ1 <= chZ2) {
+      for (let z = chZ1; z <= chZ2; z++) {
+        const t = (z - (-148)) / ((-60) - (-148));
+        const centerX = Math.round(70 - 10 * t + Math.sin(t * Math.PI * 2) * 4);
+        for (let x = centerX - 6; x <= centerX + 5; x++) {
+          setTrackVoxel(x, z);
+        }
+        setCurbVoxel(centerX - 7, z, z);
+        setCurbVoxel(centerX + 6, z, z);
+
+        if (z === -90 || z === -80 || z === -70) {
+          const signX = centerX + 8;
+          this.setVoxelInWorld(chunk, signX, trackY + 1, z, BLOCKS.IRON_ORE);
+          this.setVoxelInWorld(chunk, signX, trackY + 2, z, BLOCKS.SNOW);
+          this.setVoxelInWorld(chunk, signX, trackY + 3, z, (z === -90) ? BLOCKS.BRICK : ((z === -80) ? BLOCKS.GOLD_ORE : BLOCKS.SNOW));
         }
       }
     }

@@ -1015,24 +1015,33 @@ export class VoxelCar {
     for (const lat of lateralOffsets) {
       const sampleX = curX + hx * frontBumper + perpX * lat;
       const sampleZ = curZ + hz * frontBumper + perpZ * lat;
-      const roadY = (typeof this.world.getRoadHeightAt === 'function')
-        ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ)) + 1
-        : curY;
-      const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
-      if (Math.floor(roadY) !== curY) {
+      const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
+        ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ))
+        : (curY >= 25 ? curY - 1 : 24);
+      const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
+      if (Math.floor(roadSurfaceY) + 1 !== curY) {
         yLevels.push(curY, curY + 1);
       }
-      for (const iy of yLevels) {
-        const block = this.world.getBlock(Math.floor(sampleX), iy, Math.floor(sampleZ));
-        if (isSolidOrObstacle(block)) {
-          return {
-            distance: 0.0,
-            blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
-            x: sampleX,
-            y: iy,
-            z: sampleZ,
-            isObstacle: true
-          };
+      const checkXs = [Math.floor(sampleX)];
+      if (Math.round(sampleX) !== Math.floor(sampleX)) checkXs.push(Math.round(sampleX));
+      const checkZs = [Math.floor(sampleZ)];
+      if (Math.round(sampleZ) !== Math.floor(sampleZ)) checkZs.push(Math.round(sampleZ));
+
+      for (const bx of checkXs) {
+        for (const bz of checkZs) {
+          for (const iy of yLevels) {
+            const block = this.world.getBlock(bx, iy, bz);
+            if (isSolidOrObstacle(block)) {
+              return {
+                distance: 0.0,
+                blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
+                x: sampleX,
+                y: iy,
+                z: sampleZ,
+                isObstacle: true
+              };
+            }
+          }
         }
       }
     }
@@ -1046,37 +1055,36 @@ export class VoxelCar {
         const sampleX = curX + hx * distFromCenter + perpX * lat;
         const sampleZ = curZ + hz * distFromCenter + perpZ * lat;
 
-        const roadY = (typeof this.world.getRoadHeightAt === 'function')
-          ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ)) + 1
-          : curY;
+        const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
+          ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ))
+          : (curY >= 25 ? curY - 1 : 24);
 
         // Heights: road surface + 1 (hood height) and road surface + 2 (windshield height)
-        const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
-        if (Math.floor(roadY) !== curY) {
+        const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
+        if (Math.floor(roadSurfaceY) + 1 !== curY) {
           yLevels.push(curY, curY + 1);
         }
 
         const checkXs = [Math.floor(sampleX)];
-        if (lat < 0) {
-          checkXs.push(Math.floor(sampleX - 0.08));
-        } else if (lat > 0) {
-          checkXs.push(Math.floor(sampleX + 0.08));
-        }
+        if (Math.round(sampleX) !== Math.floor(sampleX)) checkXs.push(Math.round(sampleX));
+        const checkZs = [Math.floor(sampleZ)];
+        if (Math.round(sampleZ) !== Math.floor(sampleZ)) checkZs.push(Math.round(sampleZ));
 
         for (const bx of checkXs) {
-          for (const iy of yLevels) {
-            const bz = Math.floor(sampleZ);
-            const block = this.world.getBlock(bx, iy, bz);
+          for (const bz of checkZs) {
+            for (const iy of yLevels) {
+              const block = this.world.getBlock(bx, iy, bz);
 
-            if (isSolidOrObstacle(block)) {
-              return {
-                distance: roundedD,
-                blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
-                x: sampleX,
-                y: iy,
-                z: sampleZ,
-                isObstacle: true
-              };
+              if (isSolidOrObstacle(block)) {
+                return {
+                  distance: roundedD,
+                  blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
+                  x: sampleX,
+                  y: iy,
+                  z: sampleZ,
+                  isObstacle: true
+                };
+              }
             }
           }
         }
@@ -1209,27 +1217,43 @@ export class VoxelCar {
   isCollisionAt(x, z, hx, hz) {
     if (!this.world || typeof this.world.getBlock !== 'function') return false;
     const curY = Math.floor(this.position.y || 25);
-    // Bumper check: front center and front corners (3 points)
-    const bumperOffsets = [
-      [0, 1.55],
+    // Bumper check: front center and front corners (3 points) plus body points
+    const collisionOffsets = [
+      [0.0, 1.55],
       [-0.60, 1.55],
-      [0.60, 1.55]
+      [0.60, 1.55],
+      [0.0, 1.0],
+      [-0.60, 1.0],
+      [0.60, 1.0]
     ];
     const perpX = hz;
     const perpZ = -hx;
 
-    for (const [lat, fwd] of bumperOffsets) {
+    for (const [lat, fwd] of collisionOffsets) {
       const cx = x + hx * fwd + perpX * lat;
       const cz = z + hz * fwd + perpZ * lat;
 
-      const roadY = (typeof this.world.getRoadHeightAt === 'function')
-        ? this.world.getRoadHeightAt(Math.round(cx), Math.round(cz)) + 1
-        : curY;
+      const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
+        ? this.world.getRoadHeightAt(Math.round(cx), Math.round(cz))
+        : (curY >= 25 ? curY - 1 : 24);
 
-      const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
-      for (const iy of yLevels) {
-        if (isSolidOrObstacle(this.world.getBlock(Math.floor(cx), iy, Math.floor(cz)))) {
-          return true;
+      const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
+      if (Math.floor(roadSurfaceY) + 1 !== curY) {
+        yLevels.push(curY, curY + 1);
+      }
+
+      const checkXs = [Math.floor(cx)];
+      if (Math.round(cx) !== Math.floor(cx)) checkXs.push(Math.round(cx));
+      const checkZs = [Math.floor(cz)];
+      if (Math.round(cz) !== Math.floor(cz)) checkZs.push(Math.round(cz));
+
+      for (const bx of checkXs) {
+        for (const bz of checkZs) {
+          for (const iy of yLevels) {
+            if (isSolidOrObstacle(this.world.getBlock(bx, iy, bz))) {
+              return true;
+            }
+          }
         }
       }
     }
@@ -1237,8 +1261,16 @@ export class VoxelCar {
   }
 
   setTaillightsBraking(isBraking) {
+    const emissiveColor = isBraking ? 0xff0000 : 0x991b1b;
     if (this.taillightMat && this.taillightMat.emissive && typeof this.taillightMat.emissive.setHex === 'function') {
-      this.taillightMat.emissive.setHex(isBraking ? 0xff0000 : 0x991b1b);
+      this.taillightMat.emissive.setHex(emissiveColor);
+    }
+    if (Array.isArray(this.taillights)) {
+      for (const tl of this.taillights) {
+        if (tl && tl.material && tl.material.emissive && typeof tl.material.emissive.setHex === 'function') {
+          tl.material.emissive.setHex(emissiveColor);
+        }
+      }
     }
   }
 
@@ -1355,7 +1387,7 @@ export class VoxelCar {
       this.isBraking = true;
     } else if (this.currentSpeed < targetSpeed) {
       this.currentSpeed = Math.min(targetSpeed, this.currentSpeed + this.accelerationRate * clampedDt);
-      this.isBraking = isBraking;
+      this.isBraking = false;
     } else {
       this.isBraking = isBraking;
     }
@@ -1380,10 +1412,8 @@ export class VoxelCar {
     // Taillight brake light indication:
     // While braking or halted, set vehicle taillights to bright red emissive (0xff0000).
     // When obstacle clears or is removed, restore normal taillights (0x991b1b).
-    const shouldBrakeLights = this.isBraking || this.isHalted || (obsAhead !== null) || (this.currentSpeed < this.maxSpeed - 0.05);
-    if (this.taillightMat && this.taillightMat.emissive && typeof this.taillightMat.emissive.setHex === 'function') {
-      this.taillightMat.emissive.setHex(shouldBrakeLights ? 0xff0000 : 0x991b1b);
-    }
+    const isBrakingOrHalted = this.isBraking || this.isHalted || (this.isStopped && obstacleDetected);
+    this.setTaillightsBraking(isBrakingOrHalted);
 
     // Advance vehicle along lane if moving
     if (this.currentSpeed > 0) {
@@ -1415,6 +1445,9 @@ export class VoxelCar {
         this.currentSpeed = 0;
         this.speed = 0;
         this.isStopped = true;
+        this.isHalted = true;
+        this.isBraking = true;
+        this.setTaillightsBraking(true);
       } else {
         this.progress = candidateProgress;
         this.position.set(candPos.x, candPos.y, candPos.z);

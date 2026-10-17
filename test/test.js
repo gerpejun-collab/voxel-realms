@@ -1546,6 +1546,132 @@ it('verifies TrafficManager initializes autonomous fleet and propagates obstacle
   assert.ok(firstCar.currentSpeed < firstCar.maxSpeed, 'First car must begin decelerating');
 });
 
+it('verifies checkObstacleAhead casts 3 parallel forward rays at road heights +1 and +2 (center, left +0.6, right -0.6) detecting obstacles up to 8 blocks ahead', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 100.0, speed: 10.0, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  // Car starts at (0, 25, 0), front bumper is at z = 1.55.
+  // 1. Center ray obstacle at road height +1 (Y=25) at distance 4.0m ahead of bumper
+  const centerTargetZ = Math.round(car.position.z + 1.55 + 4.0); // 0 + 1.55 + 4 = 5.55 -> round is 6
+  mockWorld.setBlock(0, 25, centerTargetZ, BLOCKS.STONE);
+  const obsCenter = car.checkObstacleAhead(8.0);
+  assert.ok(obsCenter, 'checkObstacleAhead must detect center obstacle');
+  assert.strictEqual(obsCenter.isObstacle, true);
+  assert.strictEqual(obsCenter.blockId, BLOCKS.STONE);
+  assert.ok(obsCenter.distance >= 3.8 && obsCenter.distance <= 4.6, `Distance should be ~4.0m (got ${obsCenter.distance})`);
+  mockWorld.setBlock(0, 25, centerTargetZ, BLOCKS.AIR);
+
+  // 2. Center ray obstacle at road height +2 (Y=26)
+  mockWorld.setBlock(0, 26, centerTargetZ, BLOCKS.BRICK);
+  const obsHeight2 = car.checkObstacleAhead(8.0);
+  assert.ok(obsHeight2, 'checkObstacleAhead must detect obstacle at road height +2 (Y=26)');
+  assert.strictEqual(obsHeight2.y, 26);
+  mockWorld.setBlock(0, 26, centerTargetZ, BLOCKS.AIR);
+
+  // 3. Left ray obstacle (offset -0.6)
+  const leftX = -1; // -0.6 falls into voxel X = -1
+  mockWorld.setBlock(leftX, 25, centerTargetZ, BLOCKS.COBBLESTONE);
+  const obsLeft = car.checkObstacleAhead(8.0);
+  assert.ok(obsLeft, 'checkObstacleAhead must detect left ray obstacle at lateral offset -0.6');
+  mockWorld.setBlock(leftX, 25, centerTargetZ, BLOCKS.AIR);
+
+  // 4. Right ray obstacle (offset +0.6)
+  const rightX = 1; // +0.6 falls into voxel X = 1
+  mockWorld.setBlock(rightX, 25, centerTargetZ, BLOCKS.TNT);
+  const obsRight = car.checkObstacleAhead(8.0);
+  assert.ok(obsRight, 'checkObstacleAhead must detect right ray obstacle at lateral offset +0.6');
+  assert.strictEqual(obsRight.blockId, BLOCKS.TNT);
+  mockWorld.setBlock(rightX, 25, centerTargetZ, BLOCKS.AIR);
+
+  // 5. Obstacle beyond 8 blocks (at 9.0 blocks) must be ignored when lookAheadDist = 8.0
+  const farZ = Math.round(car.position.z + 1.55 + 9.0);
+  mockWorld.setBlock(0, 25, farZ, BLOCKS.STONE);
+  const obsFar = car.checkObstacleAhead(8.0);
+  assert.strictEqual(obsFar, null, 'Obstacle beyond 8.0 blocks must not be returned');
+});
+
+it('verifies smooth linear deceleration between 1.8m and 7.5m, complete halt at <= 1.8m, and taillight emissive states', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 200.0, speed: 12.0, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  assert.strictEqual(car.currentSpeed, 12.0);
+  // Initial taillights are normal red
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0x991b1b, 'Normal cruising taillights should be 0x991b1b');
+
+  // Place obstacle in the deceleration zone: 5.0m ahead of front bumper (1.55 + 5.0 = 6.55 -> z = 7)
+  mockWorld.setBlock(0, 25, 7, BLOCKS.STONE);
+  car.update(0.016);
+
+  // Deceleration zone: 1.8m < d <= 7.5m
+  assert.ok(car.hasObstacle, 'Car must detect obstacle ahead');
+  assert.strictEqual(car.isBraking, true, 'isBraking must be true in deceleration zone');
+  assert.ok(car.targetSpeed < 12.0 && car.targetSpeed > 0, `Target speed should be linearly decelerating (got ${car.targetSpeed})`);
+  assert.ok(car.currentSpeed < 12.0, 'Car should begin smooth deceleration');
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0xff0000, 'Taillights must be bright red emissive (0xff0000) during braking');
+
+  // Place obstacle in the imminent collision zone: <= 1.8m ahead of front bumper (1.55 + 1.2 = 2.75 -> z = 3)
+  mockWorld.setBlock(0, 25, 7, BLOCKS.AIR);
+  mockWorld.setBlock(0, 25, 3, BLOCKS.STONE);
+  car.update(0.016);
+
+  assert.strictEqual(car.targetSpeed, 0.0, 'Target speed must be 0 when obstacle distance is <= 1.8m');
+  assert.strictEqual(car.currentSpeed, 0.0, 'Car must halt completely before the obstacle');
+  assert.strictEqual(car.isStopped, true, 'isStopped must be true');
+  assert.strictEqual(car.isHalted, true, 'isHalted must be true');
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0xff0000, 'Taillights must remain bright red emissive (0xff0000) while halted');
+
+  // Clear obstacle: car should accelerate back to cruising speed (12.0 m/s) and restore taillights
+  mockWorld.setBlock(0, 25, 3, BLOCKS.AIR);
+  car.update(0.016);
+
+  assert.strictEqual(car.hasObstacle, false, 'Obstacle must be cleared');
+  assert.strictEqual(car.isHalted, false, 'isHalted must be false after obstacle is removed');
+  assert.strictEqual(car.targetSpeed, 12.0, 'Target speed must restore to max cruising speed');
+  assert.ok(car.currentSpeed > 0, 'Car must begin accelerating');
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0x991b1b, 'Taillights must be restored to normal (0x991b1b) when path clears');
+
+  // Accelerate to full cruising speed
+  for (let i = 0; i < 60; i++) {
+    car.update(0.033);
+  }
+  assert.strictEqual(car.currentSpeed, 12.0, 'Car must return to full cruising speed (8.0 .. 14.0 m/s)');
+});
+
+it('verifies highway traffic cars never pass through or clip into walls, buildings, or placed blocks', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 100.0, speed: 14.0, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  // Build a 3-block wide solid wall / building across the road at z = 10
+  for (let x = -2; x <= 2; x++) {
+    for (let y = 25; y <= 27; y++) {
+      mockWorld.setBlock(x, y, 10, BLOCKS.BRICK);
+    }
+  }
+
+  // Simulate 120 frames at high speed
+  for (let i = 0; i < 120; i++) {
+    car.update(0.033);
+  }
+
+  // Verify car came to a complete halt before the wall without clipping
+  assert.strictEqual(car.currentSpeed, 0, 'Car must halt completely before the wall');
+  assert.strictEqual(car.isStopped, true);
+  const frontZ = car.position.z + 1.55;
+  assert.ok(frontZ <= 10.0, `Car front bumper (z=${frontZ}) must NEVER penetrate the wall (z=10.0)`);
+  assert.ok(car.position.z < 10.0, 'Car position must strictly remain before the wall');
+});
+
+
+
 // =============================================================================
 // SECTION 9: MULTIPLAYER EXCAVATION SYNCHRONIZATION, GROUND DETECTION & ZERO-SINK COLLISION
 // =============================================================================
@@ -2021,6 +2147,602 @@ it('verifies Avatar.prototype.updateGroundSupport invalidates onGround and appli
   assert.strictEqual(unsupported, false);
   assert.strictEqual(avatar.onGround, false);
   assert.ok(avatar.velY < 0, 'Vertical velocity must be negative to initiate downward descent');
+});
+
+// =============================================================================
+// SECTION 10: MILESTONE M2 — PREMIUM WEAPONS, SYNCHRONIZED TRACERS & TNT REACTIVITY
+// =============================================================================
+console.log('\n[SECTION 10: MILESTONE M2 — PREMIUM WEAPONS, SYNCHRONIZED TRACERS & TNT REACTIVITY]');
+
+function loadControlsModuleForM2() {
+  const controlsPath = path.resolve(__dirname, '../public/src/controls.js');
+  let controlsCode = fs.readFileSync(controlsPath, 'utf8')
+    .replace(/import\s+.*?from\s+.*?;/g, '')
+    .replace(/export\s+class\s+Controls/g, 'class Controls');
+
+  const mockTHREE = {
+    Vector3: class {
+      constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+      set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+      copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+      clone() { return new mockTHREE.Vector3(this.x, this.y, this.z); }
+      sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
+      add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
+      addScaledVector(v, s) { this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; return this; }
+      applyEuler() { return this; }
+      distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }
+      dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+      lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
+    },
+    Euler: class {
+      constructor(x = 0, y = 0, z = 0, order = 'YXZ') { this.x = x; this.y = y; this.z = z; this.order = order; }
+      set(x, y, z, order = 'YXZ') { this.x = x; this.y = y; this.z = z; this.order = order; return this; }
+    },
+    Group: class {
+      constructor() {
+        this.position = new mockTHREE.Vector3();
+        this.rotation = new mockTHREE.Euler();
+        this.children = [];
+        this.visible = true;
+      }
+      add() { this.children.push(...arguments); }
+      remove() {}
+    },
+    Mesh: class {
+      constructor(geom, mat) {
+        this.geometry = geom;
+        this.material = mat;
+        this.position = new mockTHREE.Vector3();
+        this.rotation = new mockTHREE.Euler();
+        this.visible = true;
+      }
+      getWorldPosition(targetVec) {
+        return targetVec.copy(this.position);
+      }
+    },
+    BoxGeometry: class { constructor(w, h, d) { this.width = w; this.height = h; this.depth = d; } },
+    MeshStandardMaterial: class {
+      constructor(opts = {}) {
+        this.color = { setHex: (c) => { this.hex = c; }, hex: opts.color };
+        this.roughness = opts.roughness;
+        this.metalness = opts.metalness;
+      }
+    },
+    MeshBasicMaterial: class {
+      constructor(opts = {}) {
+        this.color = opts.color;
+        this.transparent = opts.transparent;
+        this.opacity = opts.opacity;
+      }
+    }
+  };
+
+  const BLOCKS = { AIR: 0, GRASS: 1, DIRT: 2, STONE: 4, TNT: 19, ASPHALT: 20 };
+  const BLOCK_DEFS = { 1: { solid: true }, 4: { solid: true }, 19: { solid: true }, 20: { solid: true } };
+  const sound = { playClick: () => {}, playShoot: () => {}, playExplosion: () => {} };
+
+  if (typeof global.navigator === 'undefined') {
+    global.navigator = { userAgent: 'Node' };
+  }
+  if (typeof global.document === 'undefined') {
+    global.document = {
+      getElementById: () => null,
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+      pointerLockElement: null
+    };
+  }
+  if (typeof global.window === 'undefined') {
+    global.window = {
+      addEventListener: () => {},
+      matchMedia: () => ({ matches: false })
+    };
+  }
+
+  const { Controls } = new Function(
+    'THREE', 'BLOCKS', 'BLOCK_DEFS', 'sound',
+    controlsCode + '\nreturn { Controls };'
+  )(mockTHREE, BLOCKS, BLOCK_DEFS, sound);
+
+  return { Controls, mockTHREE, BLOCKS, BLOCK_DEFS };
+}
+
+function loadParticlesModuleForM2() {
+  const partPath = path.resolve(__dirname, '../public/src/particles.js');
+  let partCode = fs.readFileSync(partPath, 'utf8')
+    .replace(/import\s+.*?from\s+.*?;/g, '')
+    .replace(/export\s+class\s+ParticleManager/g, 'class ParticleManager');
+
+  const mockTHREE = {
+    Vector3: class {
+      constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+      set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+      copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+      clone() { return new mockTHREE.Vector3(this.x, this.y, this.z); }
+      sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
+      add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
+      addScaledVector(v, s) { this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; return this; }
+      normalize() {
+        const len = Math.hypot(this.x, this.y, this.z) || 1;
+        this.x /= len; this.y /= len; this.z /= len;
+        return this;
+      }
+      distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }
+    },
+    Euler: class {
+      constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+      set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    },
+    Object3D: class {
+      constructor() {
+        this.position = new mockTHREE.Vector3();
+        this.rotation = new mockTHREE.Euler();
+        this.scale = new mockTHREE.Vector3(1, 1, 1);
+        this.matrix = {};
+      }
+      updateMatrix() {}
+    },
+    Group: class {
+      constructor() {
+        this.position = new mockTHREE.Vector3();
+        this.rotation = new mockTHREE.Euler();
+        this.children = [];
+      }
+      add() { this.children.push(...arguments); }
+      remove() {}
+      lookAt() {}
+    },
+    Mesh: class {
+      constructor(geom, mat) {
+        this.geometry = geom;
+        this.material = mat;
+        this.position = new mockTHREE.Vector3();
+        this.rotation = new mockTHREE.Euler();
+        this.scale = new mockTHREE.Vector3(1, 1, 1);
+      }
+      lookAt() {}
+    },
+    BoxGeometry: class {},
+    CylinderGeometry: class {
+      constructor() { this.rotateX = () => {}; }
+    },
+    BufferGeometry: class {
+      constructor() { this.attributes = {}; }
+      setAttribute(name, attr) { this.attributes[name] = attr; }
+    },
+    BufferAttribute: class {
+      constructor(array, size) { this.array = array; this.size = size; this.needsUpdate = false; }
+    },
+    MeshStandardMaterial: class {},
+    MeshBasicMaterial: class {
+      constructor(opts = {}) { this.color = opts.color; this.opacity = opts.opacity; }
+      dispose() {}
+    },
+    PointsMaterial: class {},
+    Points: class {
+      constructor(geom, mat) { this.geometry = geom; this.material = mat; }
+    },
+    InstancedMesh: class {
+      constructor(geom, mat, count) {
+        this.count = count;
+        this.instanceMatrix = { setUsage: () => {}, needsUpdate: false };
+        this.frustumCulled = false;
+        this.matrices = new Array(count);
+      }
+      setMatrixAt(idx, mat) { this.matrices[idx] = mat; }
+    },
+    DynamicDrawUsage: 35048
+  };
+
+  const { ParticleManager } = new Function(
+    'THREE',
+    partCode + '\nreturn { ParticleManager };'
+  )(mockTHREE);
+
+  return { ParticleManager, mockTHREE };
+}
+
+it('verifies Horizontal FPS Rifle Model orientation (0,0,0 along -Z), natural hip-carry, and centered ADS optics', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  camera.updateProjectionMatrix = () => {};
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+  const world = { getBlock: () => 0 };
+
+  const controls = new Controls(camera, domElement, physics, world);
+
+  // 1. Rifle viewmodel orientation must be aligned with camera negative Z (rotation 0, 0, 0)
+  assert.strictEqual(controls.rifleGroup.rotation.x, 0, 'Rifle pitch must be 0 (horizontal)');
+  assert.strictEqual(controls.rifleGroup.rotation.y, 0, 'Rifle yaw must be 0 (pointing forward along -Z)');
+  assert.strictEqual(controls.rifleGroup.rotation.z, 0, 'Rifle roll must be 0');
+
+  // 2. Enable weapons mode
+  controls.setWeaponsMode(true);
+  assert.strictEqual(controls.weaponsMode, true);
+  assert.strictEqual(controls.rifleGroup.visible, true);
+  assert.strictEqual(controls.heldBlockMesh.visible, false);
+
+  // 3. Test hip-carry coordinates (aimBlend = 0)
+  controls.update(0.016);
+  assert.ok(Math.abs(controls.armPivot.position.x - 0.24) < 0.05, 'Hip-carry X should be natural right shoulder offset (~0.24)');
+  assert.ok(Math.abs(controls.armPivot.position.y - (-0.22)) < 0.05, 'Hip-carry Y should be natural hip height (~-0.22)');
+  assert.ok(Math.abs(controls.armPivot.position.z - (-0.42)) < 0.05, 'Hip-carry Z should be forward offset (~-0.42)');
+  assert.strictEqual(camera.fov, 75, 'Hip-carry FOV must remain at default 75 degrees');
+
+  // 4. Test ADS transition to aimBlend = 1
+  controls.setAiming(true);
+  assert.strictEqual(controls.isAiming, true);
+
+  // Advance time to allow smooth ADS lerp
+  for (let i = 0; i < 20; i++) {
+    controls.update(0.05);
+  }
+  assert.strictEqual(controls.aimBlend, 1.0, 'aimBlend must smoothly reach 1.0');
+  assert.strictEqual(camera.fov, 32, 'ADS FOV must zoom in to exactly 32 degrees (75 - 43)');
+
+  // In ADS: optical axis at local Y=0.13 centers directly on camera -Z (armPivot.position.y = -0.13, x = 0.0)
+  assert.ok(Math.abs(controls.armPivot.position.x) < 0.001, 'ADS X position must align with center reticle (0.0)');
+  assert.ok(Math.abs(controls.armPivot.position.y - (-0.13)) < 0.001, 'ADS Y position must center optic at eye line (-0.13)');
+  assert.ok(Math.abs(controls.armPivot.position.z - (-0.30)) < 0.001, 'ADS Z position must bring sight close to eye (-0.30)');
+  assert.ok(Math.abs(controls.armPivot.rotation.x) < 0.001, 'ADS pitch rotation must be zero');
+  assert.ok(Math.abs(controls.armPivot.rotation.y) < 0.001, 'ADS yaw rotation must be zero');
+  assert.ok(Math.abs(controls.armPivot.rotation.z) < 0.001, 'ADS roll rotation must be zero');
+});
+
+it('verifies #rifle-scope-overlay DOM toggle is synchronized with ADS transition at aimBlend > 0.82', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  camera.updateProjectionMatrix = () => {};
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+  const world = { getBlock: () => 0 };
+
+  const classListState = new Set(['hidden']);
+  const mockScopeOverlay = {
+    classList: {
+      add: (cls) => classListState.add(cls),
+      remove: (cls) => classListState.delete(cls),
+      contains: (cls) => classListState.has(cls)
+    }
+  };
+
+  const origGetElementById = global.document.getElementById;
+  global.document.getElementById = (id) => {
+    if (id === 'rifle-scope-overlay') return mockScopeOverlay;
+    return null;
+  };
+
+  try {
+    const controls = new Controls(camera, domElement, physics, world);
+    controls.setWeaponsMode(true);
+
+    // Initial state: aimBlend = 0 <= 0.82 -> hidden
+    controls.update(0.016);
+    assert.strictEqual(mockScopeOverlay.classList.contains('hidden'), true, 'Scope overlay must be hidden at aimBlend <= 0.82');
+
+    // Trigger ADS aiming: advance until aimBlend > 0.82
+    controls.setAiming(true);
+    controls.update(0.16); // aimBlend rises above 0.82
+    assert.ok(controls.aimBlend > 0.82, 'aimBlend must exceed 0.82 threshold');
+    assert.strictEqual(mockScopeOverlay.classList.contains('hidden'), false, 'Scope overlay must be visible when aimBlend > 0.82');
+
+    // Release aiming: drops back below 0.82
+    controls.setAiming(false);
+    for (let i = 0; i < 20; i++) controls.update(0.05);
+    assert.strictEqual(controls.aimBlend, 0, 'aimBlend must return to 0');
+    assert.strictEqual(mockScopeOverlay.classList.contains('hidden'), true, 'Scope overlay must be hidden once aimBlend <= 0.82');
+  } finally {
+    global.document.getElementById = origGetElementById;
+  }
+});
+
+it('verifies Non-Destructive Shooting: bullets never destroy terrain blocks, never alter world chunk data, and never send block modifications', () => {
+  const { Controls, mockTHREE, BLOCKS } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+
+  // Mock world with terrain blocks
+  const worldBlocks = new Map([
+    ['0,26,-5', BLOCKS.STONE],
+    ['0,25,-5', BLOCKS.GRASS],
+    ['0,24,-5', BLOCKS.DIRT],
+    ['1,25,-5', BLOCKS.ASPHALT]
+  ]);
+  const world = {
+    getBlock: (x, y, z) => {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return worldBlocks.has(key) ? worldBlocks.get(key) : 0;
+    },
+    setBlock: (x, y, z, type) => {
+      worldBlocks.set(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`, type);
+    }
+  };
+
+  const controls = new Controls(camera, domElement, physics, world);
+  controls.setWeaponsMode(true);
+
+  let breakBlockCalled = false;
+  controls.onBreakBlock = () => { breakBlockCalled = true; };
+
+  let shotFiredData = null;
+  controls.onWeaponShoot = (data) => { shotFiredData = data; };
+
+  // Aim directly forward along -Z at the stone wall at (0, 26, -5)
+  controls.yaw = 0;
+  controls.pitch = 0;
+
+  const shot = controls.triggerShoot();
+  assert.ok(shot, 'Shooting in weapons mode must return shotData');
+  assert.strictEqual(breakBlockCalled, false, 'onBreakBlock must NEVER be triggered by shooting (Non-destructive principle)');
+  assert.strictEqual(world.getBlock(0, 26, -5), BLOCKS.STONE, 'Terrain stone block must NOT be destroyed');
+  assert.strictEqual(world.getBlock(0, 25, -5), BLOCKS.GRASS, 'Terrain grass block must NOT be destroyed');
+  assert.strictEqual(world.getBlock(0, 24, -5), BLOCKS.DIRT, 'Terrain dirt block must NOT be destroyed');
+  assert.strictEqual(shot.voxelHit.type, BLOCKS.STONE, 'Shot must detect surface hit for sparks without breaking block');
+});
+
+it('verifies Shoot-to-Detonate TNT Reactivity: bullet impact on BLOCKS.TNT (19) triggers immediate zero-fuse detonation (fuseMs: 0)', () => {
+  const { Controls, mockTHREE, BLOCKS } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+
+  // Place a TNT block at (0, 26, -6)
+  const worldBlocks = new Map([
+    ['0,26,-6', BLOCKS.TNT]
+  ]);
+  const world = {
+    getBlock: (x, y, z) => {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return worldBlocks.has(key) ? worldBlocks.get(key) : 0;
+    }
+  };
+
+  const controls = new Controls(camera, domElement, physics, world);
+  controls.setWeaponsMode(true);
+
+  let shootTntHit = null;
+  controls.onShootTnt = (hit) => { shootTntHit = hit; };
+
+  let triggerTntParams = null;
+  controls.sendTntTrigger = (x, y, z, fuseMs) => {
+    triggerTntParams = { x, y, z, fuseMs };
+  };
+
+  controls.yaw = 0;
+  controls.pitch = 0;
+
+  const shot = controls.triggerShoot();
+  assert.ok(shot);
+  assert.ok(shot.voxelHit);
+  assert.strictEqual(shot.voxelHit.type, 19, 'Shot must detect BLOCKS.TNT (19)');
+  assert.ok(shootTntHit, 'controls.onShootTnt must be called upon TNT bullet hit');
+  assert.strictEqual(shootTntHit.x, 0);
+  assert.strictEqual(shootTntHit.y, 26);
+  assert.strictEqual(shootTntHit.z, -6);
+
+  assert.ok(triggerTntParams, 'controls.sendTntTrigger must be invoked');
+  assert.strictEqual(triggerTntParams.fuseMs, 0, 'TNT shoot detonation must specify immediate zero fuse (fuseMs: 0)');
+
+  // Verify server GameState immediate detonation
+  const gs = new GameState('tnt_m2_test', 30);
+  gs.blockDeltas.set('0,26,-6', BLOCKS.TNT);
+  const blast = gs.detonateTnt(0, 26, -6, 3);
+  assert.strictEqual(blast.x, 0);
+  assert.strictEqual(blast.y, 26);
+  assert.strictEqual(blast.z, -6);
+  assert.strictEqual(gs.getBlock(0, 26, -6), 0, 'TNT block must be replaced with AIR');
+
+  // Verify RoomManager handleTntTrigger with fuseMs: 0 executes without timeout
+  const rm = new RoomManager(30);
+  const room = rm.getOrCreateRoom('main');
+  room.gameState.blockDeltas.set('0,26,-6', BLOCKS.TNT);
+  let broadcastMsg = null;
+  rm.broadcast = (r, type, data) => {
+    if (type === MSG.TNT_EXPLODE) broadcastMsg = data;
+  };
+  rm.handleTntTrigger(null, { id: 'shooter_1', roomId: 'main' }, { x: 0, y: 26, z: -6, fuseMs: 0 });
+  assert.ok(broadcastMsg, 'Server must immediately broadcast TNT_EXPLODE with zero fuse');
+  assert.strictEqual(broadcastMsg.x, 0);
+  assert.strictEqual(broadcastMsg.y, 26);
+  assert.strictEqual(broadcastMsg.z, -6);
+});
+
+it('verifies ParticleManager luminous bullet tracers and 20+ crimson blood droplets', () => {
+  const { ParticleManager } = loadParticlesModuleForM2();
+  const scene = { add: () => {}, remove: () => {} };
+  const pm = new ParticleManager(scene);
+
+  // 1. Bullet tracer beam
+  pm.spawnBulletTracer([0, 26, 0], [15, 26, 30], 220);
+  assert.strictEqual(pm.tracers.length, 1, 'Bullet tracer must be instantiated');
+  const tracer = pm.tracers[0];
+  assert.strictEqual(tracer.speed, 220, 'Tracer speed must be high-velocity (~220)');
+  assert.ok(tracer.totalDist > 0, 'Tracer trajectory must have non-zero distance');
+
+  // 2. Crimson blood droplets: 20+ particles
+  pm.spawnBloodParticles(10, 25, 10, [0, 0, -1]);
+  assert.ok(pm.bloodParticles.length >= 20, `Blood particle burst must contain 20+ droplets (found ${pm.bloodParticles.length})`);
+
+  // Verify initial directional velocity along bullet direction
+  const sample = pm.bloodParticles[0];
+  assert.ok(sample.vz < 0, 'Blood velocity must have directional forward bias along bullet direction (Z < 0)');
+  assert.ok(sample.vy > 0, 'Blood velocity must have upward loft for parabolic arc');
+
+  // 3. Particle update with gravity
+  const initVy = sample.vy;
+  pm.update(0.016, { x: 10, y: 25, z: 10 });
+  assert.ok(sample.vy < initVy, 'Blood particle Y velocity must decrease under gravitational acceleration');
+});
+
+it('verifies Animal impact knockback, knockdown tilt (rotation.z = Math.PI/2), hurt flash, and exact 3-second despawn', () => {
+  const { VoxelAnimal } = (() => {
+    const animalsPath = path.resolve(__dirname, '../public/src/animals.js');
+    let animalsCode = fs.readFileSync(animalsPath, 'utf8')
+      .replace(/import\s+.*?from\s+.*?;/g, '')
+      .replace(/export\s+const\s+ANIMAL_SPECIES\s+=/g, 'const ANIMAL_SPECIES =')
+      .replace(/export\s+class\s+VoxelCar/g, 'class VoxelCar')
+      .replace(/export\s+class\s+TrafficManager/g, 'class TrafficManager')
+      .replace(/export\s+class\s+AnimalManager/g, 'class AnimalManager');
+
+    const mockTHREE = {
+      Vector3: class {
+        constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
+        set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+        copy(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;}
+        clone(){return new mockTHREE.Vector3(this.x,this.y,this.z);}
+        sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+        add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
+        dot(v){return this.x*v.x+this.y*v.y+this.z*v.z;}
+        lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
+        distanceToSquared(v){const dx=this.x-v.x,dy=this.y-v.y,dz=this.z-v.z;return dx*dx+dy*dy+dz*dz;}
+      },
+      Euler: class {
+        constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
+        set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+      },
+      Group: class {
+        constructor(){this.position=new mockTHREE.Vector3();this.rotation=new mockTHREE.Euler();this.children=[];}
+        add(){this.children.push(...arguments);}
+        remove(){}
+        traverse(fn){fn(this);}
+      },
+      Mesh: class {
+        constructor(g,m){
+          this.isMesh=true;
+          this.material=m||{emissive:{setHex:()=>{},getHex:()=>0}};
+          this.position=new mockTHREE.Vector3();
+          this.rotation=new mockTHREE.Euler();
+        }
+      },
+      BoxGeometry: class {},
+      MeshLambertMaterial: class {
+        constructor(opts={}){
+          this.color=opts.color;
+          this.emissive={hex:opts.emissive||0,setHex:function(v){this.hex=v;},getHex:function(){return this.hex;}};
+        }
+      }
+    };
+    const BLOCKS = { AIR: 0, GRASS: 1, DIRT: 2, STONE: 4, TNT: 19 };
+    const BLOCK_DEFS = { 1: { solid: true } };
+
+    return new Function(
+      'THREE', 'BLOCKS', 'BLOCK_DEFS',
+      animalsCode + '\nreturn { VoxelAnimal };'
+    )(mockTHREE, BLOCKS, BLOCK_DEFS);
+  })();
+
+  const scene = { add: () => {}, remove: () => {} };
+  const world = { getBlock: () => 0, getHeightAt: () => 24 };
+
+  const animal = new VoxelAnimal('cow', scene, world, 'test_cow');
+  animal.position.set(10, 25, 10);
+
+  // 1. Trigger knockdown hit along bullet direction (0, 0, -1)
+  animal.triggerKnockdown({ x: 0, y: 0, z: -1 });
+  assert.strictEqual(animal.isKnockedDown, true, 'Animal must be knocked down');
+  assert.strictEqual(animal.knockdownTimer, 3.0, 'Animal knockdown timer must start at exactly 3.0 seconds');
+  assert.strictEqual(animal.despawnTimer, 3.0, 'Despawn timer must be 3.0 seconds');
+  assert.ok(animal.knockbackVelocity.z < 0, 'Knockback impulse must be along bullet trajectory (Z < 0)');
+
+  // 2. Step 0.5 seconds: verify knockdown tilt animation (rotation.z reaches Math.PI / 2)
+  animal.update(0.5, { x: 0, y: 25, z: 0 });
+  assert.ok(Math.abs(animal.group.rotation.z - Math.PI / 2) < 0.05, 'Animal must tilt onto side (rotation.z = Math.PI / 2)');
+
+  // 3. Step up to 2.8 seconds (total 2.8s < 3.0s): verify animal is STILL VISIBLE and NOT despawned
+  animal.update(2.3, { x: 0, y: 25, z: 0 });
+  assert.strictEqual(animal.isDespawned, undefined, 'Animal must remain visible during 3-second knockdown period');
+  assert.ok(animal.despawnTimer > 0, 'Despawn timer must still have time remaining before 3s');
+
+  // 4. Step past 3.0 seconds (total 3.2s): verify despawn
+  animal.update(0.4, { x: 0, y: 25, z: 0 });
+  assert.strictEqual(animal.despawnTimer, 0, 'Despawn timer must reach 0');
+  assert.strictEqual(animal.isDespawned, true, 'Animal must be marked as despawned after exactly 3.0s');
+});
+
+it('verifies Multiplayer network synchronization of WEAPON_SHOT_FX, WEAPON_SHOOT, and ANIMAL_BURST', () => {
+  const rm = new RoomManager(30);
+  const room = rm.getOrCreateRoom('main');
+
+  const p1 = room.gameState.addPlayer('shooter_1', 'SniperSteve');
+  const p2 = room.gameState.addPlayer('victim_2', 'TargetBob');
+  p1.pos = [0, 25, 0];
+  p2.pos = [10, 25, 0];
+
+  let broadcastEvents = [];
+  rm.broadcast = (r, type, data, exceptWs) => {
+    broadcastEvents.push({ type, data, exceptWs });
+  };
+
+  // 1. Shooter fires weapon
+  const shootPacket = {
+    weaponType: 'rifle',
+    origin: [0, 26.6, 0],
+    dir: [1, 0, 0],
+    hitPos: [10, 26, 0],
+    targetPlayerId: 'victim_2'
+  };
+
+  const mockWs = {};
+  rm.handleWeaponShoot(mockWs, { id: 'shooter_1', roomId: 'main' }, shootPacket);
+
+  const fxBroadcast = broadcastEvents.find(e => e.type === MSG.WEAPON_SHOT_FX);
+  assert.ok(fxBroadcast, 'Server must broadcast WEAPON_SHOT_FX to peers');
+  assert.deepStrictEqual(fxBroadcast.data.origin, [0, 26.6, 0], 'Shot FX must preserve muzzle origin');
+  assert.deepStrictEqual(fxBroadcast.data.hitPos, [10, 26, 0], 'Shot FX must preserve impact target');
+  assert.strictEqual(fxBroadcast.exceptWs, mockWs, 'Shooter must be excluded from duplicate FX broadcast');
+
+  // 2. Animal hit broadcast
+  const anim = { id: 'anim_test', type: 'sheep', x: 5, y: 25, z: 0 };
+  room.gameState.animals.set('anim_test', anim);
+
+  broadcastEvents = [];
+  rm.handleWeaponShoot(mockWs, { id: 'shooter_1', roomId: 'main' }, {
+    weaponType: 'rifle',
+    origin: [0, 26.6, 0],
+    dir: [1, 0, 0],
+    targetAnimalId: 'anim_test',
+    hitPos: [5, 25.6, 0]
+  });
+
+  const burstBroadcast = broadcastEvents.find(e => e.type === MSG.ANIMAL_BURST);
+  assert.ok(burstBroadcast, 'Server must broadcast ANIMAL_BURST on animal hit');
+  assert.strictEqual(burstBroadcast.data.animalId, 'anim_test');
+  assert.strictEqual(burstBroadcast.data.shooterId, 'shooter_1');
+  assert.deepStrictEqual(burstBroadcast.data.dir, [1, 0, 0], 'ANIMAL_BURST must broadcast bullet direction for knockback');
 });
 
 // =============================================================================

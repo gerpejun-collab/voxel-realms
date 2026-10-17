@@ -69,6 +69,8 @@ export class Controls {
     this.onCycleSpeed = null;
     this.onSpeedChange = null;
     this.onWeaponShoot = null;
+    this.onShootTnt = null;
+    this.sendTntTrigger = null;
     this.onPlaceTnt = null;
     this.onAimChange = null;
     this.vehicleManager = null;
@@ -268,10 +270,10 @@ export class Controls {
       if (this.rifleGroup) this.rifleGroup.visible = true;
       return;
     }
-    if (this.rifleGroup) this.rifleGroup.visible = false;
+    if (this.rifleGroup) this.rifleGroup.visible = this.weaponsMode;
     if (colors[blockId]) {
       this.heldBlockMat.color.setHex(colors[blockId]);
-      this.heldBlockMesh.visible = true;
+      this.heldBlockMesh.visible = !this.weaponsMode;
     } else {
       this.heldBlockMesh.visible = false;
     }
@@ -332,7 +334,9 @@ export class Controls {
       sound.playShoot();
     }
 
-    const origin = this.physics.getEyePosition();
+    const origin = (this.physics && typeof this.physics.getEyePosition === 'function')
+      ? this.physics.getEyePosition()
+      : (this.camera ? this.camera.position : new THREE.Vector3());
     const dir = new THREE.Vector3(0, 0, -1);
     dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
 
@@ -346,15 +350,24 @@ export class Controls {
 
     const muzzleVec = this.getMuzzleWorldPosition(new THREE.Vector3());
 
+    let entityHit = null;
+    if (this.animalManager && typeof this.animalManager.getHitAnimal === 'function') {
+      entityHit = this.animalManager.getHitAnimal(origin, dir, 85);
+    }
+
     const shotData = {
       origin: { x: origin.x, y: origin.y, z: origin.z },
       dir: { x: dir.x, y: dir.y, z: dir.z },
       muzzlePos: { x: muzzleVec.x, y: muzzleVec.y, z: muzzleVec.z },
-      voxelHit: longVoxelHit ? { ...longVoxelHit } : null
+      voxelHit: longVoxelHit ? { ...longVoxelHit } : null,
+      entityHit: entityHit || null
     };
 
     // Shoot-to-detonate TNT reactivity: if raycast struck a TNT block (BLOCKS.TNT = 19)
-    if (longVoxelHit && longVoxelHit.type === 19) {
+    if (longVoxelHit && (longVoxelHit.type === BLOCKS.TNT || longVoxelHit.type === 19)) {
+      if (typeof this.sendTntTrigger === 'function') {
+        this.sendTntTrigger(longVoxelHit.x, longVoxelHit.y, longVoxelHit.z, 0);
+      }
       if (this.onShootTnt) {
         this.onShootTnt(longVoxelHit);
       }

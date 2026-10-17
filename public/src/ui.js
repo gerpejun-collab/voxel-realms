@@ -70,21 +70,21 @@ export const LANDMARKS = [
   },
   {
     id: 'fuji',
-    name: '🗻 Monte Fuji (+500, +500)',
+    name: '🗻 Monte Fuji (+350, +350)',
     icon: '🗻',
-    x: 500,
+    x: 350,
     y: 26,
-    z: 500,
-    desc: 'XYZ (+500, 26, +500) • Volcán Colosal, Cráter Nevado, Lagos & Cavernas'
+    z: 350,
+    desc: 'XYZ (+350, 26, +350) • Volcán Colosal, Cráter Nevado, Lagos & Torii Flotante'
   },
   {
     id: 'circuit',
-    name: 'Gran Circuito (-500, -500)',
+    name: 'Gran Circuito de Velocidad (110, -60)',
     icon: '🏎️',
-    x: -500,
+    x: 110,
     y: 25,
-    z: -500,
-    desc: 'XYZ (-500, 25, -500) • Pista Internacional, Gradas, Boxes, Lago & Túneles'
+    z: -60,
+    desc: 'XYZ (110, 25, -60) • Pista Internacional, Gradas, Boxes, Lago & Túneles'
   }
 ];
 
@@ -660,10 +660,10 @@ export class UIManager {
       // Mount Fuji: stand on the scenic reflection lake shore facing the colossal volcano
       vx = 305.5; vy = 20.0; vz = 305.5;
       targetYaw = -Math.PI / 4; targetPitch = 0.28;
-    } else if (tx === -500 && tz === -500) {
+    } else if ((tx === 110 && tz === -60) || (tx === -500 && tz === -500)) {
       // Gran Circuito: stand on the starting grid facing down the main straight toward Turn 1
-      vx = -495.5; vy = 25.0; vz = -420.5;
-      targetYaw = Math.PI / 2; targetPitch = 0.05;
+      vx = 110.5; vy = 25.0; vz = -60.5;
+      targetYaw = 0; targetPitch = 0.05;
     }
 
     // Stream chunks around new location first so terrain & monuments exist before physics step
@@ -818,7 +818,7 @@ export class UIManager {
     if (Math.hypot(x + 250, z - 250) <= 70) return '🇨🇳 China y Shanghai';
     if (Math.hypot(x - 250, z + 250) <= 70) return '🇫🇷 París y Torre Eiffel';
     if (Math.hypot(x + 250, z + 250) <= 70) return '🇺🇸 Nueva York';
-    if (Math.abs(x - (-500)) <= 125 && Math.abs(z - (-500)) <= 125) return '🏎️ Gran Circuito';
+    if ((x >= 40 && x <= 220 && z >= -195 && z <= -35) || (Math.abs(x - (-500)) <= 125 && Math.abs(z - (-500)) <= 125)) return '🏎️ Gran Circuito de Velocidad';
     return '🌲 Tierras del Reino';
   }
 

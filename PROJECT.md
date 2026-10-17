@@ -48,9 +48,9 @@
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
 | M1 | Multiplayer Block Excavation & Avatar Synchronization | `avatar.js`, `world.js`, `physics.js`, `rooms.js` | none | DONE (458ac3b3) |
-| M2 | Premium Weapons, Synchronized Tracers & TNT Reactivity | `controls.js`, `particles.js`, `animals.js`, `main.js`, `rooms.js` | none | IN_PROGRESS (c0d884c9) |
+| M2 | Premium Weapons, Synchronized Tracers & TNT Reactivity | `controls.js`, `particles.js`, `animals.js`, `main.js`, `rooms.js` | none | DONE (c0d884c9) |
 | M3 | Highway Traffic Collision & Obstacle Intelligence | `animals.js`, `world.js`, `blocks.js` | none | DONE (01ed66b0) |
-| M4 | Sprawling City Redesigns, Mountain Tunnels & Mount Fuji | `world.js`, `blocks.js`, `ui.js` | none | IN_PROGRESS (4b2b4fee) |
+| M4 | Sprawling City Redesigns, Mountain Tunnels & Mount Fuji | `world.js`, `blocks.js`, `ui.js` | none | DONE (4b2b4fee) |
 | M5 | Grand Prix Racing Circuit & Drivable Cars | `world.js`, `animals.js`, `controls.js`, `multiplayer.js`, `rooms.js` | M1, M4 | PLANNED |
 | M-TEST | Dual Track E2E Automated Test Suite | `test/test.js` | M1, M2, M3, M4, M5 | IN_PROGRESS (f75df417) |
 

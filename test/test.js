@@ -1209,950 +1209,11 @@ it('verifies animals.js rune_golem mesh visor fix and Playa Paraíso lighthouse/
   assert.ok(worldCode.includes('Underwater Coral Reef Sanctuary'), 'world.js must define Coral Reef in Playa Paraíso');
 });
 
-// =============================================================================
-// SECTION 8: AUTONOMOUS VEHICLE OBSTACLE & TNT COLLISION INTELLIGENCE
-// =============================================================================
-console.log('\n[SECTION 8: AUTONOMOUS VEHICLE OBSTACLE & TNT COLLISION INTELLIGENCE]');
-
-function loadAnimalsModule() {
-  const animalsPath = path.resolve(__dirname, '../public/src/animals.js');
-  let animalsCode = fs.readFileSync(animalsPath, 'utf8');
-
-  animalsCode = animalsCode
-    .replace(/import\s+.*?from\s+.*?;/g, '')
-    .replace(/export\s+const\s+ANIMAL_SPECIES\s+=/g, 'const ANIMAL_SPECIES =')
-    .replace(/export\s+class\s+VoxelCar/g, 'class VoxelCar')
-    .replace(/export\s+class\s+TrafficManager/g, 'class TrafficManager')
-    .replace(/export\s+class\s+AnimalManager/g, 'class AnimalManager');
-
-  const mockTHREE = {};
-  mockTHREE.Vector3 = class {
-    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
-    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
-    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
-    clone() { return new mockTHREE.Vector3(this.x, this.y, this.z); }
-    sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
-    dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
-    lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
-  };
-  mockTHREE.Group = class {
-    constructor() {
-      this.position = new mockTHREE.Vector3();
-      this.rotation = { x: 0, y: 0, z: 0 };
-      this.children = [];
-    }
-    add() { this.children.push(...arguments); }
-    remove() {}
-  };
-  mockTHREE.Mesh = class {
-    constructor() {
-      this.position = new mockTHREE.Vector3();
-      this.rotation = { x: 0, y: 0, z: 0 };
-    }
-  };
-  mockTHREE.BoxGeometry = class {};
-  mockTHREE.MeshLambertMaterial = class {
-    constructor(opts = {}) {
-      this.color = opts.color;
-      this.emissive = {
-        hex: opts.emissive || 0,
-        setHex: function(val) { this.hex = val; },
-        getHex: function() { return this.hex; }
-      };
-    }
-  };
-
-  const BLOCKS = {
-    AIR: 0,
-    GRASS: 1,
-    DIRT: 2,
-    DIRT_DRY: 3,
-    STONE: 4,
-    COBBLESTONE: 5,
-    OAK_LOG: 6,
-    OAK_LEAVES: 7,
-    WOOD_PLANK: 8,
-    SAND: 9,
-    GRAVEL: 10,
-    WATER: 11,
-    SNOW: 12,
-    ICE: 13,
-    BRICK: 14,
-    CLAY: 15,
-    GLASS: 16,
-    IRON_ORE: 17,
-    GOLD_ORE: 18,
-    TNT: 19,
-    ASPHALT: 20
-  };
-
-  const BLOCK_DEFS = {
-    0: { solid: false },
-    1: { solid: true },
-    2: { solid: true },
-    4: { solid: true },
-    5: { solid: true },
-    6: { solid: true },
-    8: { solid: true },
-    11: { solid: false },
-    14: { solid: true },
-    16: { solid: true },
-    17: { solid: true },
-    18: { solid: true },
-    19: { solid: true, isExplosive: true },
-    20: { solid: true }
-  };
-
-  const fn = new Function('THREE', 'BLOCKS', 'BLOCK_DEFS', animalsCode + '\nreturn { VoxelCar, TrafficManager, AnimalManager, ANIMAL_SPECIES, BLOCKS, BLOCK_DEFS };');
-  return fn(mockTHREE, BLOCKS, BLOCK_DEFS);
-}
-
-class MockVoxelWorld {
-  constructor(defaultBlock = 0) {
-    this.blocks = new Map(); // "x,y,z" -> blockType
-    this.defaultBlock = defaultBlock;
-    this.queries = [];
-  }
-  setBlock(x, y, z, type) {
-    this.blocks.set(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`, type);
-  }
-  getBlock(x, y, z) {
-    this.queries.push({ x, y, z });
-    const val = this.blocks.get(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
-    return val !== undefined ? val : this.defaultBlock;
-  }
-  getRoadHeightAt(x, z) {
-    return 24;
-  }
-}
-
-it('verifies forward obstacle probing 2.5 blocks ahead along travel heading using world.getBlock', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  // Linear highway along +Z: from (1.6, 0) to (1.6, 100)
-  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 100, speed: 10.0, initialProgress: 0.1 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  // Position at progress 0.1 is z = 10
-  assert.strictEqual(Math.round(car.position.z), 10);
-  assert.strictEqual(car.hasObstacle, false);
-
-  // Clear query log
-  mockWorld.queries = [];
-
-  // Probe without obstacles
-  const blockedNoObstacle = car.checkObstacle(2.5);
-  assert.strictEqual(blockedNoObstacle, false, 'checkObstacle must return false when path is clear');
-
-  // Verify that getBlock was called at 2.5 blocks ahead along travel heading (+Z)
-  const probeTargetZ = Math.floor(car.position.z + 2.5); // 10 + 2.5 = 12.5 -> floor is 12
-  const queriedTarget = mockWorld.queries.some(q => q.z === probeTargetZ && (q.x === Math.floor(car.position.x) || q.x === Math.round(car.position.x)));
-  assert.ok(queriedTarget, `world.getBlock must be queried 2.5 blocks ahead along travel heading (expected z=${probeTargetZ})`);
-
-  // Place TNT 2.5 blocks directly ahead at (1, 25, 12)
-  mockWorld.setBlock(Math.floor(car.position.x), 25, probeTargetZ, BLOCKS.TNT);
-
-  const blockedWithTnt = car.checkObstacle(2.5);
-  assert.strictEqual(blockedWithTnt, true, 'checkObstacle must return true when TNT is detected 2.5 blocks ahead');
-  assert.strictEqual(car.hasObstacle, true);
-  assert.strictEqual(car.isBlocked, true);
-});
-
-it('verifies detection of solid walls, monuments, central spawn buildings, and placed blocks while ignoring air and water', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 100, speed: 10.0, initialProgress: 0.0 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  const probeZ = Math.floor(car.position.z + 2.5);
-
-  // Air should not trigger obstacle
-  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.AIR);
-  assert.strictEqual(car.checkObstacle(2.5), false, 'AIR must not trigger obstacle');
-
-  // Water should not trigger solid obstacle
-  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.WATER);
-  assert.strictEqual(car.checkObstacle(2.5), false, 'WATER must not trigger solid obstacle');
-
-  // Stone wall must trigger obstacle
-  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.STONE);
-  assert.strictEqual(car.checkObstacle(2.5), true, 'STONE wall must trigger obstacle');
-
-  // Cobblestone placed block must trigger obstacle
-  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.COBBLESTONE);
-  assert.strictEqual(car.checkObstacle(2.5), true, 'COBBLESTONE placed block must trigger obstacle');
-
-  // Brick building must trigger obstacle
-  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.BRICK);
-  assert.strictEqual(car.checkObstacle(2.5), true, 'BRICK monument building must trigger obstacle');
-
-  // TNT must trigger obstacle
-  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.TNT);
-  assert.strictEqual(car.checkObstacle(2.5), true, 'TNT must trigger obstacle');
-});
-
-it('verifies smooth deceleration and complete halt before colliding with obstacle', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 200, speed: 12.0, initialProgress: 0.05 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  const initialZ = car.position.z;
-  const initialSpeed = car.currentSpeed;
-  assert.strictEqual(initialSpeed, 12.0, 'Car should initially cruise at full route speed');
-
-  // Place a TNT obstacle ahead of the vehicle
-  const obstacleZ = initialZ + 3.0;
-  mockWorld.setBlock(Math.floor(car.position.x), 25, Math.floor(obstacleZ), BLOCKS.TNT);
-  mockWorld.setBlock(Math.round(car.position.x), 25, Math.floor(obstacleZ), BLOCKS.TNT);
-
-  const speeds = [];
-  // Simulate 30 frames with dt = 0.033 (~1 second)
-  for (let frame = 0; frame < 30; frame++) {
-    car.update(0.033);
-    speeds.push(car.currentSpeed);
-  }
-
-  // 1. Verify deceleration was smooth and speed decreased monotonically
-  assert.ok(speeds[0] <= initialSpeed, 'Speed must begin decreasing upon obstacle detection');
-  for (let i = 1; i < speeds.length; i++) {
-    assert.ok(speeds[i] <= speeds[i - 1], `Speed must decrease monotonically during deceleration: frame ${i} (${speeds[i]}) <= frame ${i-1} (${speeds[i-1]})`);
-  }
-
-  // 2. Verify complete halt
-  const finalSpeed = speeds[speeds.length - 1];
-  assert.strictEqual(finalSpeed, 0, 'Car must come to a complete halt (speed = 0)');
-  assert.strictEqual(car.isStopped, true, 'Car isStopped flag must be true');
-
-  // 3. Vehicles must NEVER pass through walls, monuments, central spawn buildings, or placed blocks
-  // Front of car is at position.z + 1.55. It must be strictly before obstacleZ
-  const frontZ = car.position.z + 1.55;
-  assert.ok(frontZ <= obstacleZ, `Car front bumper (z=${frontZ}) must NEVER penetrate obstacle (z=${obstacleZ})`);
-  assert.ok(car.position.z < obstacleZ, 'Car center must strictly remain before the obstacle');
-});
-
-it('verifies smooth acceleration and route resumption when path clears', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 200, speed: 12.0, initialProgress: 0.05 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  // Place obstacle 2.5 blocks ahead and let car come to a complete stop
-  const obstacleZ = Math.floor(car.position.z + 2.5);
-  mockWorld.setBlock(Math.floor(car.position.x), 25, obstacleZ, BLOCKS.TNT);
-
-  for (let i = 0; i < 30; i++) {
-    car.update(0.04);
-  }
-  assert.strictEqual(car.currentSpeed, 0, 'Car should be completely halted at obstacle');
-  assert.strictEqual(car.isBlocked, true);
-
-  const stoppedZ = car.position.z;
-
-  // Player clears / removes the TNT block
-  mockWorld.setBlock(Math.floor(car.position.x), 25, obstacleZ, BLOCKS.AIR);
-  mockWorld.setBlock(Math.round(car.position.x), 25, obstacleZ, BLOCKS.AIR);
-
-  const resumeSpeeds = [];
-  // Update frames after obstacle removal (40 frames * 0.04s = 1.6s to accelerate to 12.0)
-  for (let i = 0; i < 40; i++) {
-    car.update(0.04);
-    resumeSpeeds.push(car.currentSpeed);
-  }
-
-  // 1. Verify speed increases smoothly
-  assert.strictEqual(car.isBlocked, false, 'isBlocked must be false after obstacle removal');
-  assert.ok(resumeSpeeds[0] > 0, 'Car must begin accelerating immediately after path clears');
-  for (let i = 1; i < resumeSpeeds.length; i++) {
-    assert.ok(resumeSpeeds[i] >= resumeSpeeds[i - 1], `Speed must increase monotonically during acceleration: ${resumeSpeeds[i]} >= ${resumeSpeeds[i-1]}`);
-  }
-
-  // 2. Verify car reached top cruising speed and advanced along route
-  assert.strictEqual(car.currentSpeed, 12.0, 'Car must smoothly return to full cruising speed');
-  assert.ok(car.position.z > stoppedZ, 'Car must resume advancing along its highway route');
-});
-
-it('verifies circular roundabout route obstacle detection along tangent heading and smooth halt', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  // Central Roundabout Ring around Spawn Plaza (radius 21)
-  const route = { type: 'circle', cx: 0, cz: 0, radius: 21.0, speed: 7.5, initialProgress: 0.0 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  // At progress 0: position is (21, 25, 0), tangent heading is (0, 1) (+Z)
-  assert.strictEqual(Math.round(car.position.x), 21);
-  assert.strictEqual(Math.round(car.position.z), 0);
-
-  // Normal roundabout operation with clear path
-  car.update(0.016);
-  assert.strictEqual(car.hasObstacle, false);
-  assert.ok(car.currentSpeed > 0);
-
-  // Place placed block / TNT 2.5 blocks ahead along tangent (+Z at x=21, z=3)
-  mockWorld.setBlock(21, 25, 3, BLOCKS.TNT);
-
-  const blocked = car.checkObstacle(2.5);
-  assert.strictEqual(blocked, true, 'Car on circular roundabout must detect obstacle 2.5 blocks ahead along tangent heading');
-
-  // Run update steps until halted
-  for (let i = 0; i < 25; i++) {
-    car.update(0.04);
-  }
-  assert.strictEqual(car.currentSpeed, 0, 'Roundabout car must smoothly halt before obstacle');
-  assert.strictEqual(car.isBlocked, true);
-
-  // Clear obstacle and resume
-  mockWorld.setBlock(21, 25, 3, BLOCKS.AIR);
-  car.update(0.04);
-  assert.strictEqual(car.isBlocked, false);
-  assert.ok(car.currentSpeed > 0, 'Roundabout car must smoothly accelerate once obstacle is cleared');
-});
-
-it('verifies TrafficManager initializes autonomous fleet and propagates obstacle collision intelligence', () => {
-  const { TrafficManager, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-  const mockScene = { add: () => {} };
-
-  const tm = new TrafficManager(mockScene, mockWorld);
-  assert.ok(Array.isArray(tm.cars), 'TrafficManager must maintain an array of cars');
-  assert.strictEqual(tm.cars.length, 12, 'TrafficManager must manage 12 autonomous highway vehicles');
-
-  // Verify all cars possess obstacle probing capability and probeDistance = 2.5
-  for (const car of tm.cars) {
-    assert.strictEqual(typeof car.checkObstacle, 'function', 'Each VoxelCar must have checkObstacle method');
-    assert.strictEqual(typeof car.probeObstacle, 'function', 'Each VoxelCar must have probeObstacle method');
-    assert.strictEqual(car.probeDistance, 2.5, 'Default forward probe distance must be 2.5 blocks');
-    assert.strictEqual(car.trafficManager, tm, 'Each car must be linked to its TrafficManager');
-  }
-
-  // Update all traffic
-  tm.update(0.016);
-
-  // Place obstacle ahead of first car
-  const firstCar = tm.cars[0];
-  const heading = firstCar.getHeadingVector();
-  const obstX = Math.floor(firstCar.position.x + heading.x * 2.5);
-  const obstZ = Math.floor(firstCar.position.z + heading.z * 2.5);
-  mockWorld.setBlock(obstX, 25, obstZ, BLOCKS.TNT);
-
-  // Update traffic manager
-  tm.update(0.05);
-  assert.strictEqual(firstCar.isBlocked, true, 'First car must become blocked upon encountering TNT');
-  assert.ok(firstCar.currentSpeed < firstCar.maxSpeed, 'First car must begin decelerating');
-});
-
-it('verifies checkObstacleAhead casts 3 parallel forward rays at road heights +1 and +2 (center, left +0.6, right -0.6) detecting obstacles up to 8 blocks ahead', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 100.0, speed: 10.0, initialProgress: 0.0 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  // Car starts at (0, 25, 0), front bumper is at z = 1.55.
-  // 1. Center ray obstacle at road height +1 (Y=25) at distance 4.0m ahead of bumper
-  const centerTargetZ = Math.round(car.position.z + 1.55 + 4.0); // 0 + 1.55 + 4 = 5.55 -> round is 6
-  mockWorld.setBlock(0, 25, centerTargetZ, BLOCKS.STONE);
-  const obsCenter = car.checkObstacleAhead(8.0);
-  assert.ok(obsCenter, 'checkObstacleAhead must detect center obstacle');
-  assert.strictEqual(obsCenter.isObstacle, true);
-  assert.strictEqual(obsCenter.blockId, BLOCKS.STONE);
-  assert.ok(obsCenter.distance >= 3.8 && obsCenter.distance <= 4.6, `Distance should be ~4.0m (got ${obsCenter.distance})`);
-  mockWorld.setBlock(0, 25, centerTargetZ, BLOCKS.AIR);
-
-  // 2. Center ray obstacle at road height +2 (Y=26)
-  mockWorld.setBlock(0, 26, centerTargetZ, BLOCKS.BRICK);
-  const obsHeight2 = car.checkObstacleAhead(8.0);
-  assert.ok(obsHeight2, 'checkObstacleAhead must detect obstacle at road height +2 (Y=26)');
-  assert.strictEqual(obsHeight2.y, 26);
-  mockWorld.setBlock(0, 26, centerTargetZ, BLOCKS.AIR);
-
-  // 3. Left ray obstacle (offset -0.6)
-  const leftX = -1; // -0.6 falls into voxel X = -1
-  mockWorld.setBlock(leftX, 25, centerTargetZ, BLOCKS.COBBLESTONE);
-  const obsLeft = car.checkObstacleAhead(8.0);
-  assert.ok(obsLeft, 'checkObstacleAhead must detect left ray obstacle at lateral offset -0.6');
-  mockWorld.setBlock(leftX, 25, centerTargetZ, BLOCKS.AIR);
-
-  // 4. Right ray obstacle (offset +0.6)
-  const rightX = 1; // +0.6 falls into voxel X = 1
-  mockWorld.setBlock(rightX, 25, centerTargetZ, BLOCKS.TNT);
-  const obsRight = car.checkObstacleAhead(8.0);
-  assert.ok(obsRight, 'checkObstacleAhead must detect right ray obstacle at lateral offset +0.6');
-  assert.strictEqual(obsRight.blockId, BLOCKS.TNT);
-  mockWorld.setBlock(rightX, 25, centerTargetZ, BLOCKS.AIR);
-
-  // 5. Obstacle beyond 8 blocks (at 9.0 blocks) must be ignored when lookAheadDist = 8.0
-  const farZ = Math.round(car.position.z + 1.55 + 9.0);
-  mockWorld.setBlock(0, 25, farZ, BLOCKS.STONE);
-  const obsFar = car.checkObstacleAhead(8.0);
-  assert.strictEqual(obsFar, null, 'Obstacle beyond 8.0 blocks must not be returned');
-});
-
-it('verifies smooth linear deceleration between 1.8m and 7.5m, complete halt at <= 1.8m, and taillight emissive states', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 200.0, speed: 12.0, initialProgress: 0.0 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  assert.strictEqual(car.currentSpeed, 12.0);
-  // Initial taillights are normal red
-  assert.strictEqual(car.taillightMat.emissive.getHex(), 0x991b1b, 'Normal cruising taillights should be 0x991b1b');
-
-  // Place obstacle in the deceleration zone: 5.0m ahead of front bumper (1.55 + 5.0 = 6.55 -> z = 7)
-  mockWorld.setBlock(0, 25, 7, BLOCKS.STONE);
-  car.update(0.016);
-
-  // Deceleration zone: 1.8m < d <= 7.5m
-  assert.ok(car.hasObstacle, 'Car must detect obstacle ahead');
-  assert.strictEqual(car.isBraking, true, 'isBraking must be true in deceleration zone');
-  assert.ok(car.targetSpeed < 12.0 && car.targetSpeed > 0, `Target speed should be linearly decelerating (got ${car.targetSpeed})`);
-  assert.ok(car.currentSpeed < 12.0, 'Car should begin smooth deceleration');
-  assert.strictEqual(car.taillightMat.emissive.getHex(), 0xff0000, 'Taillights must be bright red emissive (0xff0000) during braking');
-
-  // Place obstacle in the imminent collision zone: <= 1.8m ahead of front bumper (1.55 + 1.2 = 2.75 -> z = 3)
-  mockWorld.setBlock(0, 25, 7, BLOCKS.AIR);
-  mockWorld.setBlock(0, 25, 3, BLOCKS.STONE);
-  car.update(0.016);
-
-  assert.strictEqual(car.targetSpeed, 0.0, 'Target speed must be 0 when obstacle distance is <= 1.8m');
-  assert.strictEqual(car.currentSpeed, 0.0, 'Car must halt completely before the obstacle');
-  assert.strictEqual(car.isStopped, true, 'isStopped must be true');
-  assert.strictEqual(car.isHalted, true, 'isHalted must be true');
-  assert.strictEqual(car.taillightMat.emissive.getHex(), 0xff0000, 'Taillights must remain bright red emissive (0xff0000) while halted');
-
-  // Clear obstacle: car should accelerate back to cruising speed (12.0 m/s) and restore taillights
-  mockWorld.setBlock(0, 25, 3, BLOCKS.AIR);
-  car.update(0.016);
-
-  assert.strictEqual(car.hasObstacle, false, 'Obstacle must be cleared');
-  assert.strictEqual(car.isHalted, false, 'isHalted must be false after obstacle is removed');
-  assert.strictEqual(car.targetSpeed, 12.0, 'Target speed must restore to max cruising speed');
-  assert.ok(car.currentSpeed > 0, 'Car must begin accelerating');
-  assert.strictEqual(car.taillightMat.emissive.getHex(), 0x991b1b, 'Taillights must be restored to normal (0x991b1b) when path clears');
-
-  // Accelerate to full cruising speed
-  for (let i = 0; i < 60; i++) {
-    car.update(0.033);
-  }
-  assert.strictEqual(car.currentSpeed, 12.0, 'Car must return to full cruising speed (8.0 .. 14.0 m/s)');
-});
-
-it('verifies highway traffic cars never pass through or clip into walls, buildings, or placed blocks', () => {
-  const { VoxelCar, BLOCKS } = loadAnimalsModule();
-  const mockWorld = new MockVoxelWorld();
-
-  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 100.0, speed: 14.0, initialProgress: 0.0 };
-  const car = new VoxelCar(route, null, mockWorld);
-
-  // Build a 3-block wide solid wall / building across the road at z = 10
-  for (let x = -2; x <= 2; x++) {
-    for (let y = 25; y <= 27; y++) {
-      mockWorld.setBlock(x, y, 10, BLOCKS.BRICK);
-    }
-  }
-
-  // Simulate 120 frames at high speed
-  for (let i = 0; i < 120; i++) {
-    car.update(0.033);
-  }
-
-  // Verify car came to a complete halt before the wall without clipping
-  assert.strictEqual(car.currentSpeed, 0, 'Car must halt completely before the wall');
-  assert.strictEqual(car.isStopped, true);
-  const frontZ = car.position.z + 1.55;
-  assert.ok(frontZ <= 10.0, `Car front bumper (z=${frontZ}) must NEVER penetrate the wall (z=10.0)`);
-  assert.ok(car.position.z < 10.0, 'Car position must strictly remain before the wall');
-});
-
-
 
 // =============================================================================
-// SECTION 9: MULTIPLAYER EXCAVATION SYNCHRONIZATION, GROUND DETECTION & ZERO-SINK COLLISION
+// SECTION 8: WEAPONS, TRACERS, TNT & ANIMAL IMPACT (R2)
 // =============================================================================
-console.log('\n[SECTION 9: MULTIPLAYER EXCAVATION SYNCHRONIZATION, GROUND DETECTION & ZERO-SINK COLLISION]');
-
-function loadAvatarModule() {
-  const avatarPath = path.resolve(__dirname, '../public/src/avatar.js');
-  let avatarCode = fs.readFileSync(avatarPath, 'utf8')
-    .replace(/import\s+.*?from\s+.*?;/g, '')
-    .replace(/export\s+class\s+Avatar/g, 'class Avatar');
-
-  class Vector3 {
-    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
-    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
-    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
-    distanceToSquared(v) {
-      const dx = this.x - v.x, dy = this.y - v.y, dz = this.z - v.z;
-      return dx * dx + dy * dy + dz * dz;
-    }
-    lerp(v, alpha) {
-      this.x += (v.x - this.x) * alpha;
-      this.y += (v.y - this.y) * alpha;
-      this.z += (v.z - this.z) * alpha;
-      return this;
-    }
-  }
-
-  class Group {
-    constructor() {
-      this.position = new Vector3();
-      this.rotation = { x: 0, y: 0, z: 0 };
-      this.children = [];
-    }
-    add(child) { this.children.push(child); }
-    remove(child) {}
-    traverse(fn) { fn(this); }
-  }
-
-  class Mesh {
-    constructor(geom, mat) {
-      this.geometry = geom;
-      this.material = mat;
-      this.position = new Vector3();
-      this.rotation = { x: 0, y: 0, z: 0 };
-      this.castShadow = false;
-    }
-  }
-
-  class Color {
-    constructor(val) { this.val = val; }
-    setHSL() { return this; }
-  }
-
-  const THREE = {
-    Group,
-    Vector3,
-    Mesh,
-    Color,
-    BoxGeometry: class {},
-    MeshStandardMaterial: class {},
-    MeshBasicMaterial: class {},
-    CanvasTexture: class {},
-    SpriteMaterial: class {},
-    Sprite: class {
-      constructor() {
-        this.position = new Vector3();
-        this.scale = new Vector3(1, 1, 1);
-      }
-    }
-  };
-
-  const { Avatar } = new Function(
-    'THREE',
-    avatarCode + '\nreturn { Avatar };'
-  )(THREE);
-
-  return { Avatar, THREE };
-}
-
-it('server GameState modifyBlock updates standing player position when supporting floor is excavated', () => {
-  const state = new GameState(12345);
-  const p1 = state.addPlayer('p1', 'Excavator');
-  const p2 = state.addPlayer('p2', 'StandingPlayer');
-
-  p1.pos = [10, 25, 12];
-  p2.pos = [10.2, 25.0, 10.2]; // Standing on block at (10, 24, 10)
-
-  // Excavate block directly beneath p2's feet
-  const result = state.modifyBlock('p1', 10, 24, 10, 0);
-  assert.strictEqual(result.success, true);
-  assert.strictEqual(result.delta.blockType, 0);
-  assert.ok(Array.isArray(result.delta.affectedPlayers));
-  assert.strictEqual(result.delta.affectedPlayers.length, 1);
-  assert.strictEqual(result.delta.affectedPlayers[0].id, 'p2');
-  assert.strictEqual(result.delta.affectedPlayers[0].pos[1], 24);
-
-  // Authoritative player state updated
-  assert.strictEqual(p2.pos[1], 24);
-  const snapshot = state.getPlayersSnapshot();
-  const p2Snap = snapshot.find(p => p.id === 'p2');
-  assert.strictEqual(p2Snap.pos[1], 24);
-});
-
-it('server GameState modifyBlock rejects placing solid block intersecting any player bounding box', () => {
-  const state = new GameState(12345);
-  const p1 = state.addPlayer('p1', 'Builder');
-  const p2 = state.addPlayer('p2', 'OtherPlayer');
-
-  p1.pos = [10, 25, 12];
-  p2.pos = [10.2, 25.0, 10.2];
-
-  // p1 tries to place block at (10, 25, 10) inside p2
-  const placeResult = state.modifyBlock('p1', 10, 25, 10, 1);
-  assert.strictEqual(placeResult.success, false);
-  assert.strictEqual(placeResult.reason, 'Cannot place block inside player');
-});
-
-it('Avatar ground detection accurately computes exposed floor height after block excavation', () => {
-  const { Avatar } = loadAvatarModule();
-  const scene = { add: () => {}, remove: () => {} };
-  const world = {
-    blocks: new Map(),
-    getBlock(x, y, z) {
-      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
-      return this.blocks.has(key) ? this.blocks.get(key) : 0;
-    },
-    getHeightAt(x, z) {
-      return 24;
-    }
-  };
-
-  // Set up solid ground at Y=23 (stone: 4) and Y=24 (gold: 18)
-  world.blocks.set('0,23,0', 4);
-  world.blocks.set('0,24,0', 18);
-
-  const avatar = new Avatar('remote1', 'RemoteSteve', scene, world);
-  avatar.group.position.set(0.5, 25.0, 0.5);
-  avatar.targetPos.set(0.5, 25.0, 0.5);
-
-  // Before excavation, ground is at 25.0 (resting on top of block 24)
-  assert.strictEqual(avatar.getGroundHeight(0.5, 0.5, 25.0), 25.0);
-  assert.strictEqual(avatar.isSupportedByBlock(0, 24, 0), true);
-
-  // Excavate block 24 -> becomes AIR (0)
-  world.blocks.set('0,24,0', 0);
-
-  // Ground detection immediately returns 24.0 (resting on top of block 23)
-  const exposedFloor = avatar.getGroundHeight(0.5, 0.5, 25.0);
-  assert.strictEqual(exposedFloor, 24.0);
-});
-
-it('Avatar detects when supporting block beneath feet is removed and falls naturally with gravity', () => {
-  const { Avatar } = loadAvatarModule();
-  const scene = { add: () => {}, remove: () => {} };
-  const world = {
-    blocks: new Map([
-      ['0,23,0', 4], // stone floor at Y=23 (surface 24.0)
-      ['0,24,0', 0]  // block 24 excavated!
-    ]),
-    getBlock(x, y, z) {
-      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
-      return this.blocks.has(key) ? this.blocks.get(key) : 0;
-    },
-    getHeightAt: () => 24
-  };
-
-  const avatar = new Avatar('remote1', 'FallingSteve', scene, world);
-  avatar.group.position.set(0.5, 25.0, 0.5);
-  avatar.targetPos.set(0.5, 25.0, 0.5);
-
-  // Block at (0, 24, 0) was removed
-  avatar.onSupportingBlockRemoved(0, 24, 0);
-
-  // Target position immediately updated to 24.0 and downward fall initiated
-  assert.strictEqual(avatar.targetPos.y, 24.0);
-  assert.strictEqual(avatar.onGround, false);
-  assert.ok(avatar.velY < 0, 'Avatar must acquire downward velocity to fall naturally');
-
-  // Simulate multiple physics frames of natural falling
-  let landed = false;
-  for (let step = 0; step < 20; step++) {
-    avatar.update(0.02); // 20ms physics step
-    if (avatar.onGround && avatar.group.position.y === 24.0) {
-      landed = true;
-      break;
-    }
-  }
-
-  assert.strictEqual(landed, true, 'Avatar must fall naturally and land on exposed floor');
-  assert.strictEqual(avatar.group.position.y, 24.0, 'Avatar must stand firmly at Y=24.0');
-  assert.strictEqual(avatar.velY, 0, 'Vertical velocity must reset to 0 upon landing');
-  assert.strictEqual(avatar.onGround, true, 'Avatar must be onGround once landed');
-});
-
-it('Avatar eliminates burying/sinking glitch by strictly clamping to solid voxel floor', () => {
-  const { Avatar } = loadAvatarModule();
-  const scene = { add: () => {}, remove: () => {} };
-  const world = {
-    blocks: new Map([
-      ['5,24,5', 4] // Solid floor at Y=24 (surface 25.0)
-    ]),
-    getBlock(x, y, z) {
-      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
-      return this.blocks.has(key) ? this.blocks.get(key) : 0;
-    },
-    getHeightAt: () => 24
-  };
-
-  const avatar = new Avatar('remote1', 'SolidSteve', scene, world);
-  avatar.group.position.set(5.5, 25.0, 5.5);
-  avatar.targetPos.set(5.5, 25.0, 5.5);
-
-  // Try to set remote position that would bury the player into the solid block (Y=23.5)
-  avatar.setTargetState([5.5, 23.5, 5.5], [0, 0], 'idle');
-
-  // setTargetState must clamp targetPos.y to solid ground (25.0)
-  assert.strictEqual(avatar.targetPos.y, 25.0, 'Target position must not allow avatar to sink into solid blocks');
-
-  // If group position is forcefully set below ground, update must clamp it immediately
-  avatar.group.position.y = 22.0;
-  avatar.update(0.016);
-  assert.strictEqual(avatar.group.position.y, 25.0, 'Avatar model must never be buried beneath solid floor');
-});
-
-it('PlayerPhysics immediate floor detection and falling when supporting block is broken', () => {
-  const { PlayerPhysics } = loadPlayerPhysicsModule();
-  const world = {
-    blocks: new Map([
-      ['0,23,0', 4], // solid floor
-      ['0,24,0', 4]  // block currently standing on
-    ]),
-    getBlock(x, y, z) {
-      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
-      return this.blocks.has(key) ? this.blocks.get(key) : 0;
-    },
-    getHeightAt: () => 24
-  };
-
-  const physics = new PlayerPhysics(world);
-  physics.pos = { x: 0.5, y: 25.0, z: 0.5 };
-  physics.vel = { x: 0, y: 0, z: 0 };
-  physics.onGround = true;
-
-  // Verify standing on block
-  assert.strictEqual(physics.isSupportedByBlock(0, 24, 0), true);
-
-  // Remove supporting block at (0, 24, 0)
-  world.blocks.set('0,24,0', 0);
-  physics.onBlockBroken(0, 24, 0);
-
-  assert.strictEqual(physics.onGround, false, 'Player must immediately lose onGround status when supporting block breaks');
-
-  // Run physics updates until landing on block 23 (Y=24.0)
-  for (let i = 0; i < 30; i++) {
-    physics.update(0.016, { moveX: 0, moveZ: 0, jump: false, sprint: false });
-    if (physics.onGround) break;
-  }
-
-  assert.strictEqual(physics.onGround, true, 'Player must land on exposed floor');
-  assert.strictEqual(physics.pos.y, 24.0, 'Player feet must be firmly on Y=24.0');
-});
-
-it('MultiplayerClient broadcasts and applies block deltas immediately and triggers ground detection', () => {
-  const { Avatar } = loadAvatarModule();
-  const multPath = path.resolve(__dirname, '../public/src/multiplayer.js');
-  let multCode = fs.readFileSync(multPath, 'utf8')
-    .replace(/import\s+.*?from\s+.*?;/g, '')
-    .replace(/export\s+class\s+MultiplayerClient/g, 'class MultiplayerClient');
-
-  const { MultiplayerClient } = new Function(
-    'Avatar',
-    multCode + '\nreturn { MultiplayerClient };'
-  )(Avatar);
-
-  const mockWorld = {
-    blocks: new Map([
-      ['10,23,10', 4],
-      ['10,24,10', 4]
-    ]),
-    blockDeltas: new Map(),
-    getBlock(x, y, z) {
-      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
-      return this.blocks.has(key) ? this.blocks.get(key) : 0;
-    },
-    setBlock(x, y, z, type) {
-      this.blocks.set(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`, type);
-    },
-    applyBlockDelta(x, y, z, type) {
-      this.blockDeltas.set(`${x},${y},${z}`, type);
-      this.setBlock(x, y, z, type);
-    },
-    getHeightAt: () => 24
-  };
-
-  const scene = { add: () => {}, remove: () => {} };
-  const particles = { spawnBlockDebris: () => {} };
-
-  const client = new MultiplayerClient(mockWorld, scene, particles);
-  client.myId = 'local_p1';
-
-  // Add remote player standing on (10, 24, 10)
-  client.addRemotePlayer({ id: 'remote_p2', name: 'Partner', pos: [10.5, 25.0, 10.5], rot: [0, 0], action: 'idle' });
-  const remote = client.remoteAvatars.get('remote_p2');
-  assert.ok(remote);
-  assert.strictEqual(remote.group.position.y, 25.0);
-
-  // Incoming synchronized block update: block at (10, 24, 10) was broken!
-  client.handleMessage(JSON.stringify({
-    type: 'block_update',
-    data: { x: 10, y: 24, z: 10, blockType: 0, playerId: 'local_p1' }
-  }));
-
-  // Block delta must be recorded in world.blockDeltas and world block updated
-  assert.strictEqual(mockWorld.blockDeltas.get('10,24,10'), 0);
-  assert.strictEqual(mockWorld.getBlock(10, 24, 10), 0);
-
-  // Remote avatar targetPos.y must be immediately updated to newly exposed floor (24.0)
-  assert.strictEqual(remote.targetPos.y, 24.0, 'Remote avatar targetPos.y must immediately update to newly exposed floor');
-  assert.strictEqual(remote.onGround, false, 'Remote avatar must begin falling');
-});
-
-it('server GameState modifyBlock updates multiple players standing on the same excavated block', () => {
-  const state = new GameState(12345);
-  const p1 = state.addPlayer('p1', 'Excavator');
-  const p2 = state.addPlayer('p2', 'Standing1');
-  const p3 = state.addPlayer('p3', 'Standing2');
-
-  p1.pos = [0, 25, 2];
-  p2.pos = [0.1, 25.0, 0.1];
-  p3.pos = [0.2, 25.0, 0.2];
-
-  // Excavate block beneath both p2 and p3
-  const result = state.modifyBlock('p1', 0, 24, 0, 0);
-  assert.strictEqual(result.success, true);
-  assert.strictEqual(result.delta.affectedPlayers.length, 2);
-  const ids = result.delta.affectedPlayers.map(p => p.id);
-  assert.ok(ids.includes('p2'));
-  assert.ok(ids.includes('p3'));
-
-  assert.strictEqual(p2.pos[1], 24);
-  assert.strictEqual(p3.pos[1], 24);
-});
-
-it('server GameState modifyBlock handles deep multi-level vertical excavation down through multiple blocks', () => {
-  const state = new GameState(12345);
-  const p1 = state.addPlayer('p1', 'Miner');
-  const p2 = state.addPlayer('p2', 'ShaftVictim');
-
-  p1.pos = [2, 25, 2];
-  p2.pos = [2.1, 25.0, 0.1];
-
-  // Excavate block 24 -> victim drops to 24
-  const res1 = state.modifyBlock('p1', 2, 24, 0, 0);
-  assert.strictEqual(res1.success, true);
-  assert.strictEqual(p2.pos[1], 24);
-
-  // Excavate block 23 -> victim drops to 23
-  const res2 = state.modifyBlock('p1', 2, 23, 0, 0);
-  assert.strictEqual(res2.success, true);
-  assert.strictEqual(p2.pos[1], 23);
-
-  // Excavate block 22 -> victim drops to 22
-  const res3 = state.modifyBlock('p1', 2, 22, 0, 0);
-  assert.strictEqual(res3.success, true);
-  assert.strictEqual(p2.pos[1], 22);
-});
-
-it('server GameState detonateTnt updates standing player authoritative Y position to newly exposed floor', () => {
-  const state = new GameState(12345);
-  const p1 = state.addPlayer('p1', 'TntGuy');
-  p1.pos = [10.1, 25.0, 10.1];
-
-  // Detonate TNT at (10, 24, 10) directly beneath p1 with radius 2
-  const blast = state.detonateTnt(10, 24, 10, 2);
-  assert.ok(blast.destroyedBlocks.length > 0);
-
-  // p1 must have fallen to newly exposed floor below 24
-  assert.ok(p1.pos[1] < 25.0, 'Player Y must drop to newly exposed floor after TNT blast');
-});
-
-it('verifies World.prototype.applyAuthoritativeBlock updates voxel memory immediately and synchronously remeshes chunk and boundary neighbors', () => {
-  const { World, BLOCKS } = loadWorldModule();
-  const mockMaterials = { solidMaterial: {}, transparentMaterial: {}, waterMaterial: {}, getUV: () => [0, 0, 1, 1] };
-  const world = new World(null, mockMaterials, 12345);
-
-  // Set block in center of chunk (0, 0)
-  world.setBlock(5, 24, 5, BLOCKS.STONE);
-  const chunk00 = world.getChunk(0, 0);
-  assert.ok(chunk00);
-
-  // Apply authoritative block destruction
-  world.applyAuthoritativeBlock(5, 24, 5, BLOCKS.AIR);
-  assert.strictEqual(world.getBlock(5, 24, 5), BLOCKS.AIR);
-  assert.strictEqual(world.blockDeltas.get('5,24,5'), BLOCKS.AIR);
-  assert.strictEqual(chunk00.rebuilt, true);
-  assert.strictEqual(chunk00.isDirty, false);
-
-  // Now test boundary block on west border (lx = 0) of chunk (1, 0) -> global x = 16
-  world.getOrCreateChunk(0, 0);
-  world.getOrCreateChunk(1, 0);
-  const chunk10 = world.getChunk(1, 0);
-  chunk00.rebuilt = false;
-  chunk10.rebuilt = false;
-
-  world.applyAuthoritativeBlock(16, 24, 5, BLOCKS.AIR);
-  assert.strictEqual(world.getBlock(16, 24, 5), BLOCKS.AIR);
-  assert.strictEqual(chunk10.rebuilt, true, 'Main chunk must be synchronously remeshed');
-  assert.strictEqual(chunk00.rebuilt, true, 'West neighbor chunk across boundary (lx=0) must be synchronously remeshed');
-
-  // Verify block synchronization hook invocation
-  let hookCalled = false;
-  let hookedBlock = null;
-  world.addBlockHook((x, y, z, blockType) => {
-    hookCalled = true;
-    hookedBlock = { x, y, z, blockType };
-  });
-  world.applyAuthoritativeBlock(3, 20, 3, BLOCKS.GRASS);
-  assert.strictEqual(hookCalled, true, 'Registered block hook must be invoked');
-  assert.deepStrictEqual(hookedBlock, { x: 3, y: 20, z: 3, blockType: BLOCKS.GRASS });
-});
-
-it('verifies Avatar leg pivot alignment at Y=0.75, torso at Y=1.125, head at Y=1.50 preventing floor submergence', () => {
-  const { Avatar } = loadAvatarModule();
-  const scene = { add: () => {}, remove: () => {} };
-  const avatar = new Avatar('test_steve', 'Steve', scene, null);
-
-  // 1. Verify hip pivots are at Y = 0.75
-  assert.strictEqual(avatar.leftLegPivot.position.y, 0.75, 'Left leg pivot must be at Y = 0.75');
-  assert.strictEqual(avatar.rightLegPivot.position.y, 0.75, 'Right leg pivot must be at Y = 0.75');
-
-  // 2. Verify torso is at Y = 1.125 (height 0.75 spans 0.75 to 1.50)
-  assert.strictEqual(avatar.torso.position.y, 1.125, 'Torso must be centered at Y = 1.125');
-
-  // 3. Verify head group pivot is at Y = 1.50 and arms at Y = 1.375
-  assert.strictEqual(avatar.headGroup.position.y, 1.50, 'Head group must pivot at neck Y = 1.50');
-  assert.strictEqual(avatar.leftArmPivot.position.y, 1.375, 'Left arm must pivot at shoulder Y = 1.375');
-  assert.strictEqual(avatar.rightArmPivot.position.y, 1.375, 'Right arm must pivot at shoulder Y = 1.375');
-
-  // 4. Verify static source code does not contain the old 0.625 submergence pivot
-  const avatarPath = path.resolve(__dirname, '../public/src/avatar.js');
-  const avatarCode = fs.readFileSync(avatarPath, 'utf8');
-  assert.strictEqual(avatarCode.includes('0.625'), false, 'avatar.js must not contain submerged 0.625 pivot');
-});
-
-it('verifies Avatar.prototype.updateGroundSupport invalidates onGround and applies downward velocity when supporting block is AIR', () => {
-  const { Avatar } = loadAvatarModule();
-  const scene = { add: () => {}, remove: () => {} };
-  const world = {
-    blocks: new Map([
-      ['0,24,0', 4]
-    ]),
-    getBlock(x, y, z) {
-      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
-      return this.blocks.has(key) ? this.blocks.get(key) : 0;
-    },
-    getHeightAt: () => 24
-  };
-
-  const avatar = new Avatar('support_test', 'SupportSteve', scene, world);
-  avatar.group.position.set(0.5, 25.0, 0.5);
-  avatar.onGround = true;
-
-  // With solid stone at (0, 24, 0), ground support is valid
-  const supported = avatar.updateGroundSupport(world);
-  assert.strictEqual(supported, true);
-  assert.strictEqual(avatar.onGround, true);
-
-  // Excavate block beneath feet
-  world.blocks.set('0,24,0', 0); // AIR
-
-  // updateGroundSupport must return false, invalidate onGround, and apply downward velocity
-  const unsupported = avatar.updateGroundSupport(world);
-  assert.strictEqual(unsupported, false);
-  assert.strictEqual(avatar.onGround, false);
-  assert.ok(avatar.velY < 0, 'Vertical velocity must be negative to initiate downward descent');
-});
-
-// =============================================================================
-// SECTION 10: MILESTONE M2 — PREMIUM WEAPONS, SYNCHRONIZED TRACERS & TNT REACTIVITY
-// =============================================================================
-console.log('\n[SECTION 10: MILESTONE M2 — PREMIUM WEAPONS, SYNCHRONIZED TRACERS & TNT REACTIVITY]');
+console.log('\n[SECTION 8: WEAPONS, TRACERS, TNT & ANIMAL IMPACT (R2)]');
 
 function loadControlsModuleForM2() {
   const controlsPath = path.resolve(__dirname, '../public/src/controls.js');
@@ -2229,6 +1290,19 @@ function loadControlsModuleForM2() {
       getElementById: () => null,
       querySelectorAll: () => [],
       addEventListener: () => {},
+      createElement: () => ({
+        getContext: () => ({
+          fillRect: () => {},
+          strokeRect: () => {},
+          beginPath: () => {},
+          roundRect: () => {},
+          rect: () => {},
+          fill: () => {},
+          stroke: () => {},
+          measureText: () => ({ width: 50 }),
+          fillText: () => {}
+        })
+      }),
       pointerLockElement: null
     };
   }
@@ -2743,6 +1817,1242 @@ it('verifies Multiplayer network synchronization of WEAPON_SHOT_FX, WEAPON_SHOOT
   assert.strictEqual(burstBroadcast.data.animalId, 'anim_test');
   assert.strictEqual(burstBroadcast.data.shooterId, 'shooter_1');
   assert.deepStrictEqual(burstBroadcast.data.dir, [1, 0, 0], 'ANIMAL_BURST must broadcast bullet direction for knockback');
+});
+
+// =============================================================================
+// SECTION 9: HIGHWAY TRAFFIC OBSTACLE INTELLIGENCE (R3)
+// =============================================================================
+console.log('\n[SECTION 9: HIGHWAY TRAFFIC OBSTACLE INTELLIGENCE (R3)]');
+
+function loadAnimalsModule() {
+  const animalsPath = path.resolve(__dirname, '../public/src/animals.js');
+  let animalsCode = fs.readFileSync(animalsPath, 'utf8');
+
+  animalsCode = animalsCode
+    .replace(/import\s+.*?from\s+.*?;/g, '')
+    .replace(/export\s+const\s+ANIMAL_SPECIES\s+=/g, 'const ANIMAL_SPECIES =')
+    .replace(/export\s+class\s+VoxelCar/g, 'class VoxelCar')
+    .replace(/export\s+class\s+TrafficManager/g, 'class TrafficManager')
+    .replace(/export\s+class\s+AnimalManager/g, 'class AnimalManager');
+
+  const mockTHREE = {};
+  mockTHREE.Vector3 = class {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+    clone() { return new mockTHREE.Vector3(this.x, this.y, this.z); }
+    sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
+    dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+    lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
+  };
+  mockTHREE.Group = class {
+    constructor() {
+      this.position = new mockTHREE.Vector3();
+      this.rotation = { x: 0, y: 0, z: 0 };
+      this.children = [];
+    }
+    add() { this.children.push(...arguments); }
+    remove() {}
+  };
+  mockTHREE.Mesh = class {
+    constructor() {
+      this.position = new mockTHREE.Vector3();
+      this.rotation = { x: 0, y: 0, z: 0 };
+    }
+  };
+  mockTHREE.BoxGeometry = class {};
+  mockTHREE.MeshLambertMaterial = class {
+    constructor(opts = {}) {
+      this.color = opts.color;
+      this.emissive = {
+        hex: opts.emissive || 0,
+        setHex: function(val) { this.hex = val; },
+        getHex: function() { return this.hex; }
+      };
+    }
+  };
+
+  const BLOCKS = {
+    AIR: 0,
+    GRASS: 1,
+    DIRT: 2,
+    DIRT_DRY: 3,
+    STONE: 4,
+    COBBLESTONE: 5,
+    OAK_LOG: 6,
+    OAK_LEAVES: 7,
+    WOOD_PLANK: 8,
+    SAND: 9,
+    GRAVEL: 10,
+    WATER: 11,
+    SNOW: 12,
+    ICE: 13,
+    BRICK: 14,
+    CLAY: 15,
+    GLASS: 16,
+    IRON_ORE: 17,
+    GOLD_ORE: 18,
+    TNT: 19,
+    ASPHALT: 20
+  };
+
+  const BLOCK_DEFS = {
+    0: { solid: false },
+    1: { solid: true },
+    2: { solid: true },
+    4: { solid: true },
+    5: { solid: true },
+    6: { solid: true },
+    8: { solid: true },
+    11: { solid: false },
+    14: { solid: true },
+    16: { solid: true },
+    17: { solid: true },
+    18: { solid: true },
+    19: { solid: true, isExplosive: true },
+    20: { solid: true }
+  };
+
+  const fn = new Function('THREE', 'BLOCKS', 'BLOCK_DEFS', animalsCode + '\nreturn { VoxelCar, TrafficManager, AnimalManager, ANIMAL_SPECIES, BLOCKS, BLOCK_DEFS };');
+  return fn(mockTHREE, BLOCKS, BLOCK_DEFS);
+}
+
+class MockVoxelWorld {
+  constructor(defaultBlock = 0) {
+    this.blocks = new Map(); // "x,y,z" -> blockType
+    this.defaultBlock = defaultBlock;
+    this.queries = [];
+  }
+  setBlock(x, y, z, type) {
+    this.blocks.set(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`, type);
+  }
+  getBlock(x, y, z) {
+    this.queries.push({ x, y, z });
+    const val = this.blocks.get(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
+    return val !== undefined ? val : this.defaultBlock;
+  }
+  getRoadHeightAt(x, z) {
+    return 24;
+  }
+}
+
+it('verifies forward obstacle probing 2.5 blocks ahead along travel heading using world.getBlock', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  // Linear highway along +Z: from (1.6, 0) to (1.6, 100)
+  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 100, speed: 10.0, initialProgress: 0.1 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  // Position at progress 0.1 is z = 10
+  assert.strictEqual(Math.round(car.position.z), 10);
+  assert.strictEqual(car.hasObstacle, false);
+
+  // Clear query log
+  mockWorld.queries = [];
+
+  // Probe without obstacles
+  const blockedNoObstacle = car.checkObstacle(2.5);
+  assert.strictEqual(blockedNoObstacle, false, 'checkObstacle must return false when path is clear');
+
+  // Verify that getBlock was called at 2.5 blocks ahead along travel heading (+Z)
+  const probeTargetZ = Math.floor(car.position.z + 2.5); // 10 + 2.5 = 12.5 -> floor is 12
+  const queriedTarget = mockWorld.queries.some(q => q.z === probeTargetZ && (q.x === Math.floor(car.position.x) || q.x === Math.round(car.position.x)));
+  assert.ok(queriedTarget, `world.getBlock must be queried 2.5 blocks ahead along travel heading (expected z=${probeTargetZ})`);
+
+  // Place TNT 2.5 blocks directly ahead at (1, 25, 12)
+  mockWorld.setBlock(Math.floor(car.position.x), 25, probeTargetZ, BLOCKS.TNT);
+
+  const blockedWithTnt = car.checkObstacle(2.5);
+  assert.strictEqual(blockedWithTnt, true, 'checkObstacle must return true when TNT is detected 2.5 blocks ahead');
+  assert.strictEqual(car.hasObstacle, true);
+  assert.strictEqual(car.isBlocked, true);
+});
+
+it('verifies detection of solid walls, monuments, central spawn buildings, and placed blocks while ignoring air and water', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 100, speed: 10.0, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  const probeZ = Math.floor(car.position.z + 2.5);
+
+  // Air should not trigger obstacle
+  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.AIR);
+  assert.strictEqual(car.checkObstacle(2.5), false, 'AIR must not trigger obstacle');
+
+  // Water should not trigger solid obstacle
+  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.WATER);
+  assert.strictEqual(car.checkObstacle(2.5), false, 'WATER must not trigger solid obstacle');
+
+  // Stone wall must trigger obstacle
+  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.STONE);
+  assert.strictEqual(car.checkObstacle(2.5), true, 'STONE wall must trigger obstacle');
+
+  // Cobblestone placed block must trigger obstacle
+  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.COBBLESTONE);
+  assert.strictEqual(car.checkObstacle(2.5), true, 'COBBLESTONE placed block must trigger obstacle');
+
+  // Brick building must trigger obstacle
+  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.BRICK);
+  assert.strictEqual(car.checkObstacle(2.5), true, 'BRICK monument building must trigger obstacle');
+
+  // TNT must trigger obstacle
+  mockWorld.setBlock(Math.floor(car.position.x), 25, probeZ, BLOCKS.TNT);
+  assert.strictEqual(car.checkObstacle(2.5), true, 'TNT must trigger obstacle');
+});
+
+it('verifies smooth deceleration and complete halt before colliding with obstacle', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 200, speed: 12.0, initialProgress: 0.05 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  const initialZ = car.position.z;
+  const initialSpeed = car.currentSpeed;
+  assert.strictEqual(initialSpeed, 12.0, 'Car should initially cruise at full route speed');
+
+  // Place a TNT obstacle ahead of the vehicle
+  const obstacleZ = initialZ + 3.0;
+  mockWorld.setBlock(Math.floor(car.position.x), 25, Math.floor(obstacleZ), BLOCKS.TNT);
+  mockWorld.setBlock(Math.round(car.position.x), 25, Math.floor(obstacleZ), BLOCKS.TNT);
+
+  const speeds = [];
+  // Simulate 30 frames with dt = 0.033 (~1 second)
+  for (let frame = 0; frame < 30; frame++) {
+    car.update(0.033);
+    speeds.push(car.currentSpeed);
+  }
+
+  // 1. Verify deceleration was smooth and speed decreased monotonically
+  assert.ok(speeds[0] <= initialSpeed, 'Speed must begin decreasing upon obstacle detection');
+  for (let i = 1; i < speeds.length; i++) {
+    assert.ok(speeds[i] <= speeds[i - 1], `Speed must decrease monotonically during deceleration: frame ${i} (${speeds[i]}) <= frame ${i-1} (${speeds[i-1]})`);
+  }
+
+  // 2. Verify complete halt
+  const finalSpeed = speeds[speeds.length - 1];
+  assert.strictEqual(finalSpeed, 0, 'Car must come to a complete halt (speed = 0)');
+  assert.strictEqual(car.isStopped, true, 'Car isStopped flag must be true');
+
+  // 3. Vehicles must NEVER pass through walls, monuments, central spawn buildings, or placed blocks
+  // Front of car is at position.z + 1.55. It must be strictly before obstacleZ
+  const frontZ = car.position.z + 1.55;
+  assert.ok(frontZ <= obstacleZ, `Car front bumper (z=${frontZ}) must NEVER penetrate obstacle (z=${obstacleZ})`);
+  assert.ok(car.position.z < obstacleZ, 'Car center must strictly remain before the obstacle');
+});
+
+it('verifies smooth acceleration and route resumption when path clears', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 1.6, z1: 0, x2: 1.6, z2: 200, speed: 12.0, initialProgress: 0.05 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  // Place obstacle 2.5 blocks ahead and let car come to a complete stop
+  const obstacleZ = Math.floor(car.position.z + 2.5);
+  mockWorld.setBlock(Math.floor(car.position.x), 25, obstacleZ, BLOCKS.TNT);
+
+  for (let i = 0; i < 30; i++) {
+    car.update(0.04);
+  }
+  assert.strictEqual(car.currentSpeed, 0, 'Car should be completely halted at obstacle');
+  assert.strictEqual(car.isBlocked, true);
+
+  const stoppedZ = car.position.z;
+
+  // Player clears / removes the TNT block
+  mockWorld.setBlock(Math.floor(car.position.x), 25, obstacleZ, BLOCKS.AIR);
+  mockWorld.setBlock(Math.round(car.position.x), 25, obstacleZ, BLOCKS.AIR);
+
+  const resumeSpeeds = [];
+  // Update frames after obstacle removal (40 frames * 0.04s = 1.6s to accelerate to 12.0)
+  for (let i = 0; i < 40; i++) {
+    car.update(0.04);
+    resumeSpeeds.push(car.currentSpeed);
+  }
+
+  // 1. Verify speed increases smoothly
+  assert.strictEqual(car.isBlocked, false, 'isBlocked must be false after obstacle removal');
+  assert.ok(resumeSpeeds[0] > 0, 'Car must begin accelerating immediately after path clears');
+  for (let i = 1; i < resumeSpeeds.length; i++) {
+    assert.ok(resumeSpeeds[i] >= resumeSpeeds[i - 1], `Speed must increase monotonically during acceleration: ${resumeSpeeds[i]} >= ${resumeSpeeds[i-1]}`);
+  }
+
+  // 2. Verify car reached top cruising speed and advanced along route
+  assert.strictEqual(car.currentSpeed, 12.0, 'Car must smoothly return to full cruising speed');
+  assert.ok(car.position.z > stoppedZ, 'Car must resume advancing along its highway route');
+});
+
+it('verifies circular roundabout route obstacle detection along tangent heading and smooth halt', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  // Central Roundabout Ring around Spawn Plaza (radius 21)
+  const route = { type: 'circle', cx: 0, cz: 0, radius: 21.0, speed: 7.5, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  // At progress 0: position is (21, 25, 0), tangent heading is (0, 1) (+Z)
+  assert.strictEqual(Math.round(car.position.x), 21);
+  assert.strictEqual(Math.round(car.position.z), 0);
+
+  // Normal roundabout operation with clear path
+  car.update(0.016);
+  assert.strictEqual(car.hasObstacle, false);
+  assert.ok(car.currentSpeed > 0);
+
+  // Place placed block / TNT 2.5 blocks ahead along tangent (+Z at x=21, z=3)
+  mockWorld.setBlock(21, 25, 3, BLOCKS.TNT);
+
+  const blocked = car.checkObstacle(2.5);
+  assert.strictEqual(blocked, true, 'Car on circular roundabout must detect obstacle 2.5 blocks ahead along tangent heading');
+
+  // Run update steps until halted
+  for (let i = 0; i < 25; i++) {
+    car.update(0.04);
+  }
+  assert.strictEqual(car.currentSpeed, 0, 'Roundabout car must smoothly halt before obstacle');
+  assert.strictEqual(car.isBlocked, true);
+
+  // Clear obstacle and resume
+  mockWorld.setBlock(21, 25, 3, BLOCKS.AIR);
+  car.update(0.04);
+  assert.strictEqual(car.isBlocked, false);
+  assert.ok(car.currentSpeed > 0, 'Roundabout car must smoothly accelerate once obstacle is cleared');
+});
+
+it('verifies TrafficManager initializes autonomous fleet and propagates obstacle collision intelligence', () => {
+  const { TrafficManager, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+  const mockScene = { add: () => {} };
+
+  const tm = new TrafficManager(mockScene, mockWorld);
+  assert.ok(Array.isArray(tm.cars), 'TrafficManager must maintain an array of cars');
+  assert.strictEqual(tm.cars.length, 12, 'TrafficManager must manage 12 autonomous highway vehicles');
+
+  // Verify all cars possess obstacle probing capability and probeDistance = 2.5
+  for (const car of tm.cars) {
+    assert.strictEqual(typeof car.checkObstacle, 'function', 'Each VoxelCar must have checkObstacle method');
+    assert.strictEqual(typeof car.probeObstacle, 'function', 'Each VoxelCar must have probeObstacle method');
+    assert.strictEqual(car.probeDistance, 2.5, 'Default forward probe distance must be 2.5 blocks');
+    assert.strictEqual(car.trafficManager, tm, 'Each car must be linked to its TrafficManager');
+  }
+
+  // Update all traffic
+  tm.update(0.016);
+
+  // Place obstacle ahead of first car
+  const firstCar = tm.cars[0];
+  const heading = firstCar.getHeadingVector();
+  const obstX = Math.floor(firstCar.position.x + heading.x * 2.5);
+  const obstZ = Math.floor(firstCar.position.z + heading.z * 2.5);
+  mockWorld.setBlock(obstX, 25, obstZ, BLOCKS.TNT);
+
+  // Update traffic manager
+  tm.update(0.05);
+  assert.strictEqual(firstCar.isBlocked, true, 'First car must become blocked upon encountering TNT');
+  assert.ok(firstCar.currentSpeed < firstCar.maxSpeed, 'First car must begin decelerating');
+});
+
+it('verifies checkObstacleAhead casts 3 parallel forward rays at road heights +1 and +2 (center, left +0.6, right -0.6) detecting obstacles up to 8 blocks ahead', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 100.0, speed: 10.0, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  // Car starts at (0, 25, 0), front bumper is at z = 1.55.
+  // 1. Center ray obstacle at road height +1 (Y=25) at distance 4.0m ahead of bumper
+  const centerTargetZ = Math.round(car.position.z + 1.55 + 4.0); // 0 + 1.55 + 4 = 5.55 -> round is 6
+  mockWorld.setBlock(0, 25, centerTargetZ, BLOCKS.STONE);
+  const obsCenter = car.checkObstacleAhead(8.0);
+  assert.ok(obsCenter, 'checkObstacleAhead must detect center obstacle');
+  assert.strictEqual(obsCenter.isObstacle, true);
+  assert.strictEqual(obsCenter.blockId, BLOCKS.STONE);
+  assert.ok(obsCenter.distance >= 3.8 && obsCenter.distance <= 4.6, `Distance should be ~4.0m (got ${obsCenter.distance})`);
+  mockWorld.setBlock(0, 25, centerTargetZ, BLOCKS.AIR);
+
+  // 2. Center ray obstacle at road height +2 (Y=26)
+  mockWorld.setBlock(0, 26, centerTargetZ, BLOCKS.BRICK);
+  const obsHeight2 = car.checkObstacleAhead(8.0);
+  assert.ok(obsHeight2, 'checkObstacleAhead must detect obstacle at road height +2 (Y=26)');
+  assert.strictEqual(obsHeight2.y, 26);
+  mockWorld.setBlock(0, 26, centerTargetZ, BLOCKS.AIR);
+
+  // 3. Left ray obstacle (offset -0.6)
+  const leftX = -1; // -0.6 falls into voxel X = -1
+  mockWorld.setBlock(leftX, 25, centerTargetZ, BLOCKS.COBBLESTONE);
+  const obsLeft = car.checkObstacleAhead(8.0);
+  assert.ok(obsLeft, 'checkObstacleAhead must detect left ray obstacle at lateral offset -0.6');
+  mockWorld.setBlock(leftX, 25, centerTargetZ, BLOCKS.AIR);
+
+  // 4. Right ray obstacle (offset +0.6)
+  const rightX = 1; // +0.6 falls into voxel X = 1
+  mockWorld.setBlock(rightX, 25, centerTargetZ, BLOCKS.TNT);
+  const obsRight = car.checkObstacleAhead(8.0);
+  assert.ok(obsRight, 'checkObstacleAhead must detect right ray obstacle at lateral offset +0.6');
+  assert.strictEqual(obsRight.blockId, BLOCKS.TNT);
+  mockWorld.setBlock(rightX, 25, centerTargetZ, BLOCKS.AIR);
+
+  // 5. Obstacle beyond 8 blocks (at 9.0 blocks) must be ignored when lookAheadDist = 8.0
+  const farZ = Math.round(car.position.z + 1.55 + 9.0);
+  mockWorld.setBlock(0, 25, farZ, BLOCKS.STONE);
+  const obsFar = car.checkObstacleAhead(8.0);
+  assert.strictEqual(obsFar, null, 'Obstacle beyond 8.0 blocks must not be returned');
+});
+
+it('verifies smooth linear deceleration between 1.8m and 7.5m, complete halt at <= 1.8m, and taillight emissive states', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 200.0, speed: 12.0, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  assert.strictEqual(car.currentSpeed, 12.0);
+  // Initial taillights are normal red
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0x991b1b, 'Normal cruising taillights should be 0x991b1b');
+
+  // Place obstacle in the deceleration zone: 5.0m ahead of front bumper (1.55 + 5.0 = 6.55 -> z = 7)
+  mockWorld.setBlock(0, 25, 7, BLOCKS.STONE);
+  car.update(0.016);
+
+  // Deceleration zone: 1.8m < d <= 7.5m
+  assert.ok(car.hasObstacle, 'Car must detect obstacle ahead');
+  assert.strictEqual(car.isBraking, true, 'isBraking must be true in deceleration zone');
+  assert.ok(car.targetSpeed < 12.0 && car.targetSpeed > 0, `Target speed should be linearly decelerating (got ${car.targetSpeed})`);
+  assert.ok(car.currentSpeed < 12.0, 'Car should begin smooth deceleration');
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0xff0000, 'Taillights must be bright red emissive (0xff0000) during braking');
+
+  // Place obstacle in the imminent collision zone: <= 1.8m ahead of front bumper (1.55 + 1.2 = 2.75 -> z = 3)
+  mockWorld.setBlock(0, 25, 7, BLOCKS.AIR);
+  mockWorld.setBlock(0, 25, 3, BLOCKS.STONE);
+  car.update(0.016);
+
+  assert.strictEqual(car.targetSpeed, 0.0, 'Target speed must be 0 when obstacle distance is <= 1.8m');
+  assert.strictEqual(car.currentSpeed, 0.0, 'Car must halt completely before the obstacle');
+  assert.strictEqual(car.isStopped, true, 'isStopped must be true');
+  assert.strictEqual(car.isHalted, true, 'isHalted must be true');
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0xff0000, 'Taillights must remain bright red emissive (0xff0000) while halted');
+
+  // Clear obstacle: car should accelerate back to cruising speed (12.0 m/s) and restore taillights
+  mockWorld.setBlock(0, 25, 3, BLOCKS.AIR);
+  car.update(0.016);
+
+  assert.strictEqual(car.hasObstacle, false, 'Obstacle must be cleared');
+  assert.strictEqual(car.isHalted, false, 'isHalted must be false after obstacle is removed');
+  assert.strictEqual(car.targetSpeed, 12.0, 'Target speed must restore to max cruising speed');
+  assert.ok(car.currentSpeed > 0, 'Car must begin accelerating');
+  assert.strictEqual(car.taillightMat.emissive.getHex(), 0x991b1b, 'Taillights must be restored to normal (0x991b1b) when path clears');
+
+  // Accelerate to full cruising speed
+  for (let i = 0; i < 60; i++) {
+    car.update(0.033);
+  }
+  assert.strictEqual(car.currentSpeed, 12.0, 'Car must return to full cruising speed (8.0 .. 14.0 m/s)');
+});
+
+it('verifies highway traffic cars never pass through or clip into walls, buildings, or placed blocks', () => {
+  const { VoxelCar, BLOCKS } = loadAnimalsModule();
+  const mockWorld = new MockVoxelWorld();
+
+  const route = { type: 'line', x1: 0.0, z1: 0.0, x2: 0.0, z2: 100.0, speed: 14.0, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, mockWorld);
+
+  // Build a 3-block wide solid wall / building across the road at z = 10
+  for (let x = -2; x <= 2; x++) {
+    for (let y = 25; y <= 27; y++) {
+      mockWorld.setBlock(x, y, 10, BLOCKS.BRICK);
+    }
+  }
+
+  // Simulate 120 frames at high speed
+  for (let i = 0; i < 120; i++) {
+    car.update(0.033);
+  }
+
+  // Verify car came to a complete halt before the wall without clipping
+  assert.strictEqual(car.currentSpeed, 0, 'Car must halt completely before the wall');
+  assert.strictEqual(car.isStopped, true);
+  const frontZ = car.position.z + 1.55;
+  assert.ok(frontZ <= 10.0, `Car front bumper (z=${frontZ}) must NEVER penetrate the wall (z=10.0)`);
+  assert.ok(car.position.z < 10.0, 'Car position must strictly remain before the wall');
+});
+
+// =============================================================================
+// SECTION 10: WORLD GENERATION & LANDMARKS: MOUNT FUJI, CITIES, TUNNELS & CAVERNS (R4)
+// =============================================================================
+console.log('\n[SECTION 10: WORLD GENERATION & LANDMARKS: MOUNT FUJI, CITIES, TUNNELS & CAVERNS (R4)]');
+
+it('verifies Mount Fuji peak elevation reaching Y=62 (2.58x above surrounding Y=24)', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const world = new World(null, null, 12345);
+
+  // Peak caldera rim at (355, 350)
+  const peakH = world.getFujiHeight(355, 350);
+  assert.strictEqual(peakH, 62, 'Mount Fuji caldera rim must reach maximum world height Y=62');
+
+  const surroundingH = 24;
+  const ratio = peakH / surroundingH;
+  assert.ok(ratio >= 2.58, `Mount Fuji peak elevation must rise 2.58x above surrounding terrain (expected >= 2.58, got ${ratio.toFixed(3)})`);
+
+  // Verify symmetrical conical elevation slope
+  for (let d = 7; d <= 22; d += 3) {
+    const h = world.getFujiHeight(350 + d, 350);
+    assert.ok(h <= 62 && h >= 46, `Cone height at distance ${d} must be within snow cap (46..62), got ${h}`);
+  }
+});
+
+it('verifies Mount Fuji caldera depression, snow cap (Y>=46), reflection lakes, and shoreline', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const world = new World(null, null, 12345);
+
+  // 1. Central volcanic caldera depression (Y = 54..56) at distance d <= 4
+  const calderaCenterH = world.getFujiHeight(350, 350);
+  assert.strictEqual(calderaCenterH, 54, 'Volcanic caldera crater center must depress to Y=54');
+  for (let d = 0; d <= 4; d++) {
+    const ch = world.getFujiHeight(350 + d, 350);
+    assert.ok(ch <= 56, `Caldera depression at d=${d} must remain <= 56, got ${ch}`);
+  }
+
+  // 2. Snow cap above Y >= 46
+  const snowFlankH = world.getFujiHeight(360, 350); // d = 10
+  assert.ok(snowFlankH >= 46, 'Upper conical peak must be above snowline Y >= 46');
+
+  // Verify chunk terrain surface sets snow above Y >= 46
+  const fujiChunk = world.getOrCreateChunk(Math.floor(355 / 16), Math.floor(350 / 16));
+  assert.ok(fujiChunk, 'Mount Fuji chunk must be generated');
+
+  // 3. Reflection lakes: Lake Kawaguchi and Lake Motosu
+  const lakeKawaguchiH = world.getFujiHeight(305, 305);
+  const lakeMotosuH = world.getFujiHeight(375, 315);
+  assert.strictEqual(lakeKawaguchiH, 15, 'Lake Kawaguchi bed must be below WATER_LEVEL 18');
+  assert.strictEqual(lakeMotosuH, 15, 'Lake Motosu bed must be below WATER_LEVEL 18');
+
+  // Shoreline slope transition (15..24)
+  const shoreH = world.getFujiHeight(321, 305); // distance ~16
+  assert.ok(shoreH >= 15 && shoreH <= 24, 'Lake shoreline must transition smoothly from lake bed to land');
+});
+
+it('verifies urban district multi-building grids and signature landmarks across all 6 sectors', () => {
+  const worldPath = path.resolve(__dirname, '../public/src/world.js');
+  const worldCode = fs.readFileSync(worldPath, 'utf8');
+
+  // 1. Japan Imperial (+250, +250)
+  assert.ok(worldCode.includes('Samurai Castle Keep (Tenshu)'), 'Japan Imperial must include Himeji Tenshu castle keep');
+  assert.ok(worldCode.includes('Grand Martial Arts Dojo'), 'Japan Imperial must include Martial Arts Dojo');
+  assert.ok(worldCode.includes('Senbon Torii Tunnel'), 'Japan Imperial must include Senbon Torii tunnel corridor');
+
+  // 2. China & Shanghai (-250, +250)
+  assert.ok(worldCode.includes('isSkybridge'), 'China & Shanghai must feature elevated glass skybridges');
+  assert.ok(worldCode.includes('Nanjing Road'), 'China & Shanghai must feature illuminated commercial avenue');
+
+  // 3. Paris & Eiffel (+250, -250)
+  assert.ok(worldCode.includes('Arc de Triomphe'), 'Paris must feature Arc de Triomphe');
+  assert.ok(worldCode.includes('Louvre Glass Pyramid'), 'Paris must feature Grand Louvre Glass Pyramid');
+
+  // 4. New York (-250, -250)
+  assert.ok(worldCode.includes('Times Square') || worldCode.includes('Empire State'), 'New York must feature signature landmarks');
+  assert.ok(worldCode.includes('Grand Central') || worldCode.includes('Manhattan'), 'New York must feature multi-block grid architecture');
+
+  // 5. Norway Fjords (0, +500)
+  assert.ok(worldCode.includes('Stave Church'), 'Norway Fjords must feature Borgund Viking Stave Church');
+  assert.ok(worldCode.includes('Mjødhall') || worldCode.includes('Viking'), 'Norway Fjords must feature Viking timber longhouses');
+
+  // 6. Central Spawn Plaza (0, 0)
+  assert.ok(worldCode.includes('Guardian'), 'Central Spawn must feature guardian statues and compass rose');
+});
+
+it('verifies mountain tunnel headroom (>=4 blocks) and natural caverns with mineral veins', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const world = new World(null, null, 12345);
+
+  // 1. Highway Mountain Tunnel: North Highway at (0, 130)
+  assert.strictEqual(world.isTunnelAt(0, 130), true, 'Passage at (0, 130) must be a designated mountain tunnel');
+  assert.ok(world.getHeightAt(0, 130) >= 35, 'Mountain overburden ridge above tunnel must be at least Y=35');
+
+  const tunnelChunk = world.getOrCreateChunk(0, 8); // chunk containing Z=128..143
+  assert.strictEqual(world.getBlock(0, 24, 130), BLOCKS.ASPHALT, 'Tunnel floor must be ASPHALT road');
+
+  // Clear vertical headroom: 4 full blocks (Y=25, 26, 27, 28)
+  for (let y = 25; y <= 28; y++) {
+    assert.strictEqual(world.getBlock(0, y, 130), BLOCKS.AIR, `Tunnel interior at Y=${y} must be clear AIR for vehicle headroom`);
+  }
+  // Ceiling arch with illuminated lanterns
+  assert.strictEqual(world.getBlock(0, 29, 130), BLOCKS.GOLD_ORE, 'Tunnel arch ceiling must feature illuminated lantern');
+
+  // 2. Subterranean Natural Caverns with mineral veins (Iron Ore and Gold Ore)
+  const cavernChunk = world.getOrCreateChunk(2, 31); // Norway Mountain Cavern at X=32..47, Z=496..511
+  let ironOres = 0;
+  let goldOres = 0;
+  for (let lx = 0; lx < 16; lx++) {
+    for (let lz = 0; lz < 16; lz++) {
+      for (let ly = 0; ly < 64; ly++) {
+        const b = cavernChunk.getBlock(lx, ly, lz);
+        if (b === BLOCKS.IRON_ORE) ironOres++;
+        if (b === BLOCKS.GOLD_ORE) goldOres++;
+      }
+    }
+  }
+  assert.ok(ironOres >= 20, `Cavern must feature rich Iron Ore veins (found ${ironOres})`);
+  assert.ok(goldOres >= 10, `Cavern must feature rich Gold Ore veins (found ${goldOres})`);
+});
+
+
+// =============================================================================
+// SECTION 11: GRAN CIRCUITO & DRIVABLE CARS (R1, R5)
+// =============================================================================
+console.log('\n[SECTION 11: GRAN CIRCUITO & DRIVABLE CARS (R1, R5)]');
+
+function loadVehicleModule() {
+  const vehiclePath = path.resolve(__dirname, '../public/src/vehicle.js');
+  let vehicleCode = fs.readFileSync(vehiclePath, 'utf8')
+    .replace(/import\s+.*?from\s+.*?;/g, '')
+    .replace(/export\s+class\s+DrivableCar/g, 'class DrivableCar')
+    .replace(/export\s+class\s+VehicleManager/g, 'class VehicleManager');
+
+  class Vector3 {
+    constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
+    set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+    copy(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;}
+    clone(){return new Vector3(this.x,this.y,this.z);}
+    sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+    normalize(){const l=Math.hypot(this.x,this.y,this.z)||1;this.x/=l;this.y/=l;this.z/=l;return this;}
+    distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);}
+  }
+
+  class Color { constructor(c){this.hex=c;} }
+
+  class Group {
+    constructor(){
+      this.children=[];
+      this.position=new Vector3();
+      this.rotation={x:0,y:0,z:0,set(){}};
+      this.visible=true;
+    }
+    add(...c){for(const el of c) this.children.push(el);}
+    traverse(fn){ fn(this); for(const c of this.children) if(c.traverse) c.traverse(fn); else fn(c); }
+  }
+
+  class Mesh {
+    constructor(g,m){
+      this.geometry=g;
+      this.material=m;
+      this.position=new Vector3();
+      this.rotation={x:0,y:0,z:0};
+      this.visible=true;
+    }
+    traverse(fn){ fn(this); }
+  }
+
+  const mockTHREE = {
+    Vector3,
+    Color,
+    Group,
+    Mesh,
+    BoxGeometry: class {},
+    CylinderGeometry: class {},
+    MeshStandardMaterial: class { constructor(o){Object.assign(this, o);} },
+    MeshBasicMaterial: class { constructor(o){Object.assign(this, o);} }
+  };
+
+  const BLOCKS = { AIR: 0, WATER: 11, STONE: 4, BRICK: 14, SNOW: 12, ASPHALT: 20 };
+  const BLOCK_DEFS = { 4: { solid: true }, 14: { solid: true }, 12: { solid: true }, 20: { solid: true } };
+  const sound = { playClick: ()=>{} };
+
+  const { DrivableCar, VehicleManager } = new Function(
+    'THREE', 'BLOCKS', 'BLOCK_DEFS', 'sound',
+    vehicleCode + '\nreturn { DrivableCar, VehicleManager };'
+  )(mockTHREE, BLOCKS, BLOCK_DEFS, sound);
+
+  return { DrivableCar, VehicleManager, mockTHREE, BLOCKS, BLOCK_DEFS };
+}
+
+it('verifies Gran Circuito track dimensions (14-block wide track, red/white curbs, grandstands, pit lane)', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const world = new World(null, null, 12345);
+
+  // Load Gran Circuito Main Straight chunks at X = -505, Z in [-428..-413]
+  world.getOrCreateChunk(Math.floor(-505 / 16), Math.floor(-428 / 16));
+  world.getOrCreateChunk(Math.floor(-505 / 16), Math.floor(-413 / 16));
+
+  // 1. Red/white rumble curbs on outer edges
+  const southCurb = world.getBlock(-505, 24, -428);
+  const northCurb = world.getBlock(-505, 24, -413);
+  assert.ok(southCurb === BLOCKS.BRICK || southCurb === BLOCKS.SNOW, 'South track curb must be BRICK or SNOW');
+  assert.ok(northCurb === BLOCKS.BRICK || northCurb === BLOCKS.SNOW, 'North track curb must be BRICK or SNOW');
+
+  // 2. Center asphalt racing surface (12-14 lanes wide)
+  let asphaltLanes = 0;
+  for (let z = -427; z <= -414; z++) {
+    if (world.getBlock(-505, 24, z) === BLOCKS.ASPHALT) asphaltLanes++;
+  }
+  assert.ok(asphaltLanes >= 12, `Gran Circuito track must have at least 12 asphalt lanes (found ${asphaltLanes})`);
+  const totalTrackWidth = asphaltLanes + 2;
+  assert.ok(totalTrackWidth >= 14 && totalTrackWidth <= 16, `Total track width with curbs must be 14-16 blocks (got ${totalTrackWidth})`);
+
+  // 3. Structural elements verified in code: Starting grid gantry, Grandstands, Pit lane
+  const worldPath = path.resolve(__dirname, '../public/src/world.js');
+  const worldCode = fs.readFileSync(worldPath, 'utf8');
+  assert.ok(worldCode.includes('buildGrandPrixSector'), 'world.js must define buildGrandPrixSector');
+  assert.ok(worldCode.includes('Starting Grid Gantry') || worldCode.includes('5-light start sequence'), 'Gran Circuito must feature starting grid gantry');
+  assert.ok(worldCode.includes('Grandstand Stadium') || worldCode.includes('Tribuna Principal'), 'Gran Circuito must feature spectator grandstands');
+  assert.ok(worldCode.includes('Concrete Pit Wall') || worldCode.includes('Garage'), 'Gran Circuito must feature pit lane and team garages');
+});
+
+it('verifies drivable car physics (~16.5 m/s, ~2.2x sprint speed, turning, drift smoke)', () => {
+  const { DrivableCar } = loadVehicleModule();
+
+  const car = new DrivableCar('test_car_1', 0xdc2626, -500, 24, -420, 0, 'Scuderia Red');
+  assert.strictEqual(car.maxSpeed, 16.5, 'DrivableCar max speed must be exactly 16.5 m/s');
+
+  const playerSprintSpeed = 7.5;
+  const speedRatio = Math.round((car.maxSpeed / playerSprintSpeed) * 10) / 10;
+  assert.strictEqual(speedRatio, 2.2, 'DrivableCar top speed must be ~2.2x player sprint speed');
+
+  // 1. Throttle acceleration
+  for (let step = 0; step < 30; step++) {
+    car.updatePhysics(0.05, { forward: 1, steer: 0 }, null);
+  }
+  assert.strictEqual(car.speed, 16.5, 'Car must accelerate smoothly to full top speed');
+
+  // 2. Responsive steering
+  const initYaw = car.yaw;
+  car.updatePhysics(0.05, { forward: 1, steer: 0.6 }, null);
+  assert.notStrictEqual(car.yaw, initYaw, 'Car yaw must rotate smoothly when steering');
+
+  // 3. Drifting mechanics & smoke emitter positions
+  car.updatePhysics(0.05, { forward: 1, steer: 0.6, handbrake: true }, null);
+  assert.strictEqual(car.isDrifting, true, 'Hard turning with handbrake must trigger drift state');
+
+  const wheels = car.getRearWheelPositions();
+  assert.strictEqual(wheels.length, 2, 'Car must compute dual rear wheel positions for tire drift smoke');
+  assert.ok(wheels[0].x !== wheels[1].x, 'Rear wheels must have distinct lateral coordinates');
+
+  // 4. Solid barrier collision prevention
+  const mockBarrierWorld = {
+    getBlock: (x, y, z) => (z <= -435 ? 4 : 0) // Solid stone barrier at Z <= -435
+  };
+  car.pos = { x: -500, y: 24, z: -432 };
+  car.yaw = 0; // Heading forward along -Z towards barrier
+  car.speed = 16.5;
+
+  for (let step = 0; step < 10; step++) {
+    car.updatePhysics(0.05, { forward: 1, steer: 0 }, mockBarrierWorld);
+  }
+  // Car front bumper (z - 1.7) must NOT penetrate barrier (Z <= -435)
+  assert.ok(car.pos.z - 1.7 > -435.5, 'Car front must not clip or penetrate into solid barrier');
+});
+
+it('verifies vehicle dual camera perspectives (Chase view and Cockpit Interior view)', () => {
+  const { DrivableCar, VehicleManager, mockTHREE } = loadVehicleModule();
+
+  const mockPM = { spawnDriftSmoke: () => {} };
+  const mockScene = { add: () => {}, remove: () => {} };
+  const vm = new VehicleManager(null, mockScene, mockPM);
+
+  assert.strictEqual(vm.cameraMode, 'chase', 'Vehicle camera must default to 3rd-person chase mode');
+
+  const car = new DrivableCar('cam_test_car', 0x2563eb, -500, 24, -420, 0, 'Azure GP');
+  const mockCam = {
+    position: new mockTHREE.Vector3(),
+    rotation: { set: () => {} }
+  };
+  const mockControls = {
+    pitch: 0,
+    getSafeCameraPosition: (eye, bx, by, bz) => ({ x: eye.x + bx, y: eye.y + by, z: eye.z + bz }),
+    localAvatar: { group: new mockTHREE.Group(), setTargetState: () => {} }
+  };
+
+  vm.enterCar(car, { pos: new mockTHREE.Vector3(), vel: new mockTHREE.Vector3(), action: 'idle' });
+  assert.strictEqual(vm.isDriving(), true, 'Player must be driving vehicle');
+
+  // 1. Chase Camera: Avatar visible seated inside vehicle
+  vm.updateDriver(0.05, { forward: 1, steer: 0 }, mockCam, mockControls);
+  assert.strictEqual(mockControls.localAvatar.group.visible, true, 'Driver avatar must be visible in chase view');
+  assert.ok(mockCam.position.z > car.pos.z, 'Chase camera must trail behind the vehicle (+Z behind forward -Z)');
+
+  // 2. Cockpit Interior View: Overlooks dashboard and steering wheel, avatar head hidden
+  const toggled = vm.toggleCameraMode();
+  assert.strictEqual(toggled, 'cockpit');
+  assert.strictEqual(vm.cameraMode, 'cockpit');
+
+  vm.updateDriver(0.05, { forward: 1, steer: 0 }, mockCam, mockControls);
+  assert.strictEqual(mockControls.localAvatar.group.visible, false, 'Driver avatar head must be hidden in cockpit view');
+  assert.strictEqual(Math.round(mockCam.position.y * 100) / 100, Math.round((car.pos.y + 0.90) * 100) / 100, 'Cockpit camera must be placed inside cabin at Y=car.pos.y+0.90');
+});
+
+function loadAvatarModule() {
+  const avatarPath = path.resolve(__dirname, '../public/src/avatar.js');
+  let avatarCode = fs.readFileSync(avatarPath, 'utf8')
+    .replace(/import\s+.*?from\s+.*?;/g, '')
+    .replace(/export\s+class\s+Avatar/g, 'class Avatar');
+
+  class Vector3 {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+    distanceToSquared(v) {
+      const dx = this.x - v.x, dy = this.y - v.y, dz = this.z - v.z;
+      return dx * dx + dy * dy + dz * dz;
+    }
+    lerp(v, alpha) {
+      this.x += (v.x - this.x) * alpha;
+      this.y += (v.y - this.y) * alpha;
+      this.z += (v.z - this.z) * alpha;
+      return this;
+    }
+  }
+
+  class Group {
+    constructor() {
+      this.position = new Vector3();
+      this.rotation = { x: 0, y: 0, z: 0 };
+      this.children = [];
+    }
+    add(child) { this.children.push(child); }
+    remove(child) {}
+    traverse(fn) { fn(this); }
+  }
+
+  class Mesh {
+    constructor(geom, mat) {
+      this.geometry = geom;
+      this.material = mat;
+      this.position = new Vector3();
+      this.rotation = { x: 0, y: 0, z: 0 };
+      this.castShadow = false;
+    }
+  }
+
+  class Color {
+    constructor(val) { this.val = val; }
+    setHSL() { return this; }
+  }
+
+  const THREE = {
+    Group,
+    Vector3,
+    Mesh,
+    Color,
+    BoxGeometry: class {},
+    MeshStandardMaterial: class {},
+    MeshBasicMaterial: class {},
+    CanvasTexture: class {},
+    SpriteMaterial: class {},
+    Sprite: class {
+      constructor() {
+        this.position = new Vector3();
+        this.scale = new Vector3(1, 1, 1);
+      }
+    }
+  };
+
+  const { Avatar } = new Function(
+    'THREE',
+    avatarCode + '\nreturn { Avatar };'
+  )(THREE);
+
+  return { Avatar, THREE };
+}
+
+it('server GameState modifyBlock updates standing player position when supporting floor is excavated', () => {
+  const state = new GameState(12345);
+  const p1 = state.addPlayer('p1', 'Excavator');
+  const p2 = state.addPlayer('p2', 'StandingPlayer');
+
+  p1.pos = [10, 25, 12];
+  p2.pos = [10.2, 25.0, 10.2]; // Standing on block at (10, 24, 10)
+
+  // Excavate block directly beneath p2's feet
+  const result = state.modifyBlock('p1', 10, 24, 10, 0);
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.delta.blockType, 0);
+  assert.ok(Array.isArray(result.delta.affectedPlayers));
+  assert.strictEqual(result.delta.affectedPlayers.length, 1);
+  assert.strictEqual(result.delta.affectedPlayers[0].id, 'p2');
+  assert.strictEqual(result.delta.affectedPlayers[0].pos[1], 24);
+
+  // Authoritative player state updated
+  assert.strictEqual(p2.pos[1], 24);
+  const snapshot = state.getPlayersSnapshot();
+  const p2Snap = snapshot.find(p => p.id === 'p2');
+  assert.strictEqual(p2Snap.pos[1], 24);
+});
+
+it('server GameState modifyBlock rejects placing solid block intersecting any player bounding box', () => {
+  const state = new GameState(12345);
+  const p1 = state.addPlayer('p1', 'Builder');
+  const p2 = state.addPlayer('p2', 'OtherPlayer');
+
+  p1.pos = [10, 25, 12];
+  p2.pos = [10.2, 25.0, 10.2];
+
+  // p1 tries to place block at (10, 25, 10) inside p2
+  const placeResult = state.modifyBlock('p1', 10, 25, 10, 1);
+  assert.strictEqual(placeResult.success, false);
+  assert.strictEqual(placeResult.reason, 'Cannot place block inside player');
+});
+
+it('Avatar ground detection accurately computes exposed floor height after block excavation', () => {
+  const { Avatar } = loadAvatarModule();
+  const scene = { add: () => {}, remove: () => {} };
+  const world = {
+    blocks: new Map(),
+    getBlock(x, y, z) {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return this.blocks.has(key) ? this.blocks.get(key) : 0;
+    },
+    getHeightAt(x, z) {
+      return 24;
+    }
+  };
+
+  // Set up solid ground at Y=23 (stone: 4) and Y=24 (gold: 18)
+  world.blocks.set('0,23,0', 4);
+  world.blocks.set('0,24,0', 18);
+
+  const avatar = new Avatar('remote1', 'RemoteSteve', scene, world);
+  avatar.group.position.set(0.5, 25.0, 0.5);
+  avatar.targetPos.set(0.5, 25.0, 0.5);
+
+  // Before excavation, ground is at 25.0 (resting on top of block 24)
+  assert.strictEqual(avatar.getGroundHeight(0.5, 0.5, 25.0), 25.0);
+  assert.strictEqual(avatar.isSupportedByBlock(0, 24, 0), true);
+
+  // Excavate block 24 -> becomes AIR (0)
+  world.blocks.set('0,24,0', 0);
+
+  // Ground detection immediately returns 24.0 (resting on top of block 23)
+  const exposedFloor = avatar.getGroundHeight(0.5, 0.5, 25.0);
+  assert.strictEqual(exposedFloor, 24.0);
+});
+
+it('Avatar detects when supporting block beneath feet is removed and falls naturally with gravity', () => {
+  const { Avatar } = loadAvatarModule();
+  const scene = { add: () => {}, remove: () => {} };
+  const world = {
+    blocks: new Map([
+      ['0,23,0', 4], // stone floor at Y=23 (surface 24.0)
+      ['0,24,0', 0]  // block 24 excavated!
+    ]),
+    getBlock(x, y, z) {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return this.blocks.has(key) ? this.blocks.get(key) : 0;
+    },
+    getHeightAt: () => 24
+  };
+
+  const avatar = new Avatar('remote1', 'FallingSteve', scene, world);
+  avatar.group.position.set(0.5, 25.0, 0.5);
+  avatar.targetPos.set(0.5, 25.0, 0.5);
+
+  // Block at (0, 24, 0) was removed
+  avatar.onSupportingBlockRemoved(0, 24, 0);
+
+  // Target position immediately updated to 24.0 and downward fall initiated
+  assert.strictEqual(avatar.targetPos.y, 24.0);
+  assert.strictEqual(avatar.onGround, false);
+  assert.ok(avatar.velY < 0, 'Avatar must acquire downward velocity to fall naturally');
+
+  // Simulate multiple physics frames of natural falling
+  let landed = false;
+  for (let step = 0; step < 20; step++) {
+    avatar.update(0.02); // 20ms physics step
+    if (avatar.onGround && avatar.group.position.y === 24.0) {
+      landed = true;
+      break;
+    }
+  }
+
+  assert.strictEqual(landed, true, 'Avatar must fall naturally and land on exposed floor');
+  assert.strictEqual(avatar.group.position.y, 24.0, 'Avatar must stand firmly at Y=24.0');
+  assert.strictEqual(avatar.velY, 0, 'Vertical velocity must reset to 0 upon landing');
+  assert.strictEqual(avatar.onGround, true, 'Avatar must be onGround once landed');
+});
+
+it('Avatar eliminates burying/sinking glitch by strictly clamping to solid voxel floor', () => {
+  const { Avatar } = loadAvatarModule();
+  const scene = { add: () => {}, remove: () => {} };
+  const world = {
+    blocks: new Map([
+      ['5,24,5', 4] // Solid floor at Y=24 (surface 25.0)
+    ]),
+    getBlock(x, y, z) {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return this.blocks.has(key) ? this.blocks.get(key) : 0;
+    },
+    getHeightAt: () => 24
+  };
+
+  const avatar = new Avatar('remote1', 'SolidSteve', scene, world);
+  avatar.group.position.set(5.5, 25.0, 5.5);
+  avatar.targetPos.set(5.5, 25.0, 5.5);
+
+  // Try to set remote position that would bury the player into the solid block (Y=23.5)
+  avatar.setTargetState([5.5, 23.5, 5.5], [0, 0], 'idle');
+
+  // setTargetState must clamp targetPos.y to solid ground (25.0)
+  assert.strictEqual(avatar.targetPos.y, 25.0, 'Target position must not allow avatar to sink into solid blocks');
+
+  // If group position is forcefully set below ground, update must clamp it immediately
+  avatar.group.position.y = 22.0;
+  avatar.update(0.016);
+  assert.strictEqual(avatar.group.position.y, 25.0, 'Avatar model must never be buried beneath solid floor');
+});
+
+it('PlayerPhysics immediate floor detection and falling when supporting block is broken', () => {
+  const { PlayerPhysics } = loadPlayerPhysicsModule();
+  const world = {
+    blocks: new Map([
+      ['0,23,0', 4], // solid floor
+      ['0,24,0', 4]  // block currently standing on
+    ]),
+    getBlock(x, y, z) {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return this.blocks.has(key) ? this.blocks.get(key) : 0;
+    },
+    getHeightAt: () => 24
+  };
+
+  const physics = new PlayerPhysics(world);
+  physics.pos = { x: 0.5, y: 25.0, z: 0.5 };
+  physics.vel = { x: 0, y: 0, z: 0 };
+  physics.onGround = true;
+
+  // Verify standing on block
+  assert.strictEqual(physics.isSupportedByBlock(0, 24, 0), true);
+
+  // Remove supporting block at (0, 24, 0)
+  world.blocks.set('0,24,0', 0);
+  physics.onBlockBroken(0, 24, 0);
+
+  assert.strictEqual(physics.onGround, false, 'Player must immediately lose onGround status when supporting block breaks');
+
+  // Run physics updates until landing on block 23 (Y=24.0)
+  for (let i = 0; i < 30; i++) {
+    physics.update(0.016, { moveX: 0, moveZ: 0, jump: false, sprint: false });
+    if (physics.onGround) break;
+  }
+
+  assert.strictEqual(physics.onGround, true, 'Player must land on exposed floor');
+  assert.strictEqual(physics.pos.y, 24.0, 'Player feet must be firmly on Y=24.0');
+});
+
+it('MultiplayerClient broadcasts and applies block deltas immediately and triggers ground detection', () => {
+  const { Avatar } = loadAvatarModule();
+  const multPath = path.resolve(__dirname, '../public/src/multiplayer.js');
+  let multCode = fs.readFileSync(multPath, 'utf8')
+    .replace(/import\s+.*?from\s+.*?;/g, '')
+    .replace(/export\s+class\s+MultiplayerClient/g, 'class MultiplayerClient');
+
+  const { MultiplayerClient } = new Function(
+    'Avatar',
+    multCode + '\nreturn { MultiplayerClient };'
+  )(Avatar);
+
+  const mockWorld = {
+    blocks: new Map([
+      ['10,23,10', 4],
+      ['10,24,10', 4]
+    ]),
+    blockDeltas: new Map(),
+    getBlock(x, y, z) {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return this.blocks.has(key) ? this.blocks.get(key) : 0;
+    },
+    setBlock(x, y, z, type) {
+      this.blocks.set(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`, type);
+    },
+    applyBlockDelta(x, y, z, type) {
+      this.blockDeltas.set(`${x},${y},${z}`, type);
+      this.setBlock(x, y, z, type);
+    },
+    getHeightAt: () => 24
+  };
+
+  const scene = { add: () => {}, remove: () => {} };
+  const particles = { spawnBlockDebris: () => {} };
+
+  const client = new MultiplayerClient(mockWorld, scene, particles);
+  client.myId = 'local_p1';
+
+  // Add remote player standing on (10, 24, 10)
+  client.addRemotePlayer({ id: 'remote_p2', name: 'Partner', pos: [10.5, 25.0, 10.5], rot: [0, 0], action: 'idle' });
+  const remote = client.remoteAvatars.get('remote_p2');
+  assert.ok(remote);
+  assert.strictEqual(remote.group.position.y, 25.0);
+
+  // Incoming synchronized block update: block at (10, 24, 10) was broken!
+  client.handleMessage(JSON.stringify({
+    type: 'block_update',
+    data: { x: 10, y: 24, z: 10, blockType: 0, playerId: 'local_p1' }
+  }));
+
+  // Block delta must be recorded in world.blockDeltas and world block updated
+  assert.strictEqual(mockWorld.blockDeltas.get('10,24,10'), 0);
+  assert.strictEqual(mockWorld.getBlock(10, 24, 10), 0);
+
+  // Remote avatar targetPos.y must be immediately updated to newly exposed floor (24.0)
+  assert.strictEqual(remote.targetPos.y, 24.0, 'Remote avatar targetPos.y must immediately update to newly exposed floor');
+  assert.strictEqual(remote.onGround, false, 'Remote avatar must begin falling');
+});
+
+it('server GameState modifyBlock updates multiple players standing on the same excavated block', () => {
+  const state = new GameState(12345);
+  const p1 = state.addPlayer('p1', 'Excavator');
+  const p2 = state.addPlayer('p2', 'Standing1');
+  const p3 = state.addPlayer('p3', 'Standing2');
+
+  p1.pos = [0, 25, 2];
+  p2.pos = [0.1, 25.0, 0.1];
+  p3.pos = [0.2, 25.0, 0.2];
+
+  // Excavate block beneath both p2 and p3
+  const result = state.modifyBlock('p1', 0, 24, 0, 0);
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.delta.affectedPlayers.length, 2);
+  const ids = result.delta.affectedPlayers.map(p => p.id);
+  assert.ok(ids.includes('p2'));
+  assert.ok(ids.includes('p3'));
+
+  assert.strictEqual(p2.pos[1], 24);
+  assert.strictEqual(p3.pos[1], 24);
+});
+
+it('server GameState modifyBlock handles deep multi-level vertical excavation down through multiple blocks', () => {
+  const state = new GameState(12345);
+  const p1 = state.addPlayer('p1', 'Miner');
+  const p2 = state.addPlayer('p2', 'ShaftVictim');
+
+  p1.pos = [2, 25, 2];
+  p2.pos = [2.1, 25.0, 0.1];
+
+  // Excavate block 24 -> victim drops to 24
+  const res1 = state.modifyBlock('p1', 2, 24, 0, 0);
+  assert.strictEqual(res1.success, true);
+  assert.strictEqual(p2.pos[1], 24);
+
+  // Excavate block 23 -> victim drops to 23
+  const res2 = state.modifyBlock('p1', 2, 23, 0, 0);
+  assert.strictEqual(res2.success, true);
+  assert.strictEqual(p2.pos[1], 23);
+
+  // Excavate block 22 -> victim drops to 22
+  const res3 = state.modifyBlock('p1', 2, 22, 0, 0);
+  assert.strictEqual(res3.success, true);
+  assert.strictEqual(p2.pos[1], 22);
+});
+
+it('server GameState detonateTnt updates standing player authoritative Y position to newly exposed floor', () => {
+  const state = new GameState(12345);
+  const p1 = state.addPlayer('p1', 'TntGuy');
+  p1.pos = [10.1, 25.0, 10.1];
+
+  // Detonate TNT at (10, 24, 10) directly beneath p1 with radius 2
+  const blast = state.detonateTnt(10, 24, 10, 2);
+  assert.ok(blast.destroyedBlocks.length > 0);
+
+  // p1 must have fallen to newly exposed floor below 24
+  assert.ok(p1.pos[1] < 25.0, 'Player Y must drop to newly exposed floor after TNT blast');
+});
+
+it('verifies World.prototype.applyAuthoritativeBlock updates voxel memory immediately and synchronously remeshes chunk and boundary neighbors', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const mockMaterials = { solidMaterial: {}, transparentMaterial: {}, waterMaterial: {}, getUV: () => [0, 0, 1, 1] };
+  const world = new World(null, mockMaterials, 12345);
+
+  // Set block in center of chunk (0, 0)
+  world.setBlock(5, 24, 5, BLOCKS.STONE);
+  const chunk00 = world.getChunk(0, 0);
+  assert.ok(chunk00);
+
+  // Apply authoritative block destruction
+  world.applyAuthoritativeBlock(5, 24, 5, BLOCKS.AIR);
+  assert.strictEqual(world.getBlock(5, 24, 5), BLOCKS.AIR);
+  assert.strictEqual(world.blockDeltas.get('5,24,5'), BLOCKS.AIR);
+  assert.strictEqual(chunk00.rebuilt, true);
+  assert.strictEqual(chunk00.isDirty, false);
+
+  // Now test boundary block on west border (lx = 0) of chunk (1, 0) -> global x = 16
+  world.getOrCreateChunk(0, 0);
+  world.getOrCreateChunk(1, 0);
+  const chunk10 = world.getChunk(1, 0);
+  chunk00.rebuilt = false;
+  chunk10.rebuilt = false;
+
+  world.applyAuthoritativeBlock(16, 24, 5, BLOCKS.AIR);
+  assert.strictEqual(world.getBlock(16, 24, 5), BLOCKS.AIR);
+  assert.strictEqual(chunk10.rebuilt, true, 'Main chunk must be synchronously remeshed');
+  assert.strictEqual(chunk00.rebuilt, true, 'West neighbor chunk across boundary (lx=0) must be synchronously remeshed');
+
+  // Verify block synchronization hook invocation
+  let hookCalled = false;
+  let hookedBlock = null;
+  world.addBlockHook((x, y, z, blockType) => {
+    hookCalled = true;
+    hookedBlock = { x, y, z, blockType };
+  });
+  world.applyAuthoritativeBlock(3, 20, 3, BLOCKS.GRASS);
+  assert.strictEqual(hookCalled, true, 'Registered block hook must be invoked');
+  assert.deepStrictEqual(hookedBlock, { x: 3, y: 20, z: 3, blockType: BLOCKS.GRASS });
+});
+
+it('verifies Avatar leg pivot alignment at Y=0.75, torso at Y=1.125, head at Y=1.50 preventing floor submergence', () => {
+  const { Avatar } = loadAvatarModule();
+  const scene = { add: () => {}, remove: () => {} };
+  const avatar = new Avatar('test_steve', 'Steve', scene, null);
+
+  // 1. Verify hip pivots are at Y = 0.75
+  assert.strictEqual(avatar.leftLegPivot.position.y, 0.75, 'Left leg pivot must be at Y = 0.75');
+  assert.strictEqual(avatar.rightLegPivot.position.y, 0.75, 'Right leg pivot must be at Y = 0.75');
+
+  // 2. Verify torso is at Y = 1.125 (height 0.75 spans 0.75 to 1.50)
+  assert.strictEqual(avatar.torso.position.y, 1.125, 'Torso must be centered at Y = 1.125');
+
+  // 3. Verify head group pivot is at Y = 1.50 and arms at Y = 1.375
+  assert.strictEqual(avatar.headGroup.position.y, 1.50, 'Head group must pivot at neck Y = 1.50');
+  assert.strictEqual(avatar.leftArmPivot.position.y, 1.375, 'Left arm must pivot at shoulder Y = 1.375');
+  assert.strictEqual(avatar.rightArmPivot.position.y, 1.375, 'Right arm must pivot at shoulder Y = 1.375');
+
+  // 4. Verify static source code does not contain the old 0.625 submergence pivot
+  const avatarPath = path.resolve(__dirname, '../public/src/avatar.js');
+  const avatarCode = fs.readFileSync(avatarPath, 'utf8');
+  assert.strictEqual(avatarCode.includes('0.625'), false, 'avatar.js must not contain submerged 0.625 pivot');
+});
+
+it('verifies Avatar.prototype.updateGroundSupport invalidates onGround and applies downward velocity when supporting block is AIR', () => {
+  const { Avatar } = loadAvatarModule();
+  const scene = { add: () => {}, remove: () => {} };
+  const world = {
+    blocks: new Map([
+      ['0,24,0', 4]
+    ]),
+    getBlock(x, y, z) {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return this.blocks.has(key) ? this.blocks.get(key) : 0;
+    },
+    getHeightAt: () => 24
+  };
+
+  const avatar = new Avatar('support_test', 'SupportSteve', scene, world);
+  avatar.group.position.set(0.5, 25.0, 0.5);
+  avatar.onGround = true;
+
+  // With solid stone at (0, 24, 0), ground support is valid
+  const supported = avatar.updateGroundSupport(world);
+  assert.strictEqual(supported, true);
+  assert.strictEqual(avatar.onGround, true);
+
+  // Excavate block beneath feet
+  world.blocks.set('0,24,0', 0); // AIR
+
+  // updateGroundSupport must return false, invalidate onGround, and apply downward velocity
+  const unsupported = avatar.updateGroundSupport(world);
+  assert.strictEqual(unsupported, false);
+  assert.strictEqual(avatar.onGround, false);
+  assert.ok(avatar.velY < 0, 'Vertical velocity must be negative to initiate downward descent');
 });
 
 // =============================================================================

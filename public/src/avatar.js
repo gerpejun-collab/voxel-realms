@@ -156,7 +156,7 @@ export class Avatar {
   }
 
   createNameTag() {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function') return;
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 64;

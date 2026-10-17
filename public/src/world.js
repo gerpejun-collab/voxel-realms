@@ -2144,6 +2144,13 @@ export class World {
       this.setVoxelInWorld(chunk, lx - 3, baseY + 4, lz - 2, BLOCKS.GOLD_ORE);
       this.setVoxelInWorld(chunk, lx - 1, baseY + 4, lz - 2, BLOCKS.GOLD_ORE);
     }
+
+    // --- 15. Nanjing Road Pedestrian Commercial Avenue & Neon Billboards (-250, 233..267) ---
+    // Multi-tier illuminated neon sign towers, glass storefronts, and imperial red paifang archway entrance
+    for (let z = 236; z <= 264; z += 6) {
+      this.setVoxelInWorld(chunk, -249, baseY + 4, z, BLOCKS.GOLD_ORE);
+      this.setVoxelInWorld(chunk, -251, baseY + 4, z, BLOCKS.BRICK);
+    }
   }
 
   /**
@@ -2945,6 +2952,23 @@ export class World {
       this.setVoxelInWorld(chunk, lx - 2, baseY + 4, lz - 2, BLOCKS.GOLD_ORE);
       this.setVoxelInWorld(chunk, lx + 2, baseY + 1, lz + 2, BLOCKS.BRICK);
     }
+
+    // --- 16. Authentic Manhattan Subway Entrances & Underground Stairs at (-250, -238) ---
+    const subX = -250, subZ = -238;
+    for (let x = subX - 2; x <= subX + 2; x++) {
+      for (let z = subZ - 1; z <= subZ + 3; z++) {
+        const isRailing = (x === subX - 2 || x === subX + 2 || z === subZ + 3);
+        if (isRailing) {
+          this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.IRON_ORE); // Subway iron railing
+        }
+      }
+    }
+    // Subway stairwell steps descending underground
+    this.setVoxelInWorld(chunk, subX, baseY, subZ + 2, BLOCKS.STONE);
+    this.setVoxelInWorld(chunk, subX, baseY - 1, subZ + 1, BLOCKS.STONE);
+    this.setVoxelInWorld(chunk, subX, baseY - 2, subZ, BLOCKS.STONE);
+    this.setVoxelInWorld(chunk, subX, baseY - 3, subZ - 1, BLOCKS.STONE);
+    this.setVoxelInWorld(chunk, subX, baseY - 1, subZ - 1, BLOCKS.GOLD_ORE); // Subway station lantern
   }
 
   /**
@@ -4725,87 +4749,181 @@ export class World {
   buildMountFujiSector(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
-    if (ox + 16 < 410 || ox > 590 || oz + 16 < 410 || oz > 590) return;
 
-    const fX = 500, fZ = 500;
-    const baseY = 24;
+    // Support (+350, +350) as primary Mount Fuji landmark
+    const inFuji350 = (ox + 16 >= 275 && ox <= 425 && oz + 16 >= 275 && oz <= 425);
+    const inFuji500 = (ox + 16 >= 410 && ox <= 590 && oz + 16 >= 410 && oz <= 590);
+    if (!inFuji350 && !inFuji500) return;
 
-    // --- 1. Reflection Lakes Cherry Blossom Groves & Scenic Shoreline ---
-    const sakuraCoords = [
-      [422, 485], [425, 473], [438, 467], [452, 472],
-      [456, 486], [450, 499], [437, 503], [424, 497],
-      [485, 422], [473, 425], [467, 438], [472, 452],
-      [486, 456], [499, 450], [503, 437], [497, 424],
-      [448, 456], [456, 448], [464, 464], [435, 452]
-    ];
-    for (const [sx, sz] of sakuraCoords) {
-      const sY = this.getHeightAt(sx, sz);
-      if (sY >= 24 && sY <= 28) {
-        this.buildSakuraTree(chunk, sx, sz, sY);
-      }
-    }
+    if (inFuji350) {
+      const fX = 350, fZ = 350;
 
-    // --- 2. Lakeside Shinto Torii Gate & Viewing Deck at Lake Kawaguchi (444, 468) ---
-    for (let x = 441; x <= 447; x++) {
-      for (let z = 466; z <= 472; z++) {
-        const isBorder = (x === 441 || x === 447 || z === 466 || z === 472);
-        this.setVoxelInWorld(chunk, x, baseY, z, BLOCKS.WOOD_PLANK);
-        if (isBorder && x !== 444) {
-          this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.IRON_ORE);
+      // --- 1. Reflection Lakes Cherry Blossom Groves & Shoreline ---
+      // Lake Kawaguchi at (305, 305) and Lake Motosu at (375, 315)
+      const sakuraCoords350 = [
+        [292, 303], [295, 314], [308, 293], [317, 298],
+        [319, 310], [300, 321], [323, 318], [288, 305],
+        [365, 305], [375, 300], [385, 308], [388, 318],
+        [378, 328], [368, 325]
+      ];
+      for (const [sx, sz] of sakuraCoords350) {
+        const sY = this.getHeightAt(sx, sz);
+        if (sY >= 19 && sY <= 26) {
+          this.buildSakuraTree(chunk, sx, sz, sY);
         }
       }
-    }
-    const tX = 444, tZ = 469;
-    for (let y = baseY + 1; y <= baseY + 6; y++) {
-      this.setVoxelInWorld(chunk, tX - 3, y, tZ, BLOCKS.BRICK);
-      this.setVoxelInWorld(chunk, tX + 3, y, tZ, BLOCKS.BRICK);
-    }
-    for (let x = tX - 4; x <= tX + 4; x++) {
-      this.setVoxelInWorld(chunk, x, baseY + 5, tZ, BLOCKS.BRICK);
-      this.setVoxelInWorld(chunk, x, baseY + 7, tZ, BLOCKS.BRICK);
-    }
-    this.setVoxelInWorld(chunk, tX - 5, baseY + 8, tZ, BLOCKS.BRICK);
-    this.setVoxelInWorld(chunk, tX + 5, baseY + 8, tZ, BLOCKS.BRICK);
-    this.setVoxelInWorld(chunk, tX, baseY + 6, tZ, BLOCKS.GOLD_ORE);
-    for (const lx of [tX - 4, tX + 4]) {
-      this.setVoxelInWorld(chunk, lx, baseY + 1, tZ + 2, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, lx, baseY + 2, tZ + 2, BLOCKS.GOLD_ORE);
-      this.setVoxelInWorld(chunk, lx, baseY + 3, tZ + 2, BLOCKS.STONE);
-    }
 
-    // --- 3. Open Basalt Caldera Crater Detailing (500, 500) ---
-    for (let dx = -8; dx <= 8; dx++) {
-      for (let dz = -8; dz <= 8; dz++) {
-        const d = Math.hypot(dx, dz);
-        if (d <= 8.5) {
-          const wx = fX + dx;
-          const wz = fZ + dz;
-          const floorY = this.getHeightAt(wx, wz);
-          for (let y = floorY + 1; y <= 63; y++) {
-            this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
-          }
-          if (d <= 2) {
-            this.setVoxelInWorld(chunk, wx, floorY, wz, BLOCKS.GOLD_ORE);
-            this.setVoxelInWorld(chunk, wx, floorY - 1, wz, BLOCKS.GOLD_ORE);
-          } else if (d <= 5) {
-            const isFumarole = ((dx + dz) % 3 === 0);
-            this.setVoxelInWorld(chunk, wx, floorY, wz, isFumarole ? BLOCKS.IRON_ORE : BLOCKS.COBBLESTONE);
-          } else {
-            this.setVoxelInWorld(chunk, wx, floorY, wz, BLOCKS.STONE);
+      // --- 2. Scenic Floating Shinto Torii Gate at Lake Kawaguchi (305, 18, 305) ---
+      // Stands proudly directly inside the reflection lake water (water level Y = 18, lake bed at Y = 15)
+      const toriiX = 305, toriiZ = 305;
+      const waterY = 18;
+
+      // Twin upright Torii pillars standing in water (Y = 15..24)
+      for (let y = 15; y <= 24; y++) {
+        this.setVoxelInWorld(chunk, toriiX - 3, y, toriiZ, BLOCKS.BRICK);
+        this.setVoxelInWorld(chunk, toriiX + 3, y, toriiZ, BLOCKS.BRICK);
+      }
+      // Lower horizontal crossbeam (nuki) at Y = 22
+      for (let x = toriiX - 3; x <= toriiX + 3; x++) {
+        this.setVoxelInWorld(chunk, x, 22, toriiZ, BLOCKS.BRICK);
+      }
+      // Upper double crossbeams (kasagi & shimaki) at Y = 24..25
+      for (let x = toriiX - 5; x <= toriiX + 5; x++) {
+        this.setVoxelInWorld(chunk, x, 24, toriiZ, BLOCKS.BRICK);
+        this.setVoxelInWorld(chunk, x, 25, toriiZ, BLOCKS.BRICK);
+      }
+      // Upturned roof ends at Y = 26
+      this.setVoxelInWorld(chunk, toriiX - 6, 26, toriiZ, BLOCKS.BRICK);
+      this.setVoxelInWorld(chunk, toriiX + 6, 26, toriiZ, BLOCKS.BRICK);
+      // Central golden plaque (gakuzuka)
+      this.setVoxelInWorld(chunk, toriiX, 23, toriiZ, BLOCKS.GOLD_ORE);
+
+      // Floating stone lanterns in lake approach
+      for (const lz of [toriiZ - 6, toriiZ + 6]) {
+        this.setVoxelInWorld(chunk, toriiX, waterY, lz, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, toriiX, waterY + 1, lz, BLOCKS.GOLD_ORE);
+        this.setVoxelInWorld(chunk, toriiX, waterY + 2, lz, BLOCKS.STONE);
+      }
+
+      // Shoreline wooden viewing deck & boardwalk at X in 292..296, Z in 302..308
+      for (let x = 292; x <= 296; x++) {
+        for (let z = 302; z <= 308; z++) {
+          this.setVoxelInWorld(chunk, x, 19, z, BLOCKS.WOOD_PLANK);
+          if (x === 296 || z === 302 || z === 308) {
+            this.setVoxelInWorld(chunk, x, 20, z, BLOCKS.IRON_ORE); // Railing
           }
         }
       }
+
+      // --- 3. Open Basalt Caldera Crater Detailing at Summit (350, 350) ---
+      for (let dx = -6; dx <= 6; dx++) {
+        for (let dz = -6; dz <= 6; dz++) {
+          const d = Math.hypot(dx, dz);
+          if (d <= 4.5) {
+            const wx = fX + dx;
+            const wz = fZ + dz;
+            const floorY = this.getHeightAt(wx, wz);
+            for (let y = floorY + 1; y <= 63; y++) {
+              this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
+            }
+            if (d <= 2) {
+              this.setVoxelInWorld(chunk, wx, floorY, wz, BLOCKS.GOLD_ORE); // Sulfur volcanic vent
+              this.setVoxelInWorld(chunk, wx, floorY - 1, wz, BLOCKS.GOLD_ORE);
+            } else {
+              const isFumarole = ((dx + dz) % 3 === 0);
+              this.setVoxelInWorld(chunk, wx, floorY, wz, isFumarole ? BLOCKS.IRON_ORE : BLOCKS.COBBLESTONE);
+            }
+          } else if (d <= 6.5) {
+            const wx = fX + dx;
+            const wz = fZ + dz;
+            const rimY = this.getHeightAt(wx, wz);
+            if (rimY >= 60) {
+              this.setVoxelInWorld(chunk, wx, rimY, wz, BLOCKS.SNOW);
+              this.setVoxelInWorld(chunk, wx, rimY - 1, wz, BLOCKS.ICE);
+            }
+          }
+        }
+      }
     }
-    for (let dx = -11; dx <= 11; dx++) {
-      for (let dz = -11; dz <= 11; dz++) {
-        const d = Math.hypot(dx, dz);
-        if (d >= 8.5 && d <= 11.5) {
-          const wx = fX + dx;
-          const wz = fZ + dz;
-          const rimY = this.getHeightAt(wx, wz);
-          if (rimY >= 60) {
-            this.setVoxelInWorld(chunk, wx, rimY, wz, BLOCKS.SNOW);
-            this.setVoxelInWorld(chunk, wx, rimY - 1, wz, BLOCKS.SNOW);
+
+    if (inFuji500) {
+      const fX = 500, fZ = 500;
+      const baseY = 24;
+
+      const sakuraCoords = [
+        [422, 485], [425, 473], [438, 467], [452, 472],
+        [456, 486], [450, 499], [437, 503], [424, 497],
+        [485, 422], [473, 425], [467, 438], [472, 452],
+        [486, 456], [499, 450], [503, 437], [497, 424],
+        [448, 456], [456, 448], [464, 464], [435, 452]
+      ];
+      for (const [sx, sz] of sakuraCoords) {
+        const sY = this.getHeightAt(sx, sz);
+        if (sY >= 24 && sY <= 28) {
+          this.buildSakuraTree(chunk, sx, sz, sY);
+        }
+      }
+
+      for (let x = 441; x <= 447; x++) {
+        for (let z = 466; z <= 472; z++) {
+          const isBorder = (x === 441 || x === 447 || z === 466 || z === 472);
+          this.setVoxelInWorld(chunk, x, baseY, z, BLOCKS.WOOD_PLANK);
+          if (isBorder && x !== 444) {
+            this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.IRON_ORE);
+          }
+        }
+      }
+      const tX = 444, tZ = 469;
+      for (let y = baseY + 1; y <= baseY + 6; y++) {
+        this.setVoxelInWorld(chunk, tX - 3, y, tZ, BLOCKS.BRICK);
+        this.setVoxelInWorld(chunk, tX + 3, y, tZ, BLOCKS.BRICK);
+      }
+      for (let x = tX - 4; x <= tX + 4; x++) {
+        this.setVoxelInWorld(chunk, x, baseY + 5, tZ, BLOCKS.BRICK);
+        this.setVoxelInWorld(chunk, x, baseY + 7, tZ, BLOCKS.BRICK);
+      }
+      this.setVoxelInWorld(chunk, tX - 5, baseY + 8, tZ, BLOCKS.BRICK);
+      this.setVoxelInWorld(chunk, tX + 5, baseY + 8, tZ, BLOCKS.BRICK);
+      this.setVoxelInWorld(chunk, tX, baseY + 6, tZ, BLOCKS.GOLD_ORE);
+      for (const lx of [tX - 4, tX + 4]) {
+        this.setVoxelInWorld(chunk, lx, baseY + 1, tZ + 2, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, lx, baseY + 2, tZ + 2, BLOCKS.GOLD_ORE);
+        this.setVoxelInWorld(chunk, lx, baseY + 3, tZ + 2, BLOCKS.STONE);
+      }
+
+      for (let dx = -8; dx <= 8; dx++) {
+        for (let dz = -8; dz <= 8; dz++) {
+          const d = Math.hypot(dx, dz);
+          if (d <= 8.5) {
+            const wx = fX + dx;
+            const wz = fZ + dz;
+            const floorY = this.getHeightAt(wx, wz);
+            for (let y = floorY + 1; y <= 63; y++) {
+              this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
+            }
+            if (d <= 2) {
+              this.setVoxelInWorld(chunk, wx, floorY, wz, BLOCKS.GOLD_ORE);
+              this.setVoxelInWorld(chunk, wx, floorY - 1, wz, BLOCKS.GOLD_ORE);
+            } else if (d <= 5) {
+              const isFumarole = ((dx + dz) % 3 === 0);
+              this.setVoxelInWorld(chunk, wx, floorY, wz, isFumarole ? BLOCKS.IRON_ORE : BLOCKS.COBBLESTONE);
+            } else {
+              this.setVoxelInWorld(chunk, wx, floorY, wz, BLOCKS.STONE);
+            }
+          }
+        }
+      }
+      for (let dx = -11; dx <= 11; dx++) {
+        for (let dz = -11; dz <= 11; dz++) {
+          const d = Math.hypot(dx, dz);
+          if (d >= 8.5 && d <= 11.5) {
+            const wx = fX + dx;
+            const wz = fZ + dz;
+            const rimY = this.getHeightAt(wx, wz);
+            if (rimY >= 60) {
+              this.setVoxelInWorld(chunk, wx, rimY, wz, BLOCKS.SNOW);
+              this.setVoxelInWorld(chunk, wx, rimY - 1, wz, BLOCKS.SNOW);
+            }
           }
         }
       }
@@ -4813,14 +4931,155 @@ export class World {
   }
 
   /**
-   * Natural underground caverns carved into mountain flanks
-   * Featuring hollowed chambers, rich veins of iron and gold ore, stalactites/stalagmites, and glowing torches.
+   * Natural underground caverns carved into mountain flanks and subterranean depths (Y = 8..22)
+   * Featuring hollowed cavities, rich exposed mineral veins of IRON_ORE and GOLD_ORE,
+   * glowing torches, stalactites/stalagmites, and underground water pools.
    */
   buildMountainCaverns(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
 
-    // --- 1. Mount Fuji Lava Grotto & Ore Cavern (Southern Flank: 500..540, 515..555, Y: 26..40) ---
+    // --- 1. North Mountain Subterranean Cavern (Y = 8..22, centered at X=0, Z=130, Y=15) ---
+    if (ox + 16 >= -20 && ox <= 20 && oz + 16 >= 115 && oz <= 145) {
+      const cX = 0, cZ = 130, cY = 15;
+      for (let dx = -9; dx <= 9; dx++) {
+        for (let dz = -11; dz <= 11; dz++) {
+          for (let dy = -6; dy <= 6; dy++) {
+            const wy = cY + dy;
+            if (wy < 8 || wy > 22) continue;
+            const wx = cX + dx;
+            const wz = cZ + dz;
+            const distSq = (dx / 8.0) * (dx / 8.0) + (dy / 5.5) * (dy / 5.5) + (dz / 10.0) * (dz / 10.0);
+
+            if (distSq <= 1.0) {
+              // Carve organic cavern void with AIR
+              this.setVoxelInWorld(chunk, wx, wy, wz, BLOCKS.AIR);
+            } else if (distSq <= 1.35) {
+              // Rich exposed mineral veins on cavern perimeter walls
+              const oreNoise = (Math.sin(wx * 1.7 + wy * 1.3 + wz * 1.1) * 43758.5453) % 1;
+              const isGold = Math.abs(oreNoise) > 0.82;
+              const isIron = Math.abs(oreNoise) > 0.65;
+              const wallBlock = isGold ? BLOCKS.GOLD_ORE : (isIron ? BLOCKS.IRON_ORE : (((wx + wy + wz) % 2 === 0) ? BLOCKS.COBBLESTONE : BLOCKS.STONE));
+              this.setVoxelInWorld(chunk, wx, wy, wz, wallBlock);
+            }
+          }
+        }
+      }
+
+      // Subterranean still water pool at floor (Y = 8..9)
+      for (let dx = -3; dx <= 3; dx++) {
+        for (let dz = -3; dz <= 3; dz++) {
+          if (Math.hypot(dx, dz) <= 2.8) {
+            this.setVoxelInWorld(chunk, cX + dx, 8, cZ + dz, BLOCKS.STONE);
+            this.setVoxelInWorld(chunk, cX + dx, 9, cZ + dz, BLOCKS.WATER);
+          }
+        }
+      }
+
+      // Cobblestone walking path across cavern floor at Y = 9
+      for (let dz = -9; dz <= 9; dz++) {
+        if (Math.abs(dz) > 3) {
+          this.setVoxelInWorld(chunk, cX, 9, cZ + dz, BLOCKS.COBBLESTONE);
+        }
+      }
+
+      // Stalagmites rising from floor (Y = 10..12)
+      const stalagmites = [
+        [cX - 3, cZ - 5, 2], [cX + 4, cZ - 4, 3],
+        [cX - 4, cZ + 6, 2], [cX + 3, cZ + 5, 3]
+      ];
+      for (const [sx, sz, h] of stalagmites) {
+        for (let y = 10; y < 10 + h; y++) {
+          this.setVoxelInWorld(chunk, sx, y, sz, BLOCKS.COBBLESTONE);
+        }
+      }
+
+      // Stalactites hanging from ceiling (Y = 18..20)
+      const stalactites = [
+        [cX - 2, cZ - 4, 2], [cX + 3, cZ - 5, 3],
+        [cX - 3, cZ + 4, 3], [cX + 2, cZ + 6, 2]
+      ];
+      for (const [tx, tz, h] of stalactites) {
+        for (let y = 20 - h; y <= 20; y++) {
+          this.setVoxelInWorld(chunk, tx, y, tz, BLOCKS.STONE);
+        }
+      }
+
+      // Glowing illumination torches (posts of OAK_LOG topped with GOLD_ORE lantern) at Y = 10..11
+      const torches = [
+        [cX - 4, cZ - 4], [cX + 4, cZ - 4],
+        [cX - 4, cZ + 4], [cX + 4, cZ + 4]
+      ];
+      for (const [tx, tz] of torches) {
+        this.setVoxelInWorld(chunk, tx, 10, tz, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, tx, 11, tz, BLOCKS.GOLD_ORE);
+      }
+    }
+
+    // --- 2. Mount Fuji Subterranean Cavern (Y = 8..22, centered at X=350, Z=325, Y=15) ---
+    if (ox + 16 >= 335 && ox <= 365 && oz + 16 >= 310 && oz <= 340) {
+      const fX = 350, fZ = 325, fY = 15;
+      for (let dx = -9; dx <= 9; dx++) {
+        for (let dz = -9; dz <= 9; dz++) {
+          for (let dy = -6; dy <= 6; dy++) {
+            const wy = fY + dy;
+            if (wy < 8 || wy > 22) continue;
+            const wx = fX + dx;
+            const wz = fZ + dz;
+            const distSq = (dx / 8.5) * (dx / 8.5) + (dy / 5.5) * (dy / 5.5) + (dz / 8.5) * (dz / 8.5);
+
+            if (distSq <= 1.0) {
+              this.setVoxelInWorld(chunk, wx, wy, wz, BLOCKS.AIR);
+            } else if (distSq <= 1.35) {
+              const oreNoise = (Math.sin(wx * 1.1 + wy * 1.5 + wz * 0.9) * 43758.5453) % 1;
+              const isGold = Math.abs(oreNoise) > 0.80;
+              const isIron = Math.abs(oreNoise) > 0.64;
+              const wallBlock = isGold ? BLOCKS.GOLD_ORE : (isIron ? BLOCKS.IRON_ORE : BLOCKS.STONE);
+              this.setVoxelInWorld(chunk, wx, wy, wz, wallBlock);
+            }
+          }
+        }
+      }
+
+      // Torches in Fuji cavern
+      for (const [tx, tz] of [[fX - 4, fZ - 4], [fX + 4, fZ - 4], [fX - 4, fZ + 4], [fX + 4, fZ + 4]]) {
+        this.setVoxelInWorld(chunk, tx, 10, tz, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, tx, 11, tz, BLOCKS.GOLD_ORE);
+      }
+    }
+
+    // --- 3. Norway Granite Subterranean Cavern (Y = 8..22, centered at X=25, Z=505, Y=15) ---
+    if (ox + 16 >= 10 && ox <= 40 && oz + 16 >= 490 && oz <= 520) {
+      const nX = 25, nZ = 505, nY = 15;
+      for (let dx = -8; dx <= 8; dx++) {
+        for (let dz = -8; dz <= 8; dz++) {
+          for (let dy = -6; dy <= 6; dy++) {
+            const wy = nY + dy;
+            if (wy < 8 || wy > 22) continue;
+            const wx = nX + dx;
+            const wz = nZ + dz;
+            const distSq = (dx / 7.5) * (dx / 7.5) + (dy / 5.5) * (dy / 5.5) + (dz / 7.5) * (dz / 7.5);
+
+            if (distSq <= 1.0) {
+              this.setVoxelInWorld(chunk, wx, wy, wz, BLOCKS.AIR);
+            } else if (distSq <= 1.35) {
+              const oreNoise = (Math.sin(wx * 1.4 + wy * 0.8 + wz * 1.2) * 43758.5453) % 1;
+              const isGold = Math.abs(oreNoise) > 0.83;
+              const isIron = Math.abs(oreNoise) > 0.66;
+              this.setVoxelInWorld(chunk, wx, wy, wz, isGold ? BLOCKS.GOLD_ORE : (isIron ? BLOCKS.IRON_ORE : BLOCKS.STONE));
+            }
+          }
+        }
+      }
+
+      // Torches in Norway cavern
+      for (const [tx, tz] of [[nX - 3, nZ - 3], [nX + 3, nZ - 3], [nX - 3, nZ + 3], [nX + 3, nZ + 3]]) {
+        this.setVoxelInWorld(chunk, tx, 10, tz, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, tx, 11, tz, BLOCKS.GOLD_ORE);
+      }
+    }
+
+    // --- 4. Upper Mountain Cliff Grottos (Y: 25..38) for landscape variation ---
     if (ox + 16 >= 500 && ox <= 540 && oz + 16 >= 515 && oz <= 555) {
       const cX = 518, cZ = 532, cY = 32;
       for (let dx = -9; dx <= 9; dx++) {
@@ -4862,37 +5121,6 @@ export class World {
         }
       }
 
-      const stalagmites = [
-        [cX - 4, cZ - 3, 2], [cX + 5, cZ - 2, 3],
-        [cX - 3, cZ + 5, 2], [cX + 4, cZ + 4, 3],
-        [cX - 5, cZ + 2, 2], [cX + 2, cZ - 5, 2]
-      ];
-      for (const [sx, sz, h] of stalagmites) {
-        for (let y = 27; y < 27 + h; y++) {
-          this.setVoxelInWorld(chunk, sx, y, sz, BLOCKS.COBBLESTONE);
-        }
-      }
-
-      const stalactites = [
-        [cX - 3, cZ - 2, 2], [cX + 4, cZ - 3, 3],
-        [cX - 2, cZ + 4, 3], [cX + 3, cZ + 3, 2],
-        [cX, cZ - 4, 2],     [cX, cZ + 4, 2]
-      ];
-      for (const [tx, tz, h] of stalactites) {
-        for (let y = 37 - h; y <= 37; y++) {
-          this.setVoxelInWorld(chunk, tx, y, tz, BLOCKS.STONE);
-        }
-      }
-
-      for (let y = 28; y <= 34; y++) {
-        this.setVoxelInWorld(chunk, cX - 7, y, cZ, BLOCKS.GOLD_ORE);
-        this.setVoxelInWorld(chunk, cX - 7, y, cZ + 1, BLOCKS.GOLD_ORE);
-        this.setVoxelInWorld(chunk, cX + 7, y, cZ - 1, BLOCKS.IRON_ORE);
-        this.setVoxelInWorld(chunk, cX + 7, y, cZ, BLOCKS.IRON_ORE);
-        this.setVoxelInWorld(chunk, cX, y, cZ - 7, BLOCKS.IRON_ORE);
-        this.setVoxelInWorld(chunk, cX + 1, y, cZ - 7, BLOCKS.GOLD_ORE);
-      }
-
       const torches = [
         [cX - 4, 27, cZ - 4], [cX + 4, 27, cZ - 4],
         [cX - 4, 27, cZ + 4], [cX + 4, 27, cZ + 4]
@@ -4901,79 +5129,6 @@ export class World {
         this.setVoxelInWorld(chunk, tx, ty, tz, BLOCKS.OAK_LOG);
         this.setVoxelInWorld(chunk, tx, ty + 1, tz, BLOCKS.GOLD_ORE);
       }
-
-      for (let z = 540; z <= 548; z++) {
-        for (let x = 506; x <= 510; x++) {
-          for (let y = 27; y <= 30; y++) {
-            if (y === 27) {
-              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
-            } else {
-              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
-            }
-          }
-        }
-      }
-      for (let y = 28; y <= 31; y++) {
-        this.setVoxelInWorld(chunk, 505, y, 548, BLOCKS.COBBLESTONE);
-        this.setVoxelInWorld(chunk, 511, y, 548, BLOCKS.COBBLESTONE);
-      }
-      for (let x = 505; x <= 511; x++) {
-        this.setVoxelInWorld(chunk, x, 32, 548, BLOCKS.STONE);
-      }
-      this.setVoxelInWorld(chunk, 505, 30, 548, BLOCKS.GOLD_ORE);
-      this.setVoxelInWorld(chunk, 511, 30, 548, BLOCKS.GOLD_ORE);
-    }
-
-    // --- 2. Norway Granite Mountain Cliff Cavern (20..45, 490..525, Y: 24..38) ---
-    if (ox + 16 >= 15 && ox <= 50 && oz + 16 >= 490 && oz <= 525) {
-      const nX = 28, nZ = 505, nY = 30;
-      for (let dx = -7; dx <= 7; dx++) {
-        for (let dz = -7; dz <= 7; dz++) {
-          for (let dy = -5; dy <= 5; dy++) {
-            const wx = nX + dx;
-            const wz = nZ + dz;
-            const wy = nY + dy;
-            const distSq = (dx / 7.5) * (dx / 7.5) + (dz / 7.5) * (dz / 7.5) + (dy / 5.0) * (dy / 5.0);
-
-            if (distSq <= 1.0) {
-              this.setVoxelInWorld(chunk, wx, wy, wz, BLOCKS.AIR);
-            } else if (distSq <= 1.25) {
-              const oreNoise = (Math.sin(wx * 1.3 + wy * 0.9 + wz * 1.1) * 43758.5453) % 1;
-              const isGold = Math.abs(oreNoise) > 0.84;
-              const isIron = Math.abs(oreNoise) > 0.68;
-              this.setVoxelInWorld(chunk, wx, wy, wz, isGold ? BLOCKS.GOLD_ORE : (isIron ? BLOCKS.IRON_ORE : BLOCKS.STONE));
-            }
-          }
-        }
-      }
-      for (let dx = -6; dx <= 6; dx++) {
-        for (let dz = -6; dz <= 6; dz++) {
-          if (Math.hypot(dx, dz) <= 6.5) {
-            this.setVoxelInWorld(chunk, nX + dx, 25, nZ + dz, BLOCKS.COBBLESTONE);
-          }
-        }
-      }
-      for (let y = 26; y <= 32; y++) {
-        this.setVoxelInWorld(chunk, nX + 6, y, nZ, BLOCKS.GOLD_ORE);
-        this.setVoxelInWorld(chunk, nX + 6, y, nZ + 1, BLOCKS.GOLD_ORE);
-        this.setVoxelInWorld(chunk, nX - 6, y, nZ, BLOCKS.IRON_ORE);
-        this.setVoxelInWorld(chunk, nX - 6, y, nZ - 1, BLOCKS.IRON_ORE);
-      }
-      this.setVoxelInWorld(chunk, nX - 3, 26, nZ - 3, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, nX - 3, 27, nZ - 3, BLOCKS.GOLD_ORE);
-      this.setVoxelInWorld(chunk, nX + 3, 26, nZ + 3, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, nX + 3, 27, nZ + 3, BLOCKS.GOLD_ORE);
-
-      for (let x = 16; x <= 22; x++) {
-        for (let z = 504; z <= 506; z++) {
-          this.setVoxelInWorld(chunk, x, 25, z, BLOCKS.COBBLESTONE);
-          this.setVoxelInWorld(chunk, x, 26, z, BLOCKS.AIR);
-          this.setVoxelInWorld(chunk, x, 27, z, BLOCKS.AIR);
-          this.setVoxelInWorld(chunk, x, 28, z, BLOCKS.AIR);
-        }
-      }
-      this.setVoxelInWorld(chunk, 17, 28, 503, BLOCKS.GOLD_ORE);
-      this.setVoxelInWorld(chunk, 17, 28, 507, BLOCKS.GOLD_ORE);
     }
   }
 

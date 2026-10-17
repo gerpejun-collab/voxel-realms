@@ -933,7 +933,11 @@ export class VoxelCar {
     if (this.scene && typeof this.scene.add === 'function') {
       this.scene.add(this.group);
     }
-    this.update(0.016);
+    const initPos = this.computePositionAtProgress(this.progress);
+    this.position.set(initPos.x, initPos.y, initPos.z);
+    this.rotationY = this.computeRotationAtProgress(this.progress);
+    this.group.position.copy(this.position);
+    this.group.rotation.y = this.rotationY;
   }
 
   computePositionAtProgress(prog) {
@@ -1052,20 +1056,28 @@ export class VoxelCar {
           yLevels.push(curY, curY + 1);
         }
 
-        for (const iy of yLevels) {
-          const bx = Math.floor(sampleX);
-          const bz = Math.floor(sampleZ);
-          const block = this.world.getBlock(bx, iy, bz);
+        const checkXs = [Math.floor(sampleX)];
+        if (lat < 0) {
+          checkXs.push(Math.floor(sampleX - 0.08));
+        } else if (lat > 0) {
+          checkXs.push(Math.floor(sampleX + 0.08));
+        }
 
-          if (isSolidOrObstacle(block)) {
-            return {
-              distance: roundedD,
-              blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
-              x: sampleX,
-              y: iy,
-              z: sampleZ,
-              isObstacle: true
-            };
+        for (const bx of checkXs) {
+          for (const iy of yLevels) {
+            const bz = Math.floor(sampleZ);
+            const block = this.world.getBlock(bx, iy, bz);
+
+            if (isSolidOrObstacle(block)) {
+              return {
+                distance: roundedD,
+                blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
+                x: sampleX,
+                y: iy,
+                z: sampleZ,
+                isObstacle: true
+              };
+            }
           }
         }
       }

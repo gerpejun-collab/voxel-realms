@@ -395,26 +395,48 @@ export class DrivableCar {
     const targetRoll = this.isDrifting ? -this.steering * 0.08 : -this.steering * 0.035;
     this.roll += (targetRoll - this.roll) * Math.min(1.0, dt * 8.0);
 
-    // 5. Solid Wall Collision Resolution
-    const moveDist = this.speed * dt;
-    const sinY = Math.sin(this.yaw);
-    const cosY = Math.cos(this.yaw);
+    // 5. Solid Wall Collision Resolution with Swept AABB Substepping
+    const totalDist = this.speed * dt;
+    const absDist = Math.abs(totalDist);
+    const steps = Math.max(1, Math.min(8, Math.ceil(absDist / 0.22)));
+    const stepDist = totalDist / steps;
 
-    const targetPos = {
-      x: this.pos.x + (-sinY * moveDist),
-      y: this.pos.y,
-      z: this.pos.z + (-cosY * moveDist)
-    };
+    for (let s = 0; s < steps; s++) {
+      const sinY = Math.sin(this.yaw);
+      const cosY = Math.cos(this.yaw);
+      const dx = -sinY * stepDist;
+      const dz = -cosY * stepDist;
 
-    if (this.checkCollisionAt(targetPos, this.yaw, world)) {
-      // Wall collision! Stop car and rebound slightly to prevent barrier clipping
-      this.speed = -this.speed * 0.35;
-      if (sound && typeof sound.playClick === 'function') {
-        sound.playClick();
+      // Try full step first
+      const fullStep = { x: this.pos.x + dx, y: this.pos.y, z: this.pos.z + dz };
+      if (!this.checkCollisionAt(fullStep, this.yaw, world)) {
+        this.pos.x = fullStep.x;
+        this.pos.z = fullStep.z;
+        continue;
       }
-    } else {
-      this.pos.x = targetPos.x;
-      this.pos.z = targetPos.z;
+
+      // If full step collided, try sliding along X (Z blocked)
+      const tryX = { x: this.pos.x + dx, y: this.pos.y, z: this.pos.z };
+      const canMoveX = !this.checkCollisionAt(tryX, this.yaw, world);
+
+      // Try sliding along Z (X blocked)
+      const tryZ = { x: this.pos.x, y: this.pos.y, z: this.pos.z + dz };
+      const canMoveZ = !this.checkCollisionAt(tryZ, this.yaw, world);
+
+      if (canMoveX) {
+        this.pos.x = tryX.x;
+        this.speed *= 0.88;
+      } else if (canMoveZ) {
+        this.pos.z = tryZ.z;
+        this.speed *= 0.88;
+      } else {
+        // Complete collision with barrier: stop car without clipping through
+        this.speed = -this.speed * 0.25;
+        if (sound && typeof sound.playClick === 'function') {
+          sound.playClick();
+        }
+        break;
+      }
     }
 
     // 6. Ground & Lake Bridge Elevation Follow
@@ -515,7 +537,12 @@ export class VehicleManager {
       { id: 'car_gold_arrow', color: 0xeab308, x: -490, y: 24, z: -417, yaw: Math.PI / 2, name: '🏎️ Gold Arrow #3 (Grid P3)' },
       { id: 'car_british_racing', color: 0x16a34a, x: -486, y: 24, z: -423, yaw: Math.PI / 2, name: '🏎️ Emerald GP #4 (Grid P4)' },
       { id: 'car_papaya_speed', color: 0xea580c, x: -512, y: 24, z: -433, yaw: Math.PI / 2, name: '🏎️ Papaya Speed #5 (Pit Stall 1)' },
-      { id: 'car_silver_star', color: 0x94a3b8, x: -478, y: 24, z: -433, yaw: Math.PI / 2, name: '🏎️ Silver Star #6 (Pit Stall 2)' }
+      { id: 'car_silver_star', color: 0x94a3b8, x: -478, y: 24, z: -433, yaw: Math.PI / 2, name: '🏎️ Silver Star #6 (Pit Stall 2)' },
+
+      // Central Spawn Plaza & Playa Paraíso Spawn Points
+      { id: 'car_spawn_gold', color: 0xf59e0b, x: 12, y: 25, z: 12, yaw: 0, name: '🏎️ GT Veloce Oro (Plaza Central)' },
+      { id: 'car_spawn_red', color: 0xdc2626, x: -12, y: 25, z: -12, yaw: Math.PI, name: '🏎️ GT Monza Rojo (Plaza Central)' },
+      { id: 'car_beach_cyan', color: 0x06b6d4, x: 14, y: 20, z: -480, yaw: 0, name: '🏎️ Riviera Spyder (Playa Paraíso)' }
     ];
 
     for (const cfg of carConfigs) {
@@ -700,9 +727,77 @@ export class VehicleManager {
     }
   }
 
+  handleRemoteDrive(data, remoteAvatars) {
+    if (!data || !data.vehicleId) return;
+    const car = this.cars.get(data.vehicleId);
+    if (!car || car === this.activeCar) return;
+
+    car.driverId = data.playerId;
+    car.pos.x = data.x;
+    car.pos.y = data.y;
+    car.pos.z = data.z;
+    car.yaw = data.yaw;
+    car.pitch = data.pitch || 0;
+    car.roll = data.roll || 0;
+    car.speed = data.speed || 0;
+    car.steering = data.steering || 0;
+    car.isDrifting = Boolean(data.isDrifting);
+    car.syncMeshTransform();
+
+    // Wheel rotation
+    const rollAngle = (car.speed / 0.36) * 0.05;
+    if (car.flMesh) car.flMesh.rotation.x += rollAngle;
+    if (car.frMesh) car.frMesh.rotation.x += rollAngle;
+    if (car.rlMesh) car.rlMesh.rotation.x += rollAngle;
+    if (car.rrMesh) car.rrMesh.rotation.x += rollAngle;
+
+    if (car.flWheel && car.frWheel) {
+      car.flWheel.rotation.y = car.steering * 0.46;
+      car.frWheel.rotation.y = car.steering * 0.46;
+    }
+
+    if (car.steeringWheel) {
+      car.steeringWheel.rotation.z = -car.steering * 1.45;
+    }
+
+    // Drifting tire smoke for remote car
+    if (car.isDrifting && this.particleManager) {
+      const [leftTire, rightTire] = car.getRearWheelPositions();
+      this.particleManager.spawnDriftSmoke(leftTire.x, leftTire.y, leftTire.z, 2);
+      this.particleManager.spawnDriftSmoke(rightTire.x, rightTire.y, rightTire.z, 2);
+    }
+
+    // Position remote driver avatar inside car seat
+    if (remoteAvatars && data.playerId) {
+      const avatar = remoteAvatars.get(data.playerId);
+      if (avatar) {
+        avatar.setTargetState([data.x, data.y + 0.15, data.z], [data.yaw, data.pitch || 0], 'driving');
+      }
+    }
+  }
+
+  handleRemoteExit(data, remoteAvatars) {
+    if (!data || !data.vehicleId) return;
+    const car = this.cars.get(data.vehicleId);
+    if (car && car.driverId === data.playerId) {
+      car.driverId = null;
+      car.driverName = null;
+    }
+    if (remoteAvatars && data.playerId) {
+      const avatar = remoteAvatars.get(data.playerId);
+      if (avatar) {
+        avatar.action = 'idle';
+      }
+    }
+  }
+
   update(dt, controls, multiplayer = null) {
     if (multiplayer && multiplayer.remoteAvatars) {
       this.syncRemoteDrivers(multiplayer.remoteAvatars);
     }
   }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { DrivableCar, VehicleManager };
 }

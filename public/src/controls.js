@@ -205,9 +205,19 @@ export class Controls {
     const scopeLens = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.01), lensMat);
     scopeLens.position.set(0, 0.13, 0.06);
 
+    // Ergonomic Left Support Arm & Hand holding the handguard underneath
+    const leftArmGroup = new THREE.Group();
+    const leftSleeveMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, 0.14), shirtMat);
+    leftSleeveMesh.position.set(-0.16, -0.18, -0.30);
+    leftSleeveMesh.rotation.set(0.45, 0.25, -0.35);
+    const leftHandMesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.16), skinMat);
+    leftHandMesh.position.set(-0.04, -0.03, -0.38);
+    leftArmGroup.add(leftSleeveMesh, leftHandMesh);
+
     this.rifleGroup.add(
       stock, buttPlate, receiver, grip, triggerGuard, magazine,
-      handguard, barrel, muzzle, scopeRail, scopeBody, scopeRings, scopeFront, scopeRear, scopeLens
+      handguard, barrel, muzzle, scopeRail, scopeBody, scopeRings, scopeFront, scopeRear, scopeLens,
+      leftArmGroup
     );
     this.rifleGroup.visible = false;
     this.armPivot.add(this.rifleGroup);
@@ -288,9 +298,11 @@ export class Controls {
     const nextAim = Boolean(aiming) && this.weaponsMode;
     if (this.isAiming === nextAim) return this.isAiming;
     this.isAiming = nextAim;
-    if (!this.isAiming && typeof document !== 'undefined') {
+    if (typeof document !== 'undefined') {
       const scopeOverlay = document.getElementById('rifle-scope-overlay');
-      if (scopeOverlay) scopeOverlay.classList.add('hidden');
+      if (scopeOverlay && !this.isAiming) scopeOverlay.classList.add('hidden');
+      const btnAim = document.getElementById('btn-weapon-aim');
+      if (btnAim) btnAim.classList.toggle('active', this.isAiming);
     }
     if (sound && typeof sound.playClick === 'function') {
       sound.playClick(this.isAiming ? 1.25 : 0.9);
@@ -429,9 +441,27 @@ export class Controls {
         }
       } else if (e.button === 2) {
         if (this.weaponsMode) {
-          this.toggleAiming();
+          this.aimMouseDownTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+          this.aimWasActiveOnDown = this.isAiming;
+          if (!this.isAiming) {
+            this.setAiming(true);
+          }
         } else {
           this.triggerPlace();
+        }
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 2 && this.weaponsMode) {
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const duration = now - (this.aimMouseDownTime || 0);
+        if (this.aimWasActiveOnDown) {
+          this.setAiming(false);
+        } else if (duration >= 250) {
+          this.setAiming(false);
+        } else {
+          this.setAiming(true);
         }
       }
     });
@@ -901,9 +931,13 @@ export class Controls {
         break;
       case 'KeyZ':
       case 'KeyQ':
-        if (this.weaponsMode) {
+        if (this.weaponsMode && !e.repeat) {
           e.preventDefault();
-          this.toggleAiming();
+          this.keyZDownTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+          this.keyZWasActiveOnDown = this.isAiming;
+          if (!this.isAiming) {
+            this.setAiming(true);
+          }
         }
         break;
       case 'KeyG':
@@ -931,6 +965,20 @@ export class Controls {
 
   handleKeyUp(e) {
     switch (e.code) {
+      case 'KeyZ':
+      case 'KeyQ':
+        if (this.weaponsMode) {
+          const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+          const duration = now - (this.keyZDownTime || 0);
+          if (this.keyZWasActiveOnDown) {
+            this.setAiming(false);
+          } else if (duration >= 250) {
+            this.setAiming(false);
+          } else {
+            this.setAiming(true);
+          }
+        }
+        break;
       case 'KeyW':
       case 'ArrowUp':
         this.keys.forward = false;

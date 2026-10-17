@@ -269,7 +269,7 @@ export class World {
     if (wz >= 440 && wz <= 560 && Math.abs(wx) <= 55) return true; // Norway Fjords
     if (wz >= -560 && wz <= -440 && Math.abs(wx) <= 75) return true; // Playa Paraíso Beach Sector
     if (Math.abs(wx - (-500)) <= 125 && Math.abs(wz - (-500)) <= 125) return true; // Grand Prix Racing Circuit
-    if (Math.hypot(wx - 500, wz - 500) <= 88) return true; // Mount Fuji Volcano & Reflection Lakes
+    if (Math.hypot(wx - 350, wz - 350) <= 70 || Math.hypot(wx - 500, wz - 500) <= 88) return true; // Mount Fuji Volcano & Reflection Lakes
     if (this.isRoadAt(wx, wz) || this.isTunnelAt(wx, wz)) return true;
     return false;
   }
@@ -303,6 +303,71 @@ export class World {
   }
 
   /**
+   * Colossal Mount Fuji Landmark centered at (+350, +350)
+   * Rising 2.58x higher than surrounding terrain (Y=24) up to maximum world height Y=62.
+   * Features symmetrical conical peak, volcanic caldera crater depression (Y=54..56),
+   * snowline (Y>=46), and reflection lakes (Y=18) with floating torii.
+   */
+  getFujiHeight(wx, wz) {
+    const fX = 350;
+    const fZ = 350;
+
+    // Southwestern Reflection Lake (Lake Kawaguchi) facing Japan Imperial
+    const distLake1 = Math.hypot(wx - 305, wz - 305);
+    if (distLake1 <= 14) {
+      return 15; // Deep lake bed below WATER_LEVEL=18
+    } else if (distLake1 <= 17) {
+      const t = (distLake1 - 14) / 3;
+      return Math.floor(15 + t * 9); // Shoreline transition 15..24
+    }
+
+    // Southeastern Reflection Pond (Lake Motosu)
+    const distLake2 = Math.hypot(wx - 375, wz - 315);
+    if (distLake2 <= 11) {
+      return 15;
+    } else if (distLake2 <= 14) {
+      const t = (distLake2 - 11) / 3;
+      return Math.floor(15 + t * 9);
+    }
+
+    const d = Math.hypot(wx - fX, wz - fZ);
+    if (d > 68) return null;
+
+    // 1. Volcanic Caldera Crater Depression for d <= 4: Y = 54..56
+    if (d <= 4) {
+      if (d <= 1) return 54;
+      if (d <= 2.5) return 55;
+      return 56;
+    }
+
+    // 2. Caldera Rim (Peak Summit) for 4 < d <= 6: Y = 62 (max world height)
+    if (d <= 6) {
+      return 62;
+    }
+
+    // 3. Snow-Capped Upper Cone for 6 < d <= 22: Y = 62 down to 46 (Snowline)
+    if (d <= 22) {
+      const t = (d - 6) / 16;
+      return Math.round(62 - 16 * Math.pow(t, 0.85));
+    }
+
+    // 4. Volcanic Mid Flank for 22 < d <= 42: Y = 46 down to 32
+    if (d <= 42) {
+      const t = (d - 22) / 20;
+      return Math.round(46 - 14 * t);
+    }
+
+    // 5. Lower Skirt for 42 < d <= 58: Y = 32 down to 24
+    if (d <= 58) {
+      const t = (d - 42) / 16;
+      return Math.round(32 - 8 * Math.pow(t, 1.3));
+    }
+
+    // 6. Smooth Blending into surrounding terrain for 58 < d <= 68
+    return 24;
+  }
+
+  /**
    * Deterministic height function with central spawn clearing, beach shoreline, and leveled monument plateaus
    */
   getHeightAt(wx, wz) {
@@ -318,6 +383,19 @@ export class World {
         const ridgeH = 50 + Math.floor(Math.abs(Math.sin(wx * 0.3 + wz * 0.15)) * 6);
         return Math.min(CHUNK_HEIGHT - 6, ridgeH);
       }
+    }
+
+    // 1.5. Colossal Mount Fuji Landmark & Reflection Lakes at (+350, +350)
+    const fujiH = this.getFujiHeight(wx, wz);
+    if (fujiH !== null) {
+      return fujiH;
+    }
+
+    // 1.8. Mountain Ridge Overburden above Highway Tunnels
+    if (this.isTunnelAt(wx, wz)) {
+      const ridgeBase = 35;
+      const ridgeH = ridgeBase + Math.floor(Math.abs(Math.sin(wx * 0.25 + wz * 0.25)) * 3);
+      return ridgeH;
     }
 
     // 2. Playa Paraíso / Tropical Beach Sector at (0, -500) (wz in -560..-440, wx in -75..75)
@@ -497,24 +575,25 @@ export class World {
               } else {
                 block = BLOCKS.GRASS;
               }
-            } else if (Math.hypot(wx - 500, wz - 500) <= 88) {
+            } else if (Math.hypot(wx - 350, wz - 350) <= 68 || Math.hypot(wx - 500, wz - 500) <= 88) {
               // Mount Fuji (Monte Fuji)
-              const dF = Math.hypot(wx - 500, wz - 500);
+              const d350 = Math.hypot(wx - 350, wz - 350);
+              const dLake350_1 = Math.hypot(wx - 305, wz - 305);
+              const dLake350_2 = Math.hypot(wx - 375, wz - 315);
               const dLake1 = Math.hypot(wx - 438, wz - 485);
               const dLake2 = Math.hypot(wx - 485, wz - 438);
-              if (dLake1 <= 17 || dLake2 <= 17) {
-                block = BLOCKS.SAND; // Reflection lake bed & beach
-              } else if (dF <= 8) {
-                // Open basalt crater floor & inner rim
-                block = (dF <= 2) ? BLOCKS.GOLD_ORE : (((wx + wz) % 2 === 0) ? BLOCKS.COBBLESTONE : BLOCKS.STONE);
+              if (dLake350_1 <= 17 || dLake350_2 <= 14 || dLake1 <= 17 || dLake2 <= 17) {
+                block = (surfaceY <= WATER_LEVEL) ? BLOCKS.SAND : BLOCKS.GRAVEL; // Reflection lake bed & beach
+              } else if (d350 <= 4) {
+                // Volcanic Caldera crater floor: sulfur gold vents, basalt cobblestone & stone
+                block = ((wx + wz) % 3 === 0) ? BLOCKS.GOLD_ORE : BLOCKS.COBBLESTONE;
               } else if (surfaceY >= 46) {
-                // Snowy caldera summit & snow cap
+                // Snowy caldera summit & snow cap (Y >= 46)
                 block = BLOCKS.SNOW;
-              } else if (surfaceY >= 33) {
-                // Dark volcanic basalt slopes & scree
-                block = ((wx + wz) % 3 === 0) ? BLOCKS.COBBLESTONE : BLOCKS.STONE;
+              } else if (surfaceY >= 32) {
+                // Volcanic basalt slopes & scree
+                block = ((wx + wz) % 2 === 0) ? BLOCKS.STONE : BLOCKS.GRAVEL;
               } else {
-                // Lower foothill apron
                 block = BLOCKS.GRASS;
               }
             } else if (surfaceY >= 42) {
@@ -531,10 +610,18 @@ export class World {
               block = BLOCKS.SAND;
             } else if (Math.abs(wx - (-500)) <= 125 && Math.abs(wz - (-500)) <= 125) {
               block = (surfaceY <= WATER_LEVEL + 1) ? BLOCKS.SAND : BLOCKS.COBBLESTONE;
-            } else if (Math.hypot(wx - 500, wz - 500) <= 88) {
+            } else if (Math.hypot(wx - 350, wz - 350) <= 68 || Math.hypot(wx - 500, wz - 500) <= 88) {
+              const dLake350_1 = Math.hypot(wx - 305, wz - 305);
+              const dLake350_2 = Math.hypot(wx - 375, wz - 315);
               const dLake1 = Math.hypot(wx - 438, wz - 485);
               const dLake2 = Math.hypot(wx - 485, wz - 438);
-              block = (dLake1 <= 17 || dLake2 <= 17) ? BLOCKS.SAND : BLOCKS.STONE;
+              if (dLake350_1 <= 17 || dLake350_2 <= 14 || dLake1 <= 17 || dLake2 <= 17) {
+                block = BLOCKS.SAND;
+              } else if (surfaceY >= 46) {
+                block = BLOCKS.ICE; // Glacial ice under snow cap
+              } else {
+                block = BLOCKS.STONE;
+              }
             } else if (surfaceY >= 42) {
               block = BLOCKS.STONE;
             } else if (surfaceY <= WATER_LEVEL + 1) {
@@ -564,7 +651,15 @@ export class World {
           }
         }
 
-        // Fill reflection lakes at base of Mount Fuji up to Y=24
+        // Fill reflection lakes at base of Mount Fuji (+350, +350) up to WATER_LEVEL=18
+        const isFujiLake350 = (Math.hypot(wx - 305, wz - 305) <= 14 || Math.hypot(wx - 375, wz - 315) <= 11);
+        if (isFujiLake350 && surfaceY < WATER_LEVEL) {
+          for (let y = surfaceY + 1; y <= WATER_LEVEL; y++) {
+            chunk.voxels[chunk.getIndex(lx, y, lz)] = BLOCKS.WATER;
+          }
+        }
+
+        // Fill reflection lakes at base of Mount Fuji (+500, +500) up to Y=24
         const isFujiLake = (Math.hypot(wx - 438, wz - 485) <= 14 || Math.hypot(wx - 485, wz - 438) <= 14);
         if (isFujiLake && surfaceY < 24) {
           for (let y = surfaceY + 1; y <= 24; y++) {
@@ -719,9 +814,9 @@ export class World {
 
         // Minecraft-style Mountain Tunnel Architecture
         if (inTunnel) {
-          // Ensure rocky mountain overburden above the tunnel roof (Y = 30..36)
-          const roofTop = Math.max(naturalH, roadY + 11);
-          for (let y = roadY + 6; y <= roofTop; y++) {
+          // Ensure rocky mountain overburden above the tunnel vault roof (Y = 31..roofTop)
+          const roofTop = Math.max(naturalH, roadY + 12);
+          for (let y = roadY + 7; y <= roofTop; y++) {
             if (y === roofTop) {
               chunk.setBlockLocal(lx, y, lz, BLOCKS.GRASS);
             } else if (y >= roofTop - 1) {
@@ -734,26 +829,37 @@ export class World {
           const isRib = (Math.abs(wx) % 4 === 0 || Math.abs(wz) % 4 === 0);
 
           if (!onRoad) {
-            // Outer tunnel wall (at distance 4 from tunnel center)
-            for (let y = roadY; y <= roadY + 6; y++) {
+            // Outer tunnel wall (Y: 24..29) with oak log ribs and cobblestone
+            for (let y = roadY; y <= roadY + 5; y++) {
               chunk.setBlockLocal(lx, y, lz, isRib ? BLOCKS.OAK_LOG : BLOCKS.COBBLESTONE);
             }
-          } else {
-            // Inside tunnel bore: arched ceiling at Y = roadY + 5 (29)
-            const isCenter = (wx === 0 || wz === 0 || wx === 229 || wx === -229 || wz === 250 || wx === 440);
-            if (isCenter && isRib) {
-              // Glowing Minecraft tunnel ceiling lantern
-              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.GOLD_ORE);
-            } else if (isRib) {
-              // Timber mineshaft support crossbeam
-              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.WOOD_PLANK);
-            } else {
-              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.COBBLESTONE);
+            // Wall illumination lanterns every 4 blocks at Y = 27 (roadY + 3)
+            if (isRib) {
+              chunk.setBlockLocal(lx, roadY + 3, lz, BLOCKS.GOLD_ORE);
             }
-            // Clear any stray mountain blocks above roadY..roadY+4 inside tunnel
+            // Arch wall abutment at Y = 30
+            chunk.setBlockLocal(lx, roadY + 6, lz, BLOCKS.STONE);
+          } else {
+            // Inside tunnel bore: strictly clear 4 blocks of headroom (Y = 25..28)
             for (let y = roadY + 1; y <= roadY + 4; y++) {
               chunk.setBlockLocal(lx, y, lz, BLOCKS.AIR);
             }
+
+            // Stone arch vault at Y = 29..30 (roadY + 5 and roadY + 6)
+            const isCenter = (wx === 0 || wz === 0 || wx === 229 || wx === -229 || wz === 250 || wx === 440);
+            if (isCenter && isRib) {
+              // Glowing illumination ceiling lantern at Y = 29
+              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.GOLD_ORE);
+            } else if (isRib) {
+              // Structural timber crossbeam at Y = 29
+              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.WOOD_PLANK);
+            } else {
+              // Stone arch voussoir at Y = 29
+              chunk.setBlockLocal(lx, roadY + 5, lz, BLOCKS.COBBLESTONE);
+            }
+
+            // Continuous stone arch vault keystone layer at Y = 30 (roadY + 6)
+            chunk.setBlockLocal(lx, roadY + 6, lz, BLOCKS.STONE);
           }
         }
       }
@@ -896,6 +1002,80 @@ export class World {
         this.setVoxelInWorld(chunk, gx + 1, y, gz + 1, BLOCKS.IRON_ORE);
       }
       this.setVoxelInWorld(chunk, gx + 1, baseY + 8, gz + 1, BLOCKS.GOLD_ORE);
+    }
+
+    // --- 4. Four Grand Imperial Triumphal Gate Arches over Highway Entries ---
+    // North & South Highway Entries (Z = +19, Z = -19)
+    for (const gz of [19, -19]) {
+      for (const gx of [-4, 4]) {
+        for (let y = baseY + 1; y <= baseY + 6; y++) {
+          this.setVoxelInWorld(chunk, gx, y, gz, (y === baseY + 6) ? BLOCKS.COBBLESTONE : BLOCKS.STONE);
+        }
+        this.setVoxelInWorld(chunk, gx, baseY + 7, gz, BLOCKS.GOLD_ORE); // Golden lantern atop pillar
+      }
+      // Vaulted brick archway spanning across highway (X: -3..3, Y: 30..32)
+      for (let x = -3; x <= 3; x++) {
+        const archY = (Math.abs(x) <= 1) ? baseY + 8 : baseY + 7;
+        this.setVoxelInWorld(chunk, x, archY, gz, BLOCKS.BRICK);
+        this.setVoxelInWorld(chunk, x, archY + 1, gz, BLOCKS.STONE);
+      }
+      // Golden imperial eagle / crown finial atop center arch
+      this.setVoxelInWorld(chunk, 0, baseY + 10, gz, BLOCKS.GOLD_ORE);
+    }
+
+    // East & West Highway Entries (X = +19, X = -19)
+    for (const gx of [19, -19]) {
+      for (const gz of [-4, 4]) {
+        for (let y = baseY + 1; y <= baseY + 6; y++) {
+          this.setVoxelInWorld(chunk, gx, y, gz, (y === baseY + 6) ? BLOCKS.COBBLESTONE : BLOCKS.STONE);
+        }
+        this.setVoxelInWorld(chunk, gx, baseY + 7, gz, BLOCKS.GOLD_ORE);
+      }
+      for (let z = -3; z <= 3; z++) {
+        const archY = (Math.abs(z) <= 1) ? baseY + 8 : baseY + 7;
+        this.setVoxelInWorld(chunk, gx, archY, z, BLOCKS.BRICK);
+        this.setVoxelInWorld(chunk, gx, archY + 1, z, BLOCKS.STONE);
+      }
+      this.setVoxelInWorld(chunk, gx, baseY + 10, 0, BLOCKS.GOLD_ORE);
+    }
+
+    // --- 5. Four Cascading Tiered Fountains at (0, 6), (0, -6), (6, 0), (-6, 0) ---
+    const fountainCenters = [[0, 6], [0, -6], [6, 0], [-6, 0]];
+    for (const [fx, fz] of fountainCenters) {
+      // Basin ring (3x3 outer ring at Y=25)
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          if (dx === 0 && dz === 0) {
+            // Center fountain pillar
+            this.setVoxelInWorld(chunk, fx, baseY + 1, fz, BLOCKS.STONE);
+            this.setVoxelInWorld(chunk, fx, baseY + 2, fz, BLOCKS.STONE);
+            this.setVoxelInWorld(chunk, fx, baseY + 3, fz, BLOCKS.GOLD_ORE); // Golden fountain spout
+          } else {
+            this.setVoxelInWorld(chunk, fx + dx, baseY + 1, fz + dz, BLOCKS.WATER);
+          }
+        }
+      }
+    }
+
+    // --- 6. Four Corner Orientation Bell Towers at (+13, +13), (-13, +13), (+13, -13), (-13, -13) ---
+    const cornerTowers = [[13, 13], [-13, 13], [13, -13], [-13, -13]];
+    for (const [tx, tz] of cornerTowers) {
+      // 4 oak corner posts
+      for (let y = baseY + 1; y <= baseY + 6; y++) {
+        this.setVoxelInWorld(chunk, tx - 1, y, tz - 1, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, tx + 1, y, tz - 1, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, tx - 1, y, tz + 1, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, tx + 1, y, tz + 1, BLOCKS.OAK_LOG);
+      }
+      // Timber canopy roof with golden spire finial
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          this.setVoxelInWorld(chunk, tx + dx, baseY + 7, tz + dz, BLOCKS.WOOD_PLANK);
+        }
+      }
+      this.setVoxelInWorld(chunk, tx, baseY + 8, tz, BLOCKS.GOLD_ORE);
+      // Ceremonial bronze bell hanging in belfry
+      this.setVoxelInWorld(chunk, tx, baseY + 4, tz, BLOCKS.GOLD_ORE);
     }
   }
 
@@ -1528,8 +1708,7 @@ export class World {
   /**
    * Helper to build a lush Sakura Cherry Blossom Tree with white and pink blossom crown
    */
-  buildSakuraTree(chunk, wx, wz) {
-    const baseY = 24;
+  buildSakuraTree(chunk, wx, wz, baseY = 24) {
     // Curved trunk
     this.setVoxelInWorld(chunk, wx, baseY + 1, wz, BLOCKS.OAK_LOG);
     this.setVoxelInWorld(chunk, wx, baseY + 2, wz, BLOCKS.OAK_LOG);
@@ -3024,6 +3203,112 @@ export class World {
         }
       }
     }
+
+    // --- 11. Second Mountain Suspension Footbridge across Fjord Gorge at Z = 530 (Y = 50) ---
+    const sbZ = 530, sbY = 50;
+    for (let x = -18; x <= 18; x++) {
+      this.setVoxelInWorld(chunk, x, sbY, sbZ, BLOCKS.WOOD_PLANK);
+      this.setVoxelInWorld(chunk, x, sbY + 1, sbZ - 1, BLOCKS.IRON_ORE);
+      this.setVoxelInWorld(chunk, x, sbY + 1, sbZ + 1, BLOCKS.IRON_ORE);
+    }
+    for (const tx of [-18, 18]) {
+      for (let y = sbY + 1; y <= sbY + 7; y++) {
+        this.setVoxelInWorld(chunk, tx, y, sbZ - 1, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, tx, y, sbZ + 1, BLOCKS.COBBLESTONE);
+      }
+      this.setVoxelInWorld(chunk, tx, sbY + 8, sbZ, BLOCKS.GOLD_ORE);
+    }
+
+    // --- 12. Jarl's Valhalla Mead Hall (Gran Salón Vikingo) at (-26, 50, 545) ---
+    const mhX = -26, mhZ = 545, mhY = 50;
+    for (let x = mhX - 5; x <= mhX + 5; x++) {
+      for (let z = mhZ - 4; z <= mhZ + 4; z++) {
+        this.setVoxelInWorld(chunk, x, mhY, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, mhY + 1, z, BLOCKS.WOOD_PLANK);
+        const isCorner = (Math.abs(x - mhX) === 5 && Math.abs(z - mhZ) === 4);
+        const isEdge = (Math.abs(x - mhX) === 5 || Math.abs(z - mhZ) === 4);
+        const isDoor = (x === mhX + 5 && z === mhZ);
+        for (let y = mhY + 2; y <= mhY + 5; y++) {
+          if (isCorner) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          } else if (isDoor && y <= mhY + 3) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+          } else if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.WOOD_PLANK);
+          }
+        }
+      }
+    }
+    for (let z = mhZ - 5; z <= mhZ + 5; z++) {
+      for (let s = 0; s <= 3; s++) {
+        this.setVoxelInWorld(chunk, mhX - 5 + s, mhY + 6 + s, z, BLOCKS.WOOD_PLANK);
+        this.setVoxelInWorld(chunk, mhX + 5 - s, mhY + 6 + s, z, BLOCKS.WOOD_PLANK);
+      }
+      this.setVoxelInWorld(chunk, mhX, mhY + 10, z, BLOCKS.SNOW);
+    }
+    this.setVoxelInWorld(chunk, mhX, mhY + 1, mhZ, BLOCKS.COBBLESTONE);
+    this.setVoxelInWorld(chunk, mhX, mhY + 2, mhZ, BLOCKS.GOLD_ORE);
+    this.setVoxelInWorld(chunk, mhX, mhY + 2, mhZ - 2, BLOCKS.WOOD_PLANK);
+    this.setVoxelInWorld(chunk, mhX, mhY + 2, mhZ + 2, BLOCKS.WOOD_PLANK);
+
+    // --- 13. Fjord Blacksmith & Armory Forge at (23, 51, 505) ---
+    const smX = 23, smZ = 505, smY = 51;
+    for (let x = smX - 2; x <= smX + 2; x++) {
+      for (let z = smZ - 2; z <= smZ + 2; z++) {
+        this.setVoxelInWorld(chunk, x, smY, z, BLOCKS.COBBLESTONE);
+      }
+    }
+    for (let y = smY + 1; y <= smY + 6; y++) {
+      this.setVoxelInWorld(chunk, smX + 2, y, smZ + 2, BLOCKS.BRICK);
+    }
+    this.setVoxelInWorld(chunk, smX + 1, smY + 1, smZ + 2, BLOCKS.GOLD_ORE);
+    this.setVoxelInWorld(chunk, smX - 1, smY + 1, smZ, BLOCKS.IRON_ORE);
+
+    // --- 14. Fisherman Rorbuer (Stilt Cabins) along Water Edge at (-7, 18, 515..527) ---
+    const rbX = -7, rbZ = 520;
+    for (let x = rbX - 3; x <= rbX; x++) {
+      for (let z = rbZ - 3; z <= rbZ + 3; z++) {
+        if (x === rbX - 3 || x === rbX) {
+          for (let y = 14; y <= 18; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.OAK_LOG);
+          }
+        }
+        this.setVoxelInWorld(chunk, x, 19, z, BLOCKS.WOOD_PLANK);
+        const isEdge = (x === rbX - 3 || x === rbX || Math.abs(z - rbZ) === 3);
+        for (let y = 20; y <= 22; y++) {
+          if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.BRICK);
+          }
+        }
+        this.setVoxelInWorld(chunk, x, 23, z, BLOCKS.WOOD_PLANK);
+      }
+    }
+    this.setVoxelInWorld(chunk, rbX, 20, rbZ, BLOCKS.GOLD_ORE);
+
+    // --- 15. Cliffside Mountain Watchtower at (-26, 50, 535) ---
+    const wtX = -26, wtZ = 535, wtY = 50;
+    for (let y = wtY + 1; y <= wtY + 9; y++) {
+      for (let x = wtX - 2; x <= wtX + 2; x++) {
+        for (let z = wtZ - 2; z <= wtZ + 2; z++) {
+          const isEdge = (Math.abs(x - wtX) === 2 || Math.abs(z - wtZ) === 2);
+          if (isEdge) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.STONE);
+          }
+        }
+      }
+    }
+    this.setVoxelInWorld(chunk, wtX, wtY + 10, wtZ, BLOCKS.COBBLESTONE);
+    this.setVoxelInWorld(chunk, wtX, wtY + 11, wtZ, BLOCKS.GOLD_ORE);
+
+    // --- 16. Nordic Pathway Grid & Cliff Torch Sconces ---
+    for (let z = 475; z <= 545; z++) {
+      if (z % 8 === 0) {
+        this.setVoxelInWorld(chunk, 21, 51, z, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, 21, 52, z, BLOCKS.GOLD_ORE);
+        this.setVoxelInWorld(chunk, -21, 51, z, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, -21, 52, z, BLOCKS.GOLD_ORE);
+      }
+    }
   }
 
   /**
@@ -3406,266 +3691,25 @@ export class World {
   buildGrandPrixSector(chunk) {
     const ox = chunk.originX;
     const oz = chunk.originZ;
-    if (ox + 16 < -630 || ox > -370 || oz + 16 < -630 || oz > -370) return;
+    if (ox + 16 < -625 || ox > -375 || oz + 16 < -625 || oz > -375) return;
 
-    const trackY = 24;
     const ASPHALT = BLOCKS.ASPHALT || BLOCKS.COBBLESTONE;
-
-    // Helper for alternating red/white rumble curb
-    const getCurb = (x, z) => ((Math.abs(x) + Math.abs(z)) % 2 === 0 ? BLOCKS.BRICK : BLOCKS.SNOW);
-
-    // =========================================================================
-    // 1. SOUTH MAIN STRAIGHT: Z in -427..-414, X in -560..-430 (Track width 14)
-    // =========================================================================
-    for (let x = -560; x <= -430; x++) {
-      for (let z = -427; z <= -414; z++) {
-        // Foundation & Asphalt track surface
-        this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
-        this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-        for (let y = trackY + 1; y <= trackY + 5; y++) {
-          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
-        }
-      }
-      // Red and white rumble curbs on outer boundaries
-      this.setVoxelInWorld(chunk, x, trackY, -428, getCurb(x, -428));
-      this.setVoxelInWorld(chunk, x, trackY, -413, getCurb(x, -413));
-      this.setVoxelInWorld(chunk, x, trackY - 1, -428, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, x, trackY - 1, -413, BLOCKS.COBBLESTONE);
-    }
+    const CURB_RED = (BLOCKS.RED_CONCRETE !== undefined ? BLOCKS.RED_CONCRETE : (BLOCKS.RED_WOOL !== undefined ? BLOCKS.RED_WOOL : BLOCKS.BRICK));
+    const CURB_WHITE = (BLOCKS.WHITE_CONCRETE !== undefined ? BLOCKS.WHITE_CONCRETE : (BLOCKS.WHITE_WOOL !== undefined ? BLOCKS.WHITE_WOOL : BLOCKS.SNOW));
+    const getCurb = (x, z) => ((Math.abs(x) + Math.abs(z)) % 2 === 0 ? CURB_RED : CURB_WHITE);
 
     // =========================================================================
-    // 2. STARTING GRID GANTRY & FINISH LINE (at X = -500 across Main Straight)
+    // 1. SOUTH MAIN STRAIGHT: Z in -427..-414, X in -560..-430 (Track width 14, Y = 24)
     // =========================================================================
-    // Checkered start/finish line at X = -500
-    for (let z = -427; z <= -414; z++) {
-      const isWhite = (z % 2 === 0);
-      this.setVoxelInWorld(chunk, -500, trackY, z, isWhite ? BLOCKS.SNOW : ASPHALT);
-      this.setVoxelInWorld(chunk, -501, trackY, z, !isWhite ? BLOCKS.SNOW : ASPHALT);
-    }
+    const mainStraightX1 = Math.max(-560, ox);
+    const mainStraightX2 = Math.min(-430, ox + 15);
+    const mainStraightZ1 = Math.max(-427, oz);
+    const mainStraightZ2 = Math.min(-414, oz + 15);
+    const trackY = 24;
 
-    // Staggered grid boxes behind start line (X = -506, -512, -518, -524, -530)
-    const gridRows = [-506, -512, -518, -524, -530];
-    for (const gx of gridRows) {
-      for (let z = -426; z <= -415; z++) {
-        if (z === -425 || z === -421 || z === -417) {
-          this.setVoxelInWorld(chunk, gx, trackY, z, BLOCKS.SNOW);
-        }
-      }
-    }
-
-    // Starting Grid Gantry structural towers (at Z = -429 and Z = -412)
-    for (const gz of [-429, -412]) {
-      for (let y = trackY + 1; y <= trackY + 8; y++) {
-        this.setVoxelInWorld(chunk, -500, y, gz, (y === trackY + 8) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
-        this.setVoxelInWorld(chunk, -501, y, gz, BLOCKS.IRON_ORE);
-      }
-    }
-
-    // Gantry bridge truss spanning across track at Y = trackY + 7..8 (31..32)
-    for (let gz = -429; gz <= -412; gz++) {
-      this.setVoxelInWorld(chunk, -500, trackY + 7, gz, BLOCKS.IRON_ORE);
-      this.setVoxelInWorld(chunk, -501, trackY + 7, gz, BLOCKS.IRON_ORE);
-      this.setVoxelInWorld(chunk, -500, trackY + 8, gz, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, -501, trackY + 8, gz, BLOCKS.GLASS);
-
-      // F1 5-light start light pods suspended underneath at Y = trackY + 6 (30)
-      if (gz >= -425 && gz <= -416 && gz % 2 === 1) {
-        this.setVoxelInWorld(chunk, -500, trackY + 6, gz, BLOCKS.BRICK); // Red light
-        this.setVoxelInWorld(chunk, -499, trackY + 6, gz, BLOCKS.GOLD_ORE); // Amber/green indicator
-      }
-    }
-
-    // =========================================================================
-    // 3. PIT LANE & COVERED PIT GARAGES (North of Main Straight, X: -545..-455)
-    // =========================================================================
-    // Concrete Pit Wall at Z = -429
-    for (let x = -545; x <= -455; x++) {
-      this.setVoxelInWorld(chunk, x, trackY + 1, -429, BLOCKS.COBBLESTONE);
-      if (x % 3 === 0) {
-        this.setVoxelInWorld(chunk, x, trackY + 2, -429, BLOCKS.IRON_ORE); // Safety catch fencing
-      }
-      // Pit gantry telemetry console every 20 blocks
-      if (x % 20 === 0) {
-        this.setVoxelInWorld(chunk, x, trackY + 2, -429, BLOCKS.GLASS);
-        this.setVoxelInWorld(chunk, x, trackY + 3, -429, BLOCKS.GOLD_ORE);
-      }
-    }
-
-    // Pit Lane roadway: Z in -436..-430
-    for (let x = -550; x <= -450; x++) {
-      for (let z = -436; z <= -430; z++) {
-        this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-        for (let y = trackY + 1; y <= trackY + 4; y++) {
-          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
-        }
-      }
-      // Pit lane speed limit line at entry/exit
-      if (x === -548 || x === -452) {
-        for (let z = -436; z <= -430; z++) {
-          this.setVoxelInWorld(chunk, x, trackY, z, BLOCKS.SNOW);
-        }
-      }
-    }
-
-    // Covered Pit Garages (Team Stalls): Z in -446..-437, X in -540..-460
-    for (let x = -540; x <= -460; x++) {
-      // Concrete rear wall at Z = -446
-      for (let y = trackY + 1; y <= trackY + 4; y++) {
-        this.setVoxelInWorld(chunk, x, y, -446, BLOCKS.STONE);
-      }
-      // Garage interior floor
-      for (let z = -445; z <= -437; z++) {
-        this.setVoxelInWorld(chunk, x, trackY, z, BLOCKS.COBBLESTONE);
-        for (let y = trackY + 1; y <= trackY + 4; y++) {
-          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
-        }
-      }
-      // Team partition walls every 16 blocks along X
-      const isDivider = (Math.abs(x + 540) % 16 === 0);
-      if (isDivider) {
-        for (let z = -445; z <= -437; z++) {
-          for (let y = trackY + 1; y <= trackY + 4; y++) {
-            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.BRICK);
-          }
-        }
-      }
-      // Cantilevered Garage Roof overhead at Y = trackY + 5 (29)
-      for (let z = -446; z <= -436; z++) {
-        this.setVoxelInWorld(chunk, x, trackY + 5, z, (z === -436) ? BLOCKS.WOOD_PLANK : BLOCKS.SNOW);
-      }
-      // Garage workbench counters and toolboxes
-      if (x % 8 === 0) {
-        this.setVoxelInWorld(chunk, x, trackY + 1, -444, BLOCKS.WOOD_PLANK);
-        this.setVoxelInWorld(chunk, x, trackY + 2, -444, BLOCKS.IRON_ORE);
-        this.setVoxelInWorld(chunk, x + 1, trackY + 1, -444, BLOCKS.GOLD_ORE);
-      }
-    }
-
-    // =========================================================================
-    // 4. COVERED SPECTATOR GRANDSTANDS (South of Main Straight, Z: -411..-395)
-    // =========================================================================
-    for (let x = -550; x <= -450; x++) {
-      // Tiered spectator seating steps
-      const tiers = [
-        [-410, trackY + 1],
-        [-408, trackY + 2],
-        [-406, trackY + 3],
-        [-404, trackY + 4],
-        [-402, trackY + 5],
-        [-400, trackY + 6],
-        [-398, trackY + 7]
-      ];
-      for (const [tz, ty] of tiers) {
-        // Concrete step base
-        for (let y = trackY; y <= ty; y++) {
-          this.setVoxelInWorld(chunk, x, y, tz, BLOCKS.STONE);
-          this.setVoxelInWorld(chunk, x, y, tz + 1, BLOCKS.STONE);
-        }
-        // Wooden spectator bench seat
-        this.setVoxelInWorld(chunk, x, ty, tz, BLOCKS.WOOD_PLANK);
-        // Clear headroom above seats
-        for (let y = ty + 1; y <= trackY + 11; y++) {
-          this.setVoxelInWorld(chunk, x, y, tz, BLOCKS.AIR);
-          this.setVoxelInWorld(chunk, x, y, tz + 1, BLOCKS.AIR);
-        }
-      }
-
-      // Upper back concourse walkway at Z = -396, Y = trackY + 8
-      for (let y = trackY; y <= trackY + 8; y++) {
-        this.setVoxelInWorld(chunk, x, y, -396, BLOCKS.STONE);
-        this.setVoxelInWorld(chunk, x, y, -395, BLOCKS.STONE);
-      }
-      this.setVoxelInWorld(chunk, x, trackY + 9, -395, BLOCKS.IRON_ORE); // Rear safety railing
-
-      // Heavy structural support columns at Z = -397 every 10 blocks
-      if (Math.abs(x + 550) % 10 === 0) {
-        for (let y = trackY + 8; y <= trackY + 12; y++) {
-          this.setVoxelInWorld(chunk, x, y, -397, BLOCKS.IRON_ORE);
-        }
-      }
-
-      // Covered Cantilevered Grandstand Roof overhead at Y = trackY + 12 (36)
-      for (let z = -412; z <= -395; z++) {
-        const isCanopyEdge = (z === -412);
-        this.setVoxelInWorld(chunk, x, trackY + 12, z, isCanopyEdge ? BLOCKS.WOOD_PLANK : BLOCKS.SNOW);
-        // Track floodlight spotlights under canopy edge every 10 blocks
-        if (isCanopyEdge && Math.abs(x + 550) % 10 === 0) {
-          this.setVoxelInWorld(chunk, x, trackY + 11, z, BLOCKS.GOLD_ORE);
-        }
-      }
-    }
-
-    // =========================================================================
-    // 5. EAST SECTION & LAKE BRIDGE (X in -417..-404, Z in -440..-520)
-    // =========================================================================
-    // Turn 1/2 corner linking Main Straight to East Section
-    for (let x = -430; x <= -410; x++) {
-      for (let z = -440; z <= -420; z++) {
-        const dx = x - (-410);
-        const dz = z - (-420);
-        const dist = Math.hypot(dx, dz);
-        if (dist <= 26 && dist >= 8) {
-          this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
-          this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-          for (let y = trackY + 1; y <= trackY + 4; y++) {
-            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
-          }
-        }
-      }
-    }
-
-    // East Straight & Grand Lake Bridge: X in -417..-404 (14 blocks wide), Z in -440..-520
-    for (let z = -520; z <= -440; z++) {
-      const isOverLake = (z >= -515 && z <= -465);
-
-      for (let x = -417; x <= -404; x++) {
-        this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
-        this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-        for (let y = trackY + 1; y <= trackY + 5; y++) {
-          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
-        }
-      }
-
-      // Red and white rumble curbs
-      this.setVoxelInWorld(chunk, -418, trackY, z, getCurb(-418, z));
-      this.setVoxelInWorld(chunk, -403, trackY, z, getCurb(-403, z));
-      this.setVoxelInWorld(chunk, -418, trackY - 1, z, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, -403, trackY - 1, z, BLOCKS.COBBLESTONE);
-
-      // Lake Bridge architectural details (parapets, piers, and lake bed)
-      if (isOverLake) {
-        // Parapet walls & safety guardrails along both sides of bridge
-        this.setVoxelInWorld(chunk, -418, trackY + 1, z, BLOCKS.COBBLESTONE);
-        this.setVoxelInWorld(chunk, -403, trackY + 1, z, BLOCKS.COBBLESTONE);
-        if (z % 2 === 0) {
-          this.setVoxelInWorld(chunk, -418, trackY + 2, z, BLOCKS.IRON_ORE);
-          this.setVoxelInWorld(chunk, -403, trackY + 2, z, BLOCKS.IRON_ORE);
-        }
-
-        // Deep bridge support piers descending into the water every 10 blocks
-        if (Math.abs(z) % 10 === 0) {
-          for (let py = 14; py <= trackY - 1; py++) {
-            for (let px = -418; px <= -415; px++) {
-              this.setVoxelInWorld(chunk, px, py, z, BLOCKS.STONE);
-            }
-            for (let px = -406; px <= -403; px++) {
-              this.setVoxelInWorld(chunk, px, py, z, BLOCKS.STONE);
-            }
-          }
-        }
-      }
-    }
-
-    // =========================================================================
-    // 6. NORTH SECTION & MOUNTAIN TUNNELS (Z in -592..-579, X in -570..-430)
-    // =========================================================================
-    // Turn 3 corner linking East Straight to North Section
-    for (let x = -430; x <= -410; x++) {
-      for (let z = -585; z <= -520; z++) {
-        const dx = x - (-410);
-        const dz = z - (-520);
-        const dist = Math.hypot(dx, dz);
-        if (dist <= 68 && dist >= 48) {
+    if (mainStraightX1 <= mainStraightX2 && mainStraightZ1 <= mainStraightZ2) {
+      for (let x = mainStraightX1; x <= mainStraightX2; x++) {
+        for (let z = mainStraightZ1; z <= mainStraightZ2; z++) {
           this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
           this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
           for (let y = trackY + 1; y <= trackY + 5; y++) {
@@ -3675,55 +3719,237 @@ export class World {
       }
     }
 
-    // North 14-block track & Mountain Tunnels: Z in -592..-579, X in -570..-430
-    for (let x = -570; x <= -430; x++) {
-      for (let z = -592; z <= -579; z++) {
-        this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
-        this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-        // Clear 6 blocks of interior headroom inside tunnel / track
-        for (let y = trackY + 1; y <= trackY + 6; y++) {
-          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+    // Main straight curbs & crash barriers
+    if (mainStraightX1 <= mainStraightX2) {
+      for (let x = mainStraightX1; x <= mainStraightX2; x++) {
+        // Red and white rumble curbs
+        this.setVoxelInWorld(chunk, x, trackY - 1, -428, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, trackY, -428, getCurb(x, -428));
+        this.setVoxelInWorld(chunk, x, trackY - 1, -413, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, trackY, -413, getCurb(x, -413));
+
+        // Solid Crash Barriers
+        // Grandstand side (Z = -412): solid barrier protecting spectators and keeping cars on track
+        this.setVoxelInWorld(chunk, x, trackY + 1, -412, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, trackY + 2, -412, BLOCKS.IRON_ORE);
+      }
+    }
+
+    // =========================================================================
+    // 2. STARTING GRID GANTRY & FINISH LINE (at X = -500 across Main Straight)
+    // =========================================================================
+    // Checkered start/finish line at X = -500 and -501
+    for (const fx of [-500, -501]) {
+      if (fx >= ox && fx <= ox + 15) {
+        for (let z = -427; z <= -414; z++) {
+          const isWhite = ((z + fx) % 2 === 0);
+          this.setVoxelInWorld(chunk, fx, trackY, z, isWhite ? CURB_WHITE : ASPHALT);
         }
       }
+    }
 
-      // Red and white rumble curbs
-      this.setVoxelInWorld(chunk, x, trackY, -593, getCurb(x, -593));
-      this.setVoxelInWorld(chunk, x, trackY, -578, getCurb(x, -578));
-      this.setVoxelInWorld(chunk, x, trackY - 1, -593, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, x, trackY - 1, -578, BLOCKS.COBBLESTONE);
+    // Staggered grid boxes behind start line (X = -506, -512, -518, -524, -530)
+    for (const gx of [-506, -512, -518, -524, -530]) {
+      if (gx >= ox && gx <= ox + 15) {
+        for (let z = -426; z <= -415; z++) {
+          if (z === -425 || z === -421 || z === -417) {
+            this.setVoxelInWorld(chunk, gx, trackY, z, CURB_WHITE);
+          }
+        }
+      }
+    }
 
-      // Mountain Tunnels (Tunnel 1: X in -480..-440, Tunnel 2: X in -560..-510)
-      const inTunnel = (x >= -480 && x <= -440) || (x >= -560 && x <= -510);
-      const isPortal = (x === -480 || x === -440 || x === -560 || x === -510);
+    // Gantry Structural Towers at Z = -429 and Z = -412
+    for (const gz of [-429, -412]) {
+      for (const gx of [-500, -501]) {
+        if (gx >= ox && gx <= ox + 15) {
+          for (let y = trackY + 1; y <= trackY + 8; y++) {
+            this.setVoxelInWorld(chunk, gx, y, gz, (y === trackY + 8) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
+          }
+        }
+      }
+    }
 
-      if (inTunnel) {
-        // Arched stone tunnel ceiling at Y = trackY + 7..8 (31..32)
-        for (let z = -593; z <= -578; z++) {
-          this.setVoxelInWorld(chunk, x, trackY + 7, z, (z === -593 || z === -578) ? BLOCKS.STONE : BLOCKS.COBBLESTONE);
-          this.setVoxelInWorld(chunk, x, trackY + 8, z, BLOCKS.STONE);
+    // Gantry Bridge Truss across track at Y = trackY + 7..8 (31..32)
+    for (const gx of [-500, -501]) {
+      if (gx >= ox && gx <= ox + 15) {
+        for (let gz = -429; gz <= -412; gz++) {
+          this.setVoxelInWorld(chunk, gx, trackY + 7, gz, BLOCKS.IRON_ORE);
+          this.setVoxelInWorld(chunk, gx, trackY + 8, gz, (gx === -500) ? BLOCKS.COBBLESTONE : BLOCKS.GLASS);
+
+          // Formula 1 5-light start sequence at Y = trackY + 6 (30)
+          if (gz >= -425 && gz <= -416 && gz % 2 !== 0) {
+            this.setVoxelInWorld(chunk, -500, trackY + 6, gz, CURB_RED); // Countdown red light
+            this.setVoxelInWorld(chunk, -499, trackY + 6, gz, BLOCKS.GOLD_ORE); // Amber/green indicator
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 3. PIT LANE & COVERED PIT GARAGES (North of Main Straight, X: -550..-450)
+    // =========================================================================
+    const pitX1 = Math.max(-550, ox);
+    const pitX2 = Math.min(-450, ox + 15);
+
+    if (pitX1 <= pitX2) {
+      for (let x = pitX1; x <= pitX2; x++) {
+        // Concrete Pit Wall at Z = -429 separating track and pit lane
+        this.setVoxelInWorld(chunk, x, trackY + 1, -429, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, trackY + 2, -429, (x % 3 === 0) ? BLOCKS.IRON_ORE : BLOCKS.COBBLESTONE);
+        if (x % 20 === 0) {
+          this.setVoxelInWorld(chunk, x, trackY + 2, -429, BLOCKS.GLASS);
+          this.setVoxelInWorld(chunk, x, trackY + 3, -429, BLOCKS.GOLD_ORE); // Pit telemetry console
         }
 
-        // Timber arch support ribs every 5 blocks along X
-        if (Math.abs(x) % 5 === 0) {
-          for (let y = trackY + 1; y <= trackY + 6; y++) {
-            this.setVoxelInWorld(chunk, x, y, -593, BLOCKS.OAK_LOG);
-            this.setVoxelInWorld(chunk, x, y, -578, BLOCKS.OAK_LOG);
+        // Pit Lane Roadway: Z in -436..-430
+        for (let z = -436; z <= -430; z++) {
+          this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
+          for (let y = trackY + 1; y <= trackY + 4; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
           }
-          for (let z = -592; z <= -579; z++) {
-            this.setVoxelInWorld(chunk, x, trackY + 7, z, BLOCKS.WOOD_PLANK);
-          }
-          // Glowing gold ceiling lanterns down center of tunnel
-          this.setVoxelInWorld(chunk, x, trackY + 6, -586, BLOCKS.GOLD_ORE);
-          this.setVoxelInWorld(chunk, x, trackY + 6, -585, BLOCKS.GOLD_ORE);
         }
 
-        // Portal arch frames at tunnel mouths
-        if (isPortal) {
-          for (let z = -594; z <= -577; z++) {
-            for (let y = trackY + 1; y <= trackY + 10; y++) {
-              if (z === -594 || z === -577 || y >= trackY + 8) {
-                this.setVoxelInWorld(chunk, x, y, z, BLOCKS.STONE);
-              }
+        // Pit lane entry and exit speed lines
+        if (x === -548 || x === -452) {
+          for (let z = -436; z <= -430; z++) {
+            this.setVoxelInWorld(chunk, x, trackY, z, CURB_WHITE);
+          }
+        }
+      }
+    }
+
+    // Covered Pit Garages (Team Stalls): Z in -446..-437, X in -540..-460
+    const garX1 = Math.max(-540, ox);
+    const garX2 = Math.min(-460, ox + 15);
+
+    if (garX1 <= garX2) {
+      for (let x = garX1; x <= garX2; x++) {
+        // Rear concrete garage wall at Z = -446
+        for (let y = trackY; y <= trackY + 4; y++) {
+          this.setVoxelInWorld(chunk, x, y, -446, BLOCKS.STONE);
+        }
+
+        // Garage floor & interior clearance
+        for (let z = -445; z <= -437; z++) {
+          this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, trackY, z, BLOCKS.COBBLESTONE);
+          for (let y = trackY + 1; y <= trackY + 4; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+          }
+        }
+
+        // Team divider walls every 16 blocks along X
+        if (Math.abs(x + 540) % 16 === 0) {
+          for (let z = -445; z <= -437; z++) {
+            for (let y = trackY + 1; y <= trackY + 4; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.BRICK);
+            }
+          }
+        }
+
+        // Cantilevered Garage Roof overhead at Y = trackY + 5 (29)
+        for (let z = -446; z <= -436; z++) {
+          this.setVoxelInWorld(chunk, x, trackY + 5, z, (z === -436) ? BLOCKS.WOOD_PLANK : BLOCKS.SNOW);
+        }
+
+        // Team workbench toolboxes
+        if (x % 8 === 0) {
+          this.setVoxelInWorld(chunk, x, trackY + 1, -444, BLOCKS.WOOD_PLANK);
+          this.setVoxelInWorld(chunk, x, trackY + 2, -444, BLOCKS.IRON_ORE);
+          this.setVoxelInWorld(chunk, x + 1, trackY + 1, -444, BLOCKS.GOLD_ORE);
+        }
+      }
+    }
+
+    // =========================================================================
+    // 4. COVERED SPECTATOR GRANDSTANDS (South of Main Straight, Z: -411..-395)
+    // =========================================================================
+    const gsX1 = Math.max(-550, ox);
+    const gsX2 = Math.min(-450, ox + 15);
+
+    if (gsX1 <= gsX2) {
+      const tiers = [
+        [-410, trackY + 1],
+        [-408, trackY + 2],
+        [-406, trackY + 3],
+        [-404, trackY + 4],
+        [-402, trackY + 5],
+        [-400, trackY + 6],
+        [-398, trackY + 7]
+      ];
+
+      for (let x = gsX1; x <= gsX2; x++) {
+        for (const [tz, ty] of tiers) {
+          // Concrete stepped tier base
+          for (let y = trackY; y <= ty; y++) {
+            this.setVoxelInWorld(chunk, x, y, tz, BLOCKS.STONE);
+            this.setVoxelInWorld(chunk, x, y, tz + 1, BLOCKS.STONE);
+          }
+          // Spectator wooden bench seat
+          this.setVoxelInWorld(chunk, x, ty, tz, BLOCKS.WOOD_PLANK);
+          // Clear headroom above bench
+          for (let y = ty + 1; y <= trackY + 11; y++) {
+            this.setVoxelInWorld(chunk, x, y, tz, BLOCKS.AIR);
+            this.setVoxelInWorld(chunk, x, y, tz + 1, BLOCKS.AIR);
+          }
+        }
+
+        // Upper concourse walkway at Z = -396..-395
+        for (let y = trackY; y <= trackY + 8; y++) {
+          this.setVoxelInWorld(chunk, x, y, -396, BLOCKS.STONE);
+          this.setVoxelInWorld(chunk, x, y, -395, BLOCKS.STONE);
+        }
+        this.setVoxelInWorld(chunk, x, trackY + 9, -395, BLOCKS.IRON_ORE); // Rear safety railing
+
+        // Grandstand structural support columns at Z = -397
+        if (Math.abs(x + 550) % 10 === 0) {
+          for (let y = trackY + 8; y <= trackY + 12; y++) {
+            this.setVoxelInWorld(chunk, x, y, -397, BLOCKS.IRON_ORE);
+          }
+        }
+
+        // Cantilevered overhead grandstand roof canopy at Y = trackY + 12 (36)
+        for (let z = -412; z <= -395; z++) {
+          const isEdge = (z === -412);
+          this.setVoxelInWorld(chunk, x, trackY + 12, z, isEdge ? BLOCKS.WOOD_PLANK : BLOCKS.SNOW);
+          if (isEdge && Math.abs(x + 550) % 10 === 0) {
+            this.setVoxelInWorld(chunk, x, trackY + 11, z, BLOCKS.GOLD_ORE); // Track floodlight
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 5. TURN 1 & TURN 2 (Southeast Corner, X: -430..-410, Z: -440..-420)
+    // =========================================================================
+    const t1X1 = Math.max(-430, ox);
+    const t1X2 = Math.min(-410, ox + 15);
+    const t1Z1 = Math.max(-440, oz);
+    const t1Z2 = Math.min(-420, oz + 15);
+
+    if (t1X1 <= t1X2 && t1Z1 <= t1Z2) {
+      for (let x = t1X1; x <= t1X2; x++) {
+        for (let z = t1Z1; z <= t1Z2; z++) {
+          const dx = x - (-410);
+          const dz = z - (-420);
+          const dist = Math.hypot(dx, dz);
+          if (dist <= 26 && dist >= 8) {
+            this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
+            this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
+            for (let y = trackY + 1; y <= trackY + 5; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            }
+            // Inner curb
+            if (dist <= 9) {
+              this.setVoxelInWorld(chunk, x, trackY, z, getCurb(x, z));
+            }
+            // Outer curb & crash barrier
+            if (dist >= 25) {
+              this.setVoxelInWorld(chunk, x, trackY, z, getCurb(x, z));
+              this.setVoxelInWorld(chunk, x, trackY + 1, z, BLOCKS.COBBLESTONE);
+              this.setVoxelInWorld(chunk, x, trackY + 2, z, BLOCKS.IRON_ORE);
             }
           }
         }
@@ -3731,60 +3957,415 @@ export class World {
     }
 
     // =========================================================================
-    // 7. WEST SECTION & CHICANE (X in -577..-564, Z in -560..-435)
+    // 6. STEEP UPHILL CLIMB (East Section, Z: -465..-440, X: -417..-404, W=14)
+    //    Climbs steeply from Y = 24 up to Y = 30 over 25 blocks!
     // =========================================================================
-    // Turn 4 corner linking North Section to West Section
-    for (let x = -585; x <= -565; x++) {
-      for (let z = -585; z <= -560; z++) {
-        const dx = x - (-565);
-        const dz = z - (-560);
-        const dist = Math.hypot(dx, dz);
-        if (dist <= 26 && dist >= 6) {
-          this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
-          this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-          for (let y = trackY + 1; y <= trackY + 4; y++) {
+    const climbX1 = Math.max(-417, ox);
+    const climbX2 = Math.min(-404, ox + 15);
+    const climbZ1 = Math.max(-465, oz);
+    const climbZ2 = Math.min(-440, oz + 15);
+
+    if (climbX1 <= climbX2 && climbZ1 <= climbZ2) {
+      for (let z = climbZ1; z <= climbZ2; z++) {
+        const progress = (Math.abs(z) - 440) / 25; // 0 at -440, 1 at -465
+        const curY = Math.floor(24 + progress * 6); // 24 -> 30
+
+        for (let x = climbX1; x <= climbX2; x++) {
+          // Solid foundation down to ground level (no void gap!)
+          for (let y = 20; y < curY; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
+          }
+          this.setVoxelInWorld(chunk, x, curY, z, ASPHALT);
+          // Clear headroom above climbing track
+          for (let y = curY + 1; y <= curY + 5; y++) {
             this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
           }
         }
       }
     }
 
-    // West Straight & Chicane: X in -577..-564 (14 blocks wide), Z in -560..-435
-    for (let z = -560; z <= -435; z++) {
-      for (let x = -577; x <= -564; x++) {
-        this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
-        this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-        for (let y = trackY + 1; y <= trackY + 4; y++) {
-          this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
-        }
-      }
+    // Curbs & crash barriers along uphill climb
+    if (climbZ1 <= climbZ2) {
+      for (let z = climbZ1; z <= climbZ2; z++) {
+        const progress = (Math.abs(z) - 440) / 25;
+        const curY = Math.floor(24 + progress * 6);
 
-      // Red and white rumble curbs
-      this.setVoxelInWorld(chunk, -578, trackY, z, getCurb(-578, z));
-      this.setVoxelInWorld(chunk, -563, trackY, z, getCurb(-563, z));
-      this.setVoxelInWorld(chunk, -578, trackY - 1, z, BLOCKS.COBBLESTONE);
-      this.setVoxelInWorld(chunk, -563, trackY - 1, z, BLOCKS.COBBLESTONE);
+        // Curbs
+        this.setVoxelInWorld(chunk, -418, curY - 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -418, curY, z, getCurb(-418, z));
+        this.setVoxelInWorld(chunk, -403, curY - 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -403, curY, z, getCurb(-403, z));
 
-      // High-speed tire safety barriers in chicane zone (Z: -505..-495)
-      if (z >= -505 && z <= -495) {
-        this.setVoxelInWorld(chunk, -579, trackY + 1, z, (z % 2 === 0) ? BLOCKS.BRICK : BLOCKS.SNOW);
-        this.setVoxelInWorld(chunk, -562, trackY + 1, z, (z % 2 === 0) ? BLOCKS.BRICK : BLOCKS.SNOW);
+        // Solid Crash Barriers along climb
+        this.setVoxelInWorld(chunk, -419, curY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -419, curY + 2, z, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, -402, curY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -402, curY + 2, z, BLOCKS.IRON_ORE);
       }
     }
 
-    // Turn 5 final corner connecting back into Main Straight (-560, -420)
-    for (let x = -580; x <= -555; x++) {
-      for (let z = -440; z <= -420; z++) {
-        const dx = x - (-560);
-        const dz = z - (-420);
-        const dist = Math.hypot(dx, dz);
-        if (dist <= 24 && dist >= 7) {
-          this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
-          this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
-          for (let y = trackY + 1; y <= trackY + 4; y++) {
+    // =========================================================================
+    // 7. LAKESIDE BRIDGE CROSSING (over Azure Lake, Z: -520..-466, X: -417..-404, Y = 30)
+    // =========================================================================
+    const bridgeX1 = Math.max(-417, ox);
+    const bridgeX2 = Math.min(-404, ox + 15);
+    const bridgeZ1 = Math.max(-520, oz);
+    const bridgeZ2 = Math.min(-466, oz + 15);
+    const bridgeY = 30;
+
+    if (bridgeX1 <= bridgeX2 && bridgeZ1 <= bridgeZ2) {
+      for (let z = bridgeZ1; z <= bridgeZ2; z++) {
+        for (let x = bridgeX1; x <= bridgeX2; x++) {
+          this.setVoxelInWorld(chunk, x, bridgeY - 1, z, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, bridgeY, z, ASPHALT);
+          for (let y = bridgeY + 1; y <= bridgeY + 6; y++) {
             this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
           }
         }
+      }
+    }
+
+    // Bridge parapets, rumble curbs, and deep water piers
+    if (bridgeZ1 <= bridgeZ2) {
+      for (let z = bridgeZ1; z <= bridgeZ2; z++) {
+        // Red and white rumble curbs at Y = 30
+        this.setVoxelInWorld(chunk, -418, bridgeY - 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -418, bridgeY, z, getCurb(-418, z));
+        this.setVoxelInWorld(chunk, -403, bridgeY - 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -403, bridgeY, z, getCurb(-403, z));
+
+        // Parapet Crash Barriers: solid stone base + iron guardrail (Y = 31..32)
+        this.setVoxelInWorld(chunk, -418, bridgeY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -403, bridgeY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -418, bridgeY + 2, z, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, -403, bridgeY + 2, z, BLOCKS.IRON_ORE);
+
+        // Deep Bridge Support Piers descending into the azure lake (water level 18, lake bed 14)
+        if (Math.abs(z) % 10 === 0) {
+          for (let py = 14; py < bridgeY; py++) {
+            for (let px = -418; px <= -415; px++) {
+              this.setVoxelInWorld(chunk, px, py, z, BLOCKS.STONE);
+            }
+            for (let px = -406; px <= -403; px++) {
+              this.setVoxelInWorld(chunk, px, py, z, BLOCKS.STONE);
+            }
+          }
+        }
+
+        // Bridge suspension towers at mid-lake (Z = -495)
+        if (z === -495) {
+          for (let ty = bridgeY + 3; ty <= bridgeY + 8; ty++) {
+            this.setVoxelInWorld(chunk, -418, ty, z, (ty === bridgeY + 8) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
+            this.setVoxelInWorld(chunk, -403, ty, z, (ty === bridgeY + 8) ? BLOCKS.GOLD_ORE : BLOCKS.IRON_ORE);
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 8. TURN 3: HIGH-BANKED SWEEPING CURVE (Northeast Corner, X: -430..-410, Z: -585..-520)
+    //    Outer edge banked upwards by 3 blocks (Y = 30 at inside, up to Y = 33 at outside!)
+    // =========================================================================
+    const t3X1 = Math.max(-430, ox);
+    const t3X2 = Math.min(-410, ox + 15);
+    const t3Z1 = Math.max(-585, oz);
+    const t3Z2 = Math.min(-520, oz + 15);
+
+    if (t3X1 <= t3X2 && t3Z1 <= t3Z2) {
+      for (let x = t3X1; x <= t3X2; x++) {
+        for (let z = t3Z1; z <= t3Z2; z++) {
+          const dx = x - (-410);
+          const dz = z - (-520);
+          const dist = Math.hypot(dx, dz);
+
+          if (dist <= 68 && dist >= 48) {
+            // High-Banking calculation: outer radius elevated up to 3 blocks higher
+            const bankOffset = Math.floor(((dist - 48) / 20) * 3); // 0 at inner (dist 48), 3 at outer (dist 68)
+            const curY = 30 + bankOffset; // 30, 31, 32, 33!
+
+            // Solid foundation down to ground
+            for (let y = 24; y < curY; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
+            }
+            this.setVoxelInWorld(chunk, x, curY, z, ASPHALT);
+
+            // Clear headroom above banked road
+            for (let y = curY + 1; y <= curY + 5; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            }
+
+            // Banked inner curb
+            if (dist <= 49) {
+              this.setVoxelInWorld(chunk, x, curY, z, getCurb(x, z));
+            }
+            // Banked outer curb & high crash barrier wall
+            if (dist >= 67) {
+              this.setVoxelInWorld(chunk, x, curY, z, getCurb(x, z));
+              this.setVoxelInWorld(chunk, x, curY + 1, z, BLOCKS.STONE);
+              this.setVoxelInWorld(chunk, x, curY + 2, z, BLOCKS.STONE);
+              this.setVoxelInWorld(chunk, x, curY + 3, z, BLOCKS.IRON_ORE);
+            }
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 9. NORTH SECTION & MOUNTAIN TUNNELS (Z: -592..-579, X: -570..-430, W=14, Y=30)
+    //    Carved straight through solid mountain peaks with timber arch ribs & lanterns
+    // =========================================================================
+    const northX1 = Math.max(-570, ox);
+    const northX2 = Math.min(-430, ox + 15);
+    const northZ1 = Math.max(-592, oz);
+    const northZ2 = Math.min(-579, oz + 15);
+    const northY = 30;
+
+    if (northX1 <= northX2 && northZ1 <= northZ2) {
+      for (let x = northX1; x <= northX2; x++) {
+        for (let z = northZ1; z <= northZ2; z++) {
+          this.setVoxelInWorld(chunk, x, northY - 1, z, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, northY, z, ASPHALT);
+          // Clear 6 blocks of interior headroom inside tunnel / track
+          for (let y = northY + 1; y <= northY + 6; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+          }
+        }
+      }
+    }
+
+    // North rumble curbs, mountain tunnel architecture & portals
+    if (northX1 <= northX2) {
+      for (let x = northX1; x <= northX2; x++) {
+        // Red and white rumble curbs
+        this.setVoxelInWorld(chunk, x, northY - 1, -593, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, northY, -593, getCurb(x, -593));
+        this.setVoxelInWorld(chunk, x, northY - 1, -578, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, x, northY, -578, getCurb(x, -578));
+
+        // Mountain Tunnels (Tunnel 1: X in -480..-440, Tunnel 2: X in -560..-510)
+        const inTunnel = (x >= -480 && x <= -440) || (x >= -560 && x <= -510);
+        const isPortal = (x === -480 || x === -440 || x === -560 || x === -510);
+
+        if (inTunnel) {
+          // Arched stone tunnel ceiling at Y = northY + 7..8 (37..38)
+          for (let z = -593; z <= -578; z++) {
+            this.setVoxelInWorld(chunk, x, northY + 7, z, (z === -593 || z === -578) ? BLOCKS.STONE : BLOCKS.COBBLESTONE);
+            this.setVoxelInWorld(chunk, x, northY + 8, z, BLOCKS.STONE);
+          }
+
+          // Timber arch support ribs every 5 blocks along X
+          if (Math.abs(x) % 5 === 0) {
+            for (let y = northY + 1; y <= northY + 6; y++) {
+              this.setVoxelInWorld(chunk, x, y, -593, BLOCKS.OAK_LOG);
+              this.setVoxelInWorld(chunk, x, y, -578, BLOCKS.OAK_LOG);
+            }
+            for (let z = -592; z <= -579; z++) {
+              this.setVoxelInWorld(chunk, x, northY + 7, z, BLOCKS.WOOD_PLANK);
+            }
+            // Glowing gold ceiling lanterns down center of tunnel
+            this.setVoxelInWorld(chunk, x, northY + 6, -586, BLOCKS.GOLD_ORE);
+            this.setVoxelInWorld(chunk, x, northY + 6, -585, BLOCKS.GOLD_ORE);
+          }
+
+          // Portal arch frames at tunnel mouths
+          if (isPortal) {
+            for (let z = -594; z <= -577; z++) {
+              for (let y = northY + 1; y <= northY + 10; y++) {
+                if (z === -594 || z === -577 || y >= northY + 8) {
+                  this.setVoxelInWorld(chunk, x, y, z, BLOCKS.STONE);
+                }
+              }
+            }
+          }
+        } else {
+          // Open canyon between tunnels: solid crash barriers on both sides
+          this.setVoxelInWorld(chunk, x, northY + 1, -594, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, northY + 2, -594, BLOCKS.IRON_ORE);
+          this.setVoxelInWorld(chunk, x, northY + 1, -577, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, northY + 2, -577, BLOCKS.IRON_ORE);
+        }
+      }
+    }
+
+    // =========================================================================
+    // 10. TURN 4: HIGH-BANKED SWEEPING DOWNHILL CURVE (Northwest Corner)
+    //     X: -585..-565, Z: -585..-560. Descends from Y = 30 down to Y = 24!
+    // =========================================================================
+    const t4X1 = Math.max(-585, ox);
+    const t4X2 = Math.min(-565, ox + 15);
+    const t4Z1 = Math.max(-585, oz);
+    const t4Z2 = Math.min(-560, oz + 15);
+
+    if (t4X1 <= t4X2 && t4Z1 <= t4Z2) {
+      for (let x = t4X1; x <= t4X2; x++) {
+        for (let z = t4Z1; z <= t4Z2; z++) {
+          const dx = x - (-565);
+          const dz = z - (-560);
+          const dist = Math.hypot(dx, dz);
+
+          if (dist <= 26 && dist >= 6) {
+            // Downhill descent & banking
+            const descentProgress = Math.max(0, Math.min(1, (z - (-585)) / 25)); // 0 at -585 (Y=30), 1 at -560 (Y=24)
+            const baseDescY = Math.floor(30 - descentProgress * 6); // 30 down to 24
+            const bankOffset = Math.floor(((dist - 6) / 20) * 2); // 0..2 banking
+            const curY = baseDescY + bankOffset;
+
+            // Solid foundation down to ground
+            for (let y = 20; y < curY; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
+            }
+            this.setVoxelInWorld(chunk, x, curY, z, ASPHALT);
+
+            // Clear headroom
+            for (let y = curY + 1; y <= curY + 5; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            }
+
+            // Inner curb
+            if (dist <= 8) {
+              this.setVoxelInWorld(chunk, x, curY, z, getCurb(x, z));
+            }
+            // Outer curb & crash barrier
+            if (dist >= 24) {
+              this.setVoxelInWorld(chunk, x, curY, z, getCurb(x, z));
+              this.setVoxelInWorld(chunk, x, curY + 1, z, BLOCKS.STONE);
+              this.setVoxelInWorld(chunk, x, curY + 2, z, BLOCKS.IRON_ORE);
+            }
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 11. WEST SECTION & HIGH-SPEED CHICANE (X: -577..-564, Z: -560..-435, W=14, Y=24)
+    // =========================================================================
+    const westX1 = Math.max(-577, ox);
+    const westX2 = Math.min(-564, ox + 15);
+    const westZ1 = Math.max(-560, oz);
+    const westZ2 = Math.min(-435, oz + 15);
+
+    if (westX1 <= westX2 && westZ1 <= westZ2) {
+      for (let z = westZ1; z <= westZ2; z++) {
+        for (let x = westX1; x <= westX2; x++) {
+          this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
+          for (let y = trackY + 1; y <= trackY + 5; y++) {
+            this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+          }
+        }
+      }
+    }
+
+    // West curbs, crash barriers, and tire barriers in chicane
+    if (westZ1 <= westZ2) {
+      for (let z = westZ1; z <= westZ2; z++) {
+        // Rumble curbs
+        this.setVoxelInWorld(chunk, -578, trackY - 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -578, trackY, z, getCurb(-578, z));
+        this.setVoxelInWorld(chunk, -563, trackY - 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -563, trackY, z, getCurb(-563, z));
+
+        // Solid Crash Barriers along West straight
+        this.setVoxelInWorld(chunk, -579, trackY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -579, trackY + 2, z, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, -562, trackY + 1, z, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, -562, trackY + 2, z, BLOCKS.IRON_ORE);
+
+        // High-speed chicane safety tire barriers (Z: -505..-495)
+        if (z >= -505 && z <= -495) {
+          this.setVoxelInWorld(chunk, -580, trackY + 1, z, (z % 2 === 0) ? CURB_RED : CURB_WHITE);
+          this.setVoxelInWorld(chunk, -580, trackY + 2, z, (z % 2 === 0) ? CURB_WHITE : CURB_RED);
+          this.setVoxelInWorld(chunk, -561, trackY + 1, z, (z % 2 === 0) ? CURB_RED : CURB_WHITE);
+          this.setVoxelInWorld(chunk, -561, trackY + 2, z, (z % 2 === 0) ? CURB_WHITE : CURB_RED);
+        }
+      }
+    }
+
+    // =========================================================================
+    // 12. TURN 5 (Southwest Corner, X: -580..-555, Z: -440..-420)
+    //     Connects West Straight back into South Main Straight (Y = 24)
+    // =========================================================================
+    const t5X1 = Math.max(-580, ox);
+    const t5X2 = Math.min(-555, ox + 15);
+    const t5Z1 = Math.max(-440, oz);
+    const t5Z2 = Math.min(-420, oz + 15);
+
+    if (t5X1 <= t5X2 && t5Z1 <= t5Z2) {
+      for (let x = t5X1; x <= t5X2; x++) {
+        for (let z = t5Z1; z <= t5Z2; z++) {
+          const dx = x - (-560);
+          const dz = z - (-420);
+          const dist = Math.hypot(dx, dz);
+          if (dist <= 24 && dist >= 7) {
+            this.setVoxelInWorld(chunk, x, trackY - 1, z, BLOCKS.COBBLESTONE);
+            this.setVoxelInWorld(chunk, x, trackY, z, ASPHALT);
+            for (let y = trackY + 1; y <= trackY + 5; y++) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            }
+            // Inner curb
+            if (dist <= 8) {
+              this.setVoxelInWorld(chunk, x, trackY, z, getCurb(x, z));
+            }
+            // Outer curb & crash barrier
+            if (dist >= 23) {
+              this.setVoxelInWorld(chunk, x, trackY, z, getCurb(x, z));
+              this.setVoxelInWorld(chunk, x, trackY + 1, z, BLOCKS.COBBLESTONE);
+              this.setVoxelInWorld(chunk, x, trackY + 2, z, BLOCKS.IRON_ORE);
+            }
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 13. SOLID PERIMETER FENCES & CORNER WATCHTOWERS (Full 250x250 boundaries)
+    //     Ensuring vehicles and players never fall into void or clip through walls
+    // =========================================================================
+    const perimMin = -624;
+    const perimMax = -376;
+
+    // West boundary (X = -624) and East boundary (X = -376)
+    for (const px of [perimMin, perimMax]) {
+      if (px >= ox && px <= ox + 15) {
+        const pz1 = Math.max(perimMin, oz);
+        const pz2 = Math.min(perimMax, oz + 15);
+        for (let z = pz1; z <= pz2; z++) {
+          const ph = this.getHeightAt(px, z);
+          this.setVoxelInWorld(chunk, px, ph + 1, z, BLOCKS.STONE);
+          this.setVoxelInWorld(chunk, px, ph + 2, z, BLOCKS.STONE);
+          this.setVoxelInWorld(chunk, px, ph + 3, z, BLOCKS.IRON_ORE); // Security fencing
+        }
+      }
+    }
+
+    // North boundary (Z = -624) and South boundary (Z = -376)
+    for (const pz of [perimMin, perimMax]) {
+      if (pz >= oz && pz <= oz + 15) {
+        const px1 = Math.max(perimMin, ox);
+        const px2 = Math.min(perimMax, ox + 15);
+        for (let x = px1; x <= px2; x++) {
+          const ph = this.getHeightAt(x, pz);
+          this.setVoxelInWorld(chunk, x, ph + 1, pz, BLOCKS.STONE);
+          this.setVoxelInWorld(chunk, x, ph + 2, pz, BLOCKS.STONE);
+          this.setVoxelInWorld(chunk, x, ph + 3, pz, BLOCKS.IRON_ORE); // Security fencing
+        }
+      }
+    }
+
+    // 4 Corner Security Watchtowers with Golden Beacon Floodlights
+    const corners = [
+      [perimMin, perimMin],
+      [perimMin, perimMax],
+      [perimMax, perimMin],
+      [perimMax, perimMax]
+    ];
+    for (const [cx, cz] of corners) {
+      if (cx >= ox && cx <= ox + 15 && cz >= oz && cz <= oz + 15) {
+        const cy = this.getHeightAt(cx, cz);
+        for (let y = cy + 1; y <= cy + 6; y++) {
+          this.setVoxelInWorld(chunk, cx, y, cz, BLOCKS.STONE);
+        }
+        this.setVoxelInWorld(chunk, cx, cy + 7, cz, BLOCKS.GOLD_ORE); // Floodlight beacon
       }
     }
   }
@@ -3816,6 +4397,267 @@ export class World {
       this.setVoxelInWorld(chunk, cx + dx, cy, cz + dz, BLOCKS.OAK_LEAVES);
       this.setVoxelInWorld(chunk, cx + dx * 2, cy, cz + dz * 2, BLOCKS.OAK_LEAVES);
       this.setVoxelInWorld(chunk, cx + dx * 3, cy - 1, cz + dz * 3, BLOCKS.OAK_LEAVES);
+    }
+  }
+
+  /**
+   * SECTOR 7: COLOSSAL MOUNT FUJI (MONTE FUJI) (+500, +500)
+   * Majestic stratovolcano rising 2.5x higher than other mountains up to maximum world height Y=62.
+   * Conical volcanic profile, snowy caldera summit (BLOCKS.SNOW), open basalt crater (BLOCKS.COBBLESTONE/STONE)
+   * with molten volcanic vent, lakeside Shinto Torii gate, and reflection lakes with cherry blossom groves.
+   */
+  buildMountFujiSector(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+    if (ox + 16 < 410 || ox > 590 || oz + 16 < 410 || oz > 590) return;
+
+    const fX = 500, fZ = 500;
+    const baseY = 24;
+
+    // --- 1. Reflection Lakes Cherry Blossom Groves & Scenic Shoreline ---
+    const sakuraCoords = [
+      [422, 485], [425, 473], [438, 467], [452, 472],
+      [456, 486], [450, 499], [437, 503], [424, 497],
+      [485, 422], [473, 425], [467, 438], [472, 452],
+      [486, 456], [499, 450], [503, 437], [497, 424],
+      [448, 456], [456, 448], [464, 464], [435, 452]
+    ];
+    for (const [sx, sz] of sakuraCoords) {
+      const sY = this.getHeightAt(sx, sz);
+      if (sY >= 24 && sY <= 28) {
+        this.buildSakuraTree(chunk, sx, sz, sY);
+      }
+    }
+
+    // --- 2. Lakeside Shinto Torii Gate & Viewing Deck at Lake Kawaguchi (444, 468) ---
+    for (let x = 441; x <= 447; x++) {
+      for (let z = 466; z <= 472; z++) {
+        const isBorder = (x === 441 || x === 447 || z === 466 || z === 472);
+        this.setVoxelInWorld(chunk, x, baseY, z, BLOCKS.WOOD_PLANK);
+        if (isBorder && x !== 444) {
+          this.setVoxelInWorld(chunk, x, baseY + 1, z, BLOCKS.IRON_ORE);
+        }
+      }
+    }
+    const tX = 444, tZ = 469;
+    for (let y = baseY + 1; y <= baseY + 6; y++) {
+      this.setVoxelInWorld(chunk, tX - 3, y, tZ, BLOCKS.BRICK);
+      this.setVoxelInWorld(chunk, tX + 3, y, tZ, BLOCKS.BRICK);
+    }
+    for (let x = tX - 4; x <= tX + 4; x++) {
+      this.setVoxelInWorld(chunk, x, baseY + 5, tZ, BLOCKS.BRICK);
+      this.setVoxelInWorld(chunk, x, baseY + 7, tZ, BLOCKS.BRICK);
+    }
+    this.setVoxelInWorld(chunk, tX - 5, baseY + 8, tZ, BLOCKS.BRICK);
+    this.setVoxelInWorld(chunk, tX + 5, baseY + 8, tZ, BLOCKS.BRICK);
+    this.setVoxelInWorld(chunk, tX, baseY + 6, tZ, BLOCKS.GOLD_ORE);
+    for (const lx of [tX - 4, tX + 4]) {
+      this.setVoxelInWorld(chunk, lx, baseY + 1, tZ + 2, BLOCKS.COBBLESTONE);
+      this.setVoxelInWorld(chunk, lx, baseY + 2, tZ + 2, BLOCKS.GOLD_ORE);
+      this.setVoxelInWorld(chunk, lx, baseY + 3, tZ + 2, BLOCKS.STONE);
+    }
+
+    // --- 3. Open Basalt Caldera Crater Detailing (500, 500) ---
+    for (let dx = -8; dx <= 8; dx++) {
+      for (let dz = -8; dz <= 8; dz++) {
+        const d = Math.hypot(dx, dz);
+        if (d <= 8.5) {
+          const wx = fX + dx;
+          const wz = fZ + dz;
+          const floorY = this.getHeightAt(wx, wz);
+          for (let y = floorY + 1; y <= 63; y++) {
+            this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
+          }
+          if (d <= 2) {
+            this.setVoxelInWorld(chunk, wx, floorY, wz, BLOCKS.GOLD_ORE);
+            this.setVoxelInWorld(chunk, wx, floorY - 1, wz, BLOCKS.GOLD_ORE);
+          } else if (d <= 5) {
+            const isFumarole = ((dx + dz) % 3 === 0);
+            this.setVoxelInWorld(chunk, wx, floorY, wz, isFumarole ? BLOCKS.IRON_ORE : BLOCKS.COBBLESTONE);
+          } else {
+            this.setVoxelInWorld(chunk, wx, floorY, wz, BLOCKS.STONE);
+          }
+        }
+      }
+    }
+    for (let dx = -11; dx <= 11; dx++) {
+      for (let dz = -11; dz <= 11; dz++) {
+        const d = Math.hypot(dx, dz);
+        if (d >= 8.5 && d <= 11.5) {
+          const wx = fX + dx;
+          const wz = fZ + dz;
+          const rimY = this.getHeightAt(wx, wz);
+          if (rimY >= 60) {
+            this.setVoxelInWorld(chunk, wx, rimY, wz, BLOCKS.SNOW);
+            this.setVoxelInWorld(chunk, wx, rimY - 1, wz, BLOCKS.SNOW);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Natural underground caverns carved into mountain flanks
+   * Featuring hollowed chambers, rich veins of iron and gold ore, stalactites/stalagmites, and glowing torches.
+   */
+  buildMountainCaverns(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+
+    // --- 1. Mount Fuji Lava Grotto & Ore Cavern (Southern Flank: 500..540, 515..555, Y: 26..40) ---
+    if (ox + 16 >= 500 && ox <= 540 && oz + 16 >= 515 && oz <= 555) {
+      const cX = 518, cZ = 532, cY = 32;
+      for (let dx = -9; dx <= 9; dx++) {
+        for (let dz = -9; dz <= 9; dz++) {
+          for (let dy = -6; dy <= 6; dy++) {
+            const wx = cX + dx;
+            const wz = cZ + dz;
+            const wy = cY + dy;
+            const distSq = (dx / 8.5) * (dx / 8.5) + (dz / 8.5) * (dz / 8.5) + (dy / 5.5) * (dy / 5.5);
+
+            if (distSq <= 1.0) {
+              this.setVoxelInWorld(chunk, wx, wy, wz, BLOCKS.AIR);
+            } else if (distSq <= 1.25) {
+              const oreNoise = (Math.sin(wx * 0.7 + wy * 1.1 + wz * 0.9) * 43758.5453) % 1;
+              const isGoldVein = Math.abs(oreNoise) > 0.82;
+              const isIronVein = Math.abs(oreNoise) > 0.65;
+              const wallBlock = isGoldVein ? BLOCKS.GOLD_ORE : (isIronVein ? BLOCKS.IRON_ORE : (((wx + wy + wz) % 2 === 0) ? BLOCKS.COBBLESTONE : BLOCKS.STONE));
+              this.setVoxelInWorld(chunk, wx, wy, wz, wallBlock);
+            }
+          }
+        }
+      }
+
+      for (let dx = -7; dx <= 7; dx++) {
+        for (let dz = -7; dz <= 7; dz++) {
+          const d = Math.hypot(dx, dz);
+          if (d <= 7) {
+            const wx = cX + dx;
+            const wz = cZ + dz;
+            this.setVoxelInWorld(chunk, wx, 26, wz, (d <= 2.5) ? BLOCKS.COBBLESTONE : BLOCKS.STONE);
+          }
+        }
+      }
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          if (Math.hypot(dx, dz) <= 2.2) {
+            this.setVoxelInWorld(chunk, cX + dx, 26, cZ + dz, BLOCKS.WATER);
+          }
+        }
+      }
+
+      const stalagmites = [
+        [cX - 4, cZ - 3, 2], [cX + 5, cZ - 2, 3],
+        [cX - 3, cZ + 5, 2], [cX + 4, cZ + 4, 3],
+        [cX - 5, cZ + 2, 2], [cX + 2, cZ - 5, 2]
+      ];
+      for (const [sx, sz, h] of stalagmites) {
+        for (let y = 27; y < 27 + h; y++) {
+          this.setVoxelInWorld(chunk, sx, y, sz, BLOCKS.COBBLESTONE);
+        }
+      }
+
+      const stalactites = [
+        [cX - 3, cZ - 2, 2], [cX + 4, cZ - 3, 3],
+        [cX - 2, cZ + 4, 3], [cX + 3, cZ + 3, 2],
+        [cX, cZ - 4, 2],     [cX, cZ + 4, 2]
+      ];
+      for (const [tx, tz, h] of stalactites) {
+        for (let y = 37 - h; y <= 37; y++) {
+          this.setVoxelInWorld(chunk, tx, y, tz, BLOCKS.STONE);
+        }
+      }
+
+      for (let y = 28; y <= 34; y++) {
+        this.setVoxelInWorld(chunk, cX - 7, y, cZ, BLOCKS.GOLD_ORE);
+        this.setVoxelInWorld(chunk, cX - 7, y, cZ + 1, BLOCKS.GOLD_ORE);
+        this.setVoxelInWorld(chunk, cX + 7, y, cZ - 1, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, cX + 7, y, cZ, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, cX, y, cZ - 7, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, cX + 1, y, cZ - 7, BLOCKS.GOLD_ORE);
+      }
+
+      const torches = [
+        [cX - 4, 27, cZ - 4], [cX + 4, 27, cZ - 4],
+        [cX - 4, 27, cZ + 4], [cX + 4, 27, cZ + 4]
+      ];
+      for (const [tx, ty, tz] of torches) {
+        this.setVoxelInWorld(chunk, tx, ty, tz, BLOCKS.OAK_LOG);
+        this.setVoxelInWorld(chunk, tx, ty + 1, tz, BLOCKS.GOLD_ORE);
+      }
+
+      for (let z = 540; z <= 548; z++) {
+        for (let x = 506; x <= 510; x++) {
+          for (let y = 27; y <= 30; y++) {
+            if (y === 27) {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.COBBLESTONE);
+            } else {
+              this.setVoxelInWorld(chunk, x, y, z, BLOCKS.AIR);
+            }
+          }
+        }
+      }
+      for (let y = 28; y <= 31; y++) {
+        this.setVoxelInWorld(chunk, 505, y, 548, BLOCKS.COBBLESTONE);
+        this.setVoxelInWorld(chunk, 511, y, 548, BLOCKS.COBBLESTONE);
+      }
+      for (let x = 505; x <= 511; x++) {
+        this.setVoxelInWorld(chunk, x, 32, 548, BLOCKS.STONE);
+      }
+      this.setVoxelInWorld(chunk, 505, 30, 548, BLOCKS.GOLD_ORE);
+      this.setVoxelInWorld(chunk, 511, 30, 548, BLOCKS.GOLD_ORE);
+    }
+
+    // --- 2. Norway Granite Mountain Cliff Cavern (20..45, 490..525, Y: 24..38) ---
+    if (ox + 16 >= 15 && ox <= 50 && oz + 16 >= 490 && oz <= 525) {
+      const nX = 28, nZ = 505, nY = 30;
+      for (let dx = -7; dx <= 7; dx++) {
+        for (let dz = -7; dz <= 7; dz++) {
+          for (let dy = -5; dy <= 5; dy++) {
+            const wx = nX + dx;
+            const wz = nZ + dz;
+            const wy = nY + dy;
+            const distSq = (dx / 7.5) * (dx / 7.5) + (dz / 7.5) * (dz / 7.5) + (dy / 5.0) * (dy / 5.0);
+
+            if (distSq <= 1.0) {
+              this.setVoxelInWorld(chunk, wx, wy, wz, BLOCKS.AIR);
+            } else if (distSq <= 1.25) {
+              const oreNoise = (Math.sin(wx * 1.3 + wy * 0.9 + wz * 1.1) * 43758.5453) % 1;
+              const isGold = Math.abs(oreNoise) > 0.84;
+              const isIron = Math.abs(oreNoise) > 0.68;
+              this.setVoxelInWorld(chunk, wx, wy, wz, isGold ? BLOCKS.GOLD_ORE : (isIron ? BLOCKS.IRON_ORE : BLOCKS.STONE));
+            }
+          }
+        }
+      }
+      for (let dx = -6; dx <= 6; dx++) {
+        for (let dz = -6; dz <= 6; dz++) {
+          if (Math.hypot(dx, dz) <= 6.5) {
+            this.setVoxelInWorld(chunk, nX + dx, 25, nZ + dz, BLOCKS.COBBLESTONE);
+          }
+        }
+      }
+      for (let y = 26; y <= 32; y++) {
+        this.setVoxelInWorld(chunk, nX + 6, y, nZ, BLOCKS.GOLD_ORE);
+        this.setVoxelInWorld(chunk, nX + 6, y, nZ + 1, BLOCKS.GOLD_ORE);
+        this.setVoxelInWorld(chunk, nX - 6, y, nZ, BLOCKS.IRON_ORE);
+        this.setVoxelInWorld(chunk, nX - 6, y, nZ - 1, BLOCKS.IRON_ORE);
+      }
+      this.setVoxelInWorld(chunk, nX - 3, 26, nZ - 3, BLOCKS.COBBLESTONE);
+      this.setVoxelInWorld(chunk, nX - 3, 27, nZ - 3, BLOCKS.GOLD_ORE);
+      this.setVoxelInWorld(chunk, nX + 3, 26, nZ + 3, BLOCKS.COBBLESTONE);
+      this.setVoxelInWorld(chunk, nX + 3, 27, nZ + 3, BLOCKS.GOLD_ORE);
+
+      for (let x = 16; x <= 22; x++) {
+        for (let z = 504; z <= 506; z++) {
+          this.setVoxelInWorld(chunk, x, 25, z, BLOCKS.COBBLESTONE);
+          this.setVoxelInWorld(chunk, x, 26, z, BLOCKS.AIR);
+          this.setVoxelInWorld(chunk, x, 27, z, BLOCKS.AIR);
+          this.setVoxelInWorld(chunk, x, 28, z, BLOCKS.AIR);
+        }
+      }
+      this.setVoxelInWorld(chunk, 17, 28, 503, BLOCKS.GOLD_ORE);
+      this.setVoxelInWorld(chunk, 17, 28, 507, BLOCKS.GOLD_ORE);
     }
   }
 

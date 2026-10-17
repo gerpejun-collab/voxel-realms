@@ -12,6 +12,9 @@ const MSG = {
   WEAPON_TOGGLE: 'weapon_toggle',
   WEAPON_SHOOT: 'weapon_shoot',
   TNT_TRIGGER: 'tnt_trigger',
+  VEHICLE_DRIVE: 'vehicle_drive',
+  VEHICLE_ENTER: 'vehicle_enter',
+  VEHICLE_EXIT: 'vehicle_exit',
 
   // Server -> Client
   INIT: 'init',
@@ -129,6 +132,18 @@ function isValidTntTrigger(data) {
   return true;
 }
 
+/**
+ * Validate vehicle drive packet
+ */
+function isValidVehicleDrive(data) {
+  if (!data || typeof data !== 'object') return false;
+  const { vehicleId, x, y, z, yaw } = data;
+  if (typeof vehicleId !== 'string' || vehicleId.length === 0 || vehicleId.length > MAX_PLAYER_ID_LENGTH) return false;
+  if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number' || typeof yaw !== 'number') return false;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(yaw)) return false;
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     MSG,
@@ -142,7 +157,8 @@ if (typeof module !== 'undefined' && module.exports) {
     isValidMove,
     validateTeleportPacket,
     isValidWeaponShoot,
-    isValidTntTrigger
+    isValidTntTrigger,
+    isValidVehicleDrive
   };
 }
 

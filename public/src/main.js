@@ -67,13 +67,18 @@ class VoxelRealmsApp {
       };
       this.multiplayer.onAnimalBurst = (burstData) => {
         if (!burstData) return;
-        if (this.particleManager && typeof this.particleManager.spawnBloodImpact === 'function') {
-          this.particleManager.spawnBloodImpact(burstData.x, burstData.y, burstData.z, burstData.dir);
-        } else if (this.particleManager && typeof this.particleManager.spawnAnimalBurst === 'function') {
-          this.particleManager.spawnAnimalBurst(burstData.x, burstData.y, burstData.z, burstData.dir);
-        }
-        if (this.animalManager && typeof this.animalManager.triggerAnimalHit === 'function') {
-          this.animalManager.triggerAnimalHit(burstData.animalId, burstData.dir);
+        const isMe = burstData.shooterId && this.multiplayer && (burstData.shooterId === this.multiplayer.myId);
+        if (!isMe) {
+          if (this.particleManager && typeof this.particleManager.spawnBloodImpact === 'function') {
+            this.particleManager.spawnBloodImpact(burstData.x, burstData.y, burstData.z, burstData.dir);
+          } else if (this.particleManager && typeof this.particleManager.spawnAnimalBurst === 'function') {
+            this.particleManager.spawnAnimalBurst(burstData.x, burstData.y, burstData.z, burstData.dir);
+          }
+          if (this.animalManager && typeof this.animalManager.triggerAnimalHit === 'function') {
+            this.animalManager.triggerAnimalHit(burstData.animalId, burstData.dir);
+          } else if (this.animalManager && typeof this.animalManager.burstAnimal === 'function') {
+            this.animalManager.burstAnimal(burstData.animalId, { x: burstData.x, z: burstData.z }, burstData.dir);
+          }
         }
       };
     }
@@ -199,14 +204,16 @@ class VoxelRealmsApp {
         targetPoint = { x: voxelHit.x + 0.5, y: voxelHit.y + 0.5, z: voxelHit.z + 0.5 };
         if (isTnt) {
           // Shoot-to-detonate TNT immediately with shockwave particles and sound
-          if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
-            this.multiplayer.sendTntTrigger(voxelHit.x, voxelHit.y, voxelHit.z, 0);
-          }
-          if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
-            this.particleManager.spawnExplosion(voxelHit.x, voxelHit.y, voxelHit.z);
-          }
-          if (sound && typeof sound.playExplosion === 'function') {
-            sound.playExplosion();
+          if (!this.multiplayer || !this.multiplayer.isConnected) {
+            if (this.world && typeof this.world.setBlock === 'function') {
+              this.world.setBlock(voxelHit.x, voxelHit.y, voxelHit.z, 0, true);
+            }
+            if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
+              this.particleManager.spawnExplosion(voxelHit.x, voxelHit.y, voxelHit.z);
+            }
+            if (sound && typeof sound.playExplosion === 'function') {
+              sound.playExplosion();
+            }
           }
         } else {
           // NON-DESTRUCTIVE SHOOTING: Shooting MUST NEVER destroy terrain blocks!

@@ -47,7 +47,7 @@
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Multiplayer Block Excavation & Avatar Synchronization | `avatar.js`, `world.js`, `physics.js`, `rooms.js` | none | IN_PROGRESS (458ac3b3) |
+| M1 | Multiplayer Block Excavation & Avatar Synchronization | `avatar.js`, `world.js`, `physics.js`, `rooms.js` | none | DONE (458ac3b3) |
 | M2 | Premium Weapons, Synchronized Tracers & TNT Reactivity | `controls.js`, `particles.js`, `animals.js`, `main.js`, `rooms.js` | none | IN_PROGRESS (0ab3860a) |
 | M3 | Highway Traffic Collision & Obstacle Intelligence | `animals.js`, `world.js`, `blocks.js` | none | IN_PROGRESS (4e2905b8) |
 | M4 | Sprawling City Redesigns, Mountain Tunnels & Mount Fuji | `world.js`, `blocks.js`, `ui.js` | none | IN_PROGRESS (ad1dd9d2) |

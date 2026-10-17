@@ -70,7 +70,7 @@ export const LANDMARKS = [
   },
   {
     id: 'fuji',
-    name: 'Monte Fuji (+500, +500)',
+    name: '🗻 Monte Fuji (+500, +500)',
     icon: '🗻',
     x: 500,
     y: 26,
@@ -656,9 +656,9 @@ export class UIManager {
       // Playa Paraíso: stand on coastal boardwalk facing tropical resort, palm trees & superyacht
       vx = 0.5; vy = 21.0; vz = -442.5;
       targetYaw = Math.PI; targetPitch = 0.05;
-    } else if (tx === 500 && tz === 500) {
+    } else if ((tx === 350 && tz === 350) || (tx === 500 && tz === 500)) {
       // Mount Fuji: stand on the scenic reflection lake shore facing the colossal volcano
-      vx = 445.5; vy = 26.0; vz = 445.5;
+      vx = 305.5; vy = 20.0; vz = 305.5;
       targetYaw = -Math.PI / 4; targetPitch = 0.28;
     } else if (tx === -500 && tz === -500) {
       // Gran Circuito: stand on the starting grid facing down the main straight toward Turn 1
@@ -811,7 +811,7 @@ export class UIManager {
   getSectorName(x, z) {
     const distCenter = Math.hypot(x, z);
     if (distCenter <= 40) return '🏰 Plaza Central';
-    if (Math.hypot(x - 500, z - 500) <= 90) return '🗻 Monte Fuji';
+    if (Math.hypot(x - 350, z - 350) <= 85 || Math.hypot(x - 500, z - 500) <= 90) return '🗻 Monte Fuji';
     if (z >= 420 && z <= 580 && Math.abs(x) <= 80) return '🇳🇴 Fiordos de Noruega';
     if (Math.hypot(x, z + 500) <= 120) return '🏖️ Playa Paraíso';
     if (Math.hypot(x - 250, z - 250) <= 70) return '🇯🇵 Japón Imperial';

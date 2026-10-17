@@ -9,7 +9,8 @@ const {
   isValidMove,
   validateTeleportPacket,
   isValidWeaponShoot,
-  isValidTntTrigger
+  isValidTntTrigger,
+  isValidVehicleDrive
 } = require('./protocol');
 const { GameState } = require('./game-state');
 
@@ -164,6 +165,18 @@ class RoomManager {
       case MSG.TNT_TRIGGER:
         this.handleTntTrigger(ws, meta, data);
         break;
+
+      case MSG.VEHICLE_DRIVE:
+        this.handleVehicleDrive(ws, meta, data);
+        break;
+
+      case MSG.VEHICLE_ENTER:
+        this.handleVehicleEnter(ws, meta, data);
+        break;
+
+      case MSG.VEHICLE_EXIT:
+        this.handleVehicleExit(ws, meta, data);
+        break;
     }
   }
 
@@ -304,27 +317,29 @@ class RoomManager {
     }
 
     // 3. Shoot-to-detonate TNT block immediately
-    if (data.targetTnt && typeof data.targetTnt === 'object') {
-      const tx = Math.round(data.targetTnt.x);
-      const ty = Math.round(data.targetTnt.y);
-      const tz = Math.round(data.targetTnt.z);
-      const explosion = room.gameState.detonateTnt(tx, ty, tz, 3);
-      this.broadcast(room, MSG.TNT_EXPLODE, explosion);
-      if (explosion.hitAnimals && explosion.hitAnimals.length > 0) {
-        for (const anim of explosion.hitAnimals) {
-          this.broadcast(room, MSG.ANIMAL_BURST, {
-            animalId: anim.id,
-            type: anim.type,
-            x: anim.x,
-            y: anim.y,
-            z: anim.z,
-            shooterId: shooter.id,
-            dir: data.dir || [0, 0, -1]
+    if (data.targetTnt) {
+      const tx = Math.round(Array.isArray(data.targetTnt) ? data.targetTnt[0] : data.targetTnt.x);
+      const ty = Math.round(Array.isArray(data.targetTnt) ? data.targetTnt[1] : data.targetTnt.y);
+      const tz = Math.round(Array.isArray(data.targetTnt) ? data.targetTnt[2] : data.targetTnt.z);
+      if (!isNaN(tx) && !isNaN(ty) && !isNaN(tz)) {
+        const explosion = room.gameState.detonateTnt(tx, ty, tz, 3);
+        this.broadcast(room, MSG.TNT_EXPLODE, explosion);
+        if (explosion.hitAnimals && explosion.hitAnimals.length > 0) {
+          for (const anim of explosion.hitAnimals) {
+            this.broadcast(room, MSG.ANIMAL_BURST, {
+              animalId: anim.id,
+              type: anim.type,
+              x: anim.x,
+              y: anim.y,
+              z: anim.z,
+              shooterId: shooter.id,
+              dir: data.dir || [0, 0, -1]
+            });
+          }
+          this.broadcast(room, MSG.ANIMALS_UPDATE, {
+            animals: room.gameState.getAnimalsSnapshot()
           });
         }
-        this.broadcast(room, MSG.ANIMALS_UPDATE, {
-          animals: room.gameState.getAnimalsSnapshot()
-        });
       }
     }
   }
@@ -338,14 +353,6 @@ class RoomManager {
     const rx = Math.round(data.x);
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);
-
-    this.broadcast(room, MSG.TNT_PRIMED, {
-      x: rx,
-      y: ry,
-      z: rz,
-      fuseMs,
-      playerId: meta.id
-    });
 
     const executeDetonation = () => {
       const explosion = room.gameState.detonateTnt(rx, ry, rz, 3);
@@ -370,6 +377,13 @@ class RoomManager {
     if (fuseMs <= 0) {
       executeDetonation();
     } else {
+      this.broadcast(room, MSG.TNT_PRIMED, {
+        x: rx,
+        y: ry,
+        z: rz,
+        fuseMs,
+        playerId: meta.id
+      });
       const timer = setTimeout(() => {
         this.pendingTntTimers.delete(timer);
         executeDetonation();
@@ -464,6 +478,68 @@ class RoomManager {
       text: `${requester.name} se ha teletransportado hacia ${target.name}`,
       timestamp: Date.now()
     });
+  }
+
+  handleVehicleDrive(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidVehicleDrive(data)) return;
+
+    const player = room.gameState.getPlayer(meta.id);
+    if (!player) return;
+
+    // Update authoritative player state
+    player.pos = [data.x, data.y, data.z];
+    player.rot = [data.yaw, data.pitch || 0];
+    player.action = 'driving';
+    player.lastUpdate = Date.now();
+
+    // Broadcast vehicle drive packet to other players in the room
+    this.broadcast(room, MSG.VEHICLE_DRIVE, {
+      playerId: meta.id,
+      vehicleId: data.vehicleId,
+      x: data.x,
+      y: data.y,
+      z: data.z,
+      yaw: data.yaw,
+      pitch: data.pitch || 0,
+      roll: data.roll || 0,
+      speed: data.speed || 0,
+      steering: data.steering || 0,
+      isDrifting: Boolean(data.isDrifting)
+    }, ws);
+  }
+
+  handleVehicleEnter(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
+
+    const player = room.gameState.getPlayer(meta.id);
+    if (player) {
+      player.action = 'driving';
+    }
+
+    this.broadcast(room, MSG.VEHICLE_ENTER, {
+      playerId: meta.id,
+      vehicleId: data?.vehicleId
+    }, ws);
+  }
+
+  handleVehicleExit(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
+
+    const player = room.gameState.getPlayer(meta.id);
+    if (player) {
+      player.action = 'idle';
+    }
+
+    this.broadcast(room, MSG.VEHICLE_EXIT, {
+      playerId: meta.id,
+      vehicleId: data?.vehicleId
+    }, ws);
   }
 
   handleDisconnect(ws) {

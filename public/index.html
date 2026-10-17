@@ -100,6 +100,35 @@
       <div class="hotbar-hint">1-9 o Rueda: Elegir bloque | E o 🎒: Catálogo | F5: Vista</div>
     </div>
 
+    <!-- In-Game Driving HUD & Real-Time Speedometer (Milestone M5) -->
+    <div id="vehicle-driving-hud" class="vehicle-hud hidden">
+      <div class="vehicle-hud-content">
+        <div class="vehicle-hud-top">
+          <div id="vehicle-model-name" class="vehicle-badge">🏎️ Scuderia Red #1</div>
+          <div id="vehicle-cam-indicator" class="vehicle-pill">📷 Vista Persecución [V]</div>
+        </div>
+        <div class="speedo-main">
+          <div class="speedo-dial">
+            <span id="vehicle-speed-num">0</span>
+            <span class="speedo-unit">KM/H</span>
+          </div>
+          <div class="speedo-sub-val"><span id="vehicle-speed-ms">0.0</span> m/s</div>
+        </div>
+        <div class="speedo-bar-container">
+          <div id="vehicle-speed-bar" class="speedo-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div class="vehicle-keys-hint">
+          <span>[W]</span> Acelerar • <span>[S]</span> Freno/Reversa • <span>[A/D]</span> Girar • <span>[Espacio]</span> Derrape • <span>[V]</span> Cámara • <span>[E / F]</span> Salir
+        </div>
+      </div>
+    </div>
+
+    <!-- Vehicle Interaction Proximity Prompt -->
+    <div id="vehicle-enter-prompt" class="vehicle-prompt hidden">
+      <span class="prompt-icon">🏎️</span>
+      <span id="vehicle-prompt-text">Presiona <strong>[E]</strong> o <strong>[F]</strong> para conducir el coche</span>
+    </div>
+
     <!-- In-Game Chat Feed & Input -->
     <div id="chat-container">
       <div id="chat-feed"></div>
@@ -116,6 +145,16 @@
       <button id="mobile-btn-cam" class="mobile-action-btn cam-btn mc-action-btn mobile-cam-relocated" title="Alternar Cámara (1ª / 3ª Persona)">
         <span class="btn-icon">📷</span>
         <span class="btn-label">CÁMARA</span>
+      </button>
+
+      <!-- Mobile Vehicle Enter/Exit Actions -->
+      <button id="mobile-btn-car" class="mobile-action-btn car-action-btn mc-action-btn hidden" title="Conducir / Salir del Vehículo">
+        <span class="btn-icon">🏎️</span>
+        <span class="btn-label">COCHE</span>
+      </button>
+      <button id="mobile-btn-car-exit" class="mobile-action-btn car-exit-btn mc-action-btn hidden" title="Salir del Coche">
+        <span class="btn-icon">🚪</span>
+        <span class="btn-label">SALIR</span>
       </button>
 
       <!-- Left Virtual Joystick Zone (#virtual-joystick) -->

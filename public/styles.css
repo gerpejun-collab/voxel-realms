@@ -2569,5 +2569,191 @@ body.mobile-mode .desktop-only {
   }
 }
 
+/* ==========================================================================
+   VEHICLE DRIVING HUD & SPEEDOMETER (Milestone M5)
+   ========================================================================== */
+.vehicle-hud {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.vehicle-hud.hidden {
+  display: none !important;
+}
+
+.vehicle-hud-content {
+  background: rgba(15, 23, 42, 0.88);
+  border: 2px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 10px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 280px;
+}
+
+.vehicle-hud-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+}
+
+.vehicle-badge {
+  font-family: 'Cinzel', 'Minecraft', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.vehicle-pill {
+  font-family: 'Minecraft', monospace;
+  font-size: 11px;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.speedo-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 2px 0;
+}
+
+.speedo-dial {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+#vehicle-speed-num {
+  font-family: 'Minecraft', 'Courier New', monospace;
+  font-size: 38px;
+  font-weight: 800;
+  color: #38bdf8;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.6), 2px 2px 0 #000;
+  line-height: 1;
+}
+
+.speedo-unit {
+  font-family: 'Minecraft', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 1px;
+}
+
+.speedo-sub-val {
+  font-family: 'Minecraft', monospace;
+  font-size: 13px;
+  color: #e2e8f0;
+  opacity: 0.8;
+}
+
+.speedo-bar-container {
+  width: 100%;
+  height: 8px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.speedo-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #38bdf8 55%, #eab308 80%, #ef4444 100%);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+  transition: width 0.08s linear;
+}
+
+.vehicle-keys-hint {
+  font-family: 'Minecraft', sans-serif;
+  font-size: 10.5px;
+  color: #cbd5e1;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0.88;
+}
+
+.vehicle-keys-hint span {
+  color: #facc15;
+  font-weight: 700;
+}
+
+/* Vehicle Proximity Prompt */
+.vehicle-prompt {
+  position: absolute;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 52;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #eab308;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(234, 179, 8, 0.35);
+  border-radius: 6px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Cinzel', 'Minecraft', sans-serif;
+  font-size: 13px;
+  color: #fef08a;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  animation: promptPulse 1.8s ease-in-out infinite alternate;
+}
+
+.vehicle-prompt.hidden {
+  display: none !important;
+}
+
+.vehicle-prompt strong {
+  color: #ffffff;
+  background: rgba(234, 179, 8, 0.35);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(234, 179, 8, 0.6);
+}
+
+@keyframes promptPulse {
+  0% { transform: translateX(-50%) scale(1.0); }
+  100% { transform: translateX(-50%) scale(1.03); }
+}
+
+/* Mobile Vehicle Action Buttons */
+.mobile-action-btn.car-action-btn {
+  top: 10px;
+  left: 10px;
+  background: rgba(220, 38, 38, 0.65);
+  border-color: rgba(252, 165, 165, 0.6);
+}
+
+.mobile-action-btn.car-exit-btn {
+  top: 10px;
+  left: 70px;
+  background: rgba(234, 88, 12, 0.7);
+  border-color: rgba(253, 186, 116, 0.7);
+}
+
 
 

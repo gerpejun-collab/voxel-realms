@@ -10,6 +10,7 @@ import { Controls } from './controls.js';
 import { MultiplayerClient } from './multiplayer.js';
 import { UIManager } from './ui.js';
 import { AnimalManager } from './animals.js';
+import { VehicleManager, DrivableCar } from './vehicle.js';
 import { Avatar } from './avatar.js';
 import { BLOCKS } from './blocks.js';
 import { sound } from './audio.js';
@@ -34,8 +35,10 @@ class VoxelRealmsApp {
       this.sceneManager.camera,
       this.sceneManager.renderer.domElement,
       this.physics,
-      this.world
+      this.world,
+      this.particleManager
     );
+    this.controls.setScene(this.sceneManager.scene);
     this.localAvatar = new Avatar('local', 'Tú', this.sceneManager.scene, this.world);
     this.controls.setLocalAvatar(this.localAvatar);
 
@@ -51,6 +54,14 @@ class VoxelRealmsApp {
     this.animalManager = new AnimalManager(this.sceneManager.scene, this.world);
     this.controls.animalManager = this.animalManager;
 
+    // 6b. Initialize Drivable Racing Cars & Grand Prix Fleet
+    this.vehicleManager = new VehicleManager(
+      this.world,
+      this.sceneManager.scene,
+      this.particleManager
+    );
+    this.controls.setVehicleManager(this.vehicleManager);
+
     // 7. Initialize UI Overlay & HUD
     this.ui = new UIManager(
       this.materialManager,
@@ -58,15 +69,41 @@ class VoxelRealmsApp {
       this.sceneManager,
       this.world,
       this.multiplayer,
-      this.animalManager
+      this.animalManager,
+      this.vehicleManager
     );
 
-    // Connect Multiplayer Animal Synchronizer
+    // Connect Multiplayer Animal & Vehicle Synchronizer
     if (this.multiplayer) {
       this.multiplayer.onAnimalsUpdate = (animals) => {
         this.animalManager.syncAnimalsFromServer(animals);
       };
+      this.multiplayer.onVehicleDrive = (data) => {
+        this.vehicleManager.handleRemoteDrive(data, this.multiplayer.remoteAvatars);
+      };
+      this.multiplayer.onVehicleExit = (data) => {
+        this.vehicleManager.handleRemoteExit(data, this.multiplayer.remoteAvatars);
+      };
     }
+
+    // Connect Vehicle Events to Multiplayer and UI
+    this.vehicleManager.onEnterCar = (car) => {
+      if (this.multiplayer) {
+        this.multiplayer.sendVehicleEnter(car.id);
+      }
+      if (this.ui && typeof this.ui.onEnterVehicle === 'function') {
+        this.ui.onEnterVehicle(car);
+      }
+    };
+
+    this.vehicleManager.onExitCar = (car) => {
+      if (this.multiplayer) {
+        this.multiplayer.sendVehicleExit(car.id);
+      }
+      if (this.ui && typeof this.ui.onExitVehicle === 'function') {
+        this.ui.onExitVehicle();
+      }
+    };
 
     // Setup Block Interaction & Weapons Events
     this.setupInteractions();
@@ -122,6 +159,9 @@ class VoxelRealmsApp {
       }
 
       this.multiplayer.sendBlockModify(placePos.x, placePos.y, placePos.z, selectedBlockId);
+      if ((selectedBlockId === BLOCKS.TNT || selectedBlockId === 19) && this.controls && typeof this.controls.onPlaceTnt === 'function') {
+        this.controls.onPlaceTnt(placePos);
+      }
     };
 
     // Rifle Shoot (Authentic 3D rifle, luminous tracer, animal blood particles & shoot-to-detonate TNT)
@@ -246,16 +286,59 @@ class VoxelRealmsApp {
       }
     };
 
-    // TNT placement & trigger
+    // TNT placement & trigger (spawns visible 3D thrown & primed TNT block with burning fuse)
     this.controls.onPlaceTnt = (coords) => {
       if (!coords) return;
+      const hasThrownEntity = Array.isArray(this.controls.activeTntEntities) &&
+        this.controls.activeTntEntities.some(t => !t.isDead && Math.hypot(t.pos.x - coords.x, t.pos.z - coords.z) < 2.5);
+
+      if (!hasThrownEntity && this.particleManager && typeof this.particleManager.spawnPrimedTnt === 'function') {
+        const eye = this.physics && typeof this.physics.getEyePosition === 'function'
+          ? this.physics.getEyePosition()
+          : { x: coords.x, y: coords.y + 1.2, z: coords.z };
+        const isOnline = Boolean(this.multiplayer && this.multiplayer.isConnected);
+
+        this.particleManager.spawnPrimedTnt(eye, coords, 1500, (bx, by, bz) => {
+          if (!isOnline) {
+            // Offline / local fallback detonation: carve blast crater & spawn explosion FX
+            if (this.world && typeof this.world.applyBlockDelta === 'function') {
+              for (let dx = -2; dx <= 2; dx++) {
+                for (let dy = -2; dy <= 2; dy++) {
+                  for (let dz = -2; dz <= 2; dz++) {
+                    if (dx * dx + dy * dy + dz * dz <= 5 && by + dy > 1) {
+                      this.world.applyBlockDelta(bx + dx, by + dy, bz + dz, 0);
+                    }
+                  }
+                }
+              }
+            }
+            if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
+              this.particleManager.spawnExplosion(bx, by, bz);
+            }
+            if (sound && typeof sound.playExplosion === 'function') {
+              sound.playExplosion();
+            }
+          }
+        });
+      }
+
       if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
-        this.multiplayer.sendTntTrigger(coords.x, coords.y, coords.z);
+        this.multiplayer.sendTntTrigger(coords.x, coords.y, coords.z, 1500);
       }
     };
 
-    // Synchronized animal burst handler across clients
+    // Synchronized remote TNT prime & animal burst handlers across clients
     if (this.multiplayer) {
+      this.multiplayer.onTntPrime = (x, y, z, fuseMs = 1500) => {
+        if (this.particleManager && typeof this.particleManager.spawnPrimedTnt === 'function') {
+          const alreadyActive = Array.isArray(this.particleManager.primedTnts) &&
+            this.particleManager.primedTnts.some(t => Math.abs(t.bx - x) <= 1 && Math.abs(t.by - y) <= 1 && Math.abs(t.bz - z) <= 1);
+          if (!alreadyActive) {
+            this.particleManager.spawnPrimedTnt({ x, y: y + 0.6, z }, { x, y, z }, fuseMs);
+          }
+        }
+      };
+
       this.multiplayer.onAnimalBurst = (data) => {
         if (!data) return;
         const isMe = data.shooterId && this.multiplayer && (data.shooterId === this.multiplayer.myId);
@@ -322,6 +405,14 @@ class VoxelRealmsApp {
        this.physics.action
      );
     this.multiplayer.update(dt);
+
+    // 5b. Vehicle Driving Simulation & Multiplayer Sync
+    if (this.vehicleManager) {
+      if (this.vehicleManager.isDriving() && this.multiplayer) {
+        this.multiplayer.sendVehicleDrive(this.vehicleManager.activeCar);
+      }
+      this.vehicleManager.update(dt, this.controls, this.multiplayer);
+    }
 
     // 6. Ambient Voxel Animals, Rare NPCs & Highway Traffic
     this.animalManager.update(dt, this.physics.pos);

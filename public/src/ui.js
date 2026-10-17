@@ -89,7 +89,7 @@ export const LANDMARKS = [
 ];
 
 export class UIManager {
-  constructor(materialManager, controls, sceneManager, world, multiplayer, animalManager = null) {
+  constructor(materialManager, controls, sceneManager, world, multiplayer, animalManager = null, vehicleManager = null) {
     this.materials = materialManager;
     this.controls = controls;
     this.physics = controls?.physics;
@@ -97,6 +97,7 @@ export class UIManager {
     this.world = world;
     this.multiplayer = multiplayer;
     this.animalManager = animalManager;
+    this.vehicleManager = vehicleManager || controls?.vehicleManager || null;
 
     // Telemetry and session state
     this.sessionStartTime = Date.now();
@@ -142,6 +143,20 @@ export class UIManager {
       this.controls.onSpeedChange = (mult, flight) => {
         this.updateSpeedUI(mult, flight);
       };
+      this.controls.onAimChange = (isAiming) => {
+        const crosshair = document.getElementById('crosshair');
+        const scopeOverlay = document.getElementById('rifle-scope-overlay');
+        if (crosshair) {
+          if (isAiming && (!scopeOverlay || !scopeOverlay.classList.contains('hidden') || (this.controls.aimBlend > 0.82))) {
+            crosshair.classList.add('hidden');
+          } else if (!isAiming) {
+            crosshair.classList.remove('hidden');
+          }
+        }
+      };
+      if (!this.controls.particleManager) {
+        this.controls.particleManager = this.multiplayer?.particles || this.sceneManager?.particleManager || null;
+      }
     }
 
     // 3D wireframe box for highlighting targeted voxel
@@ -202,6 +217,10 @@ export class UIManager {
     this.highlightBox = new THREE.LineSegments(edges, this.materials.highlightMaterial);
     this.highlightBox.visible = false;
     this.sceneManager.scene.add(this.highlightBox);
+  }
+
+  setVehicleManager(vm) {
+    this.vehicleManager = vm;
   }
 
   updatePlayerCountBadge(count) {
@@ -428,6 +447,9 @@ export class UIManager {
     // Toggle on 'E' key or close on 'Escape'
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyE' && !this.isChatOpen && !this.isGuideOpen) {
+        if (e.__vrHandled || (this.vehicleManager && this.vehicleManager.isDriving())) {
+          return;
+        }
         sound.playClick();
         if (this.controls.isLocked) {
           this.controls.unlock();
@@ -1018,6 +1040,32 @@ export class UIManager {
       btnSprint.addEventListener('touchstart', toggleSprint);
       btnSprint.addEventListener('click', toggleSprint);
     }
+
+    const btnCar = document.getElementById('mobile-btn-car');
+    if (btnCar) {
+      const handleCarAction = (e) => {
+        e.preventDefault();
+        sound.playClick(1.0);
+        if (this.vehicleManager) {
+          this.vehicleManager.handleInteract(this.controls?.physics || this.physics);
+        }
+      };
+      btnCar.addEventListener('touchstart', handleCarAction);
+      btnCar.addEventListener('click', handleCarAction);
+    }
+
+    const btnCarExit = document.getElementById('mobile-btn-car-exit');
+    if (btnCarExit) {
+      const handleCarExit = (e) => {
+        e.preventDefault();
+        sound.playClick(1.0);
+        if (this.vehicleManager) {
+          this.vehicleManager.exitCar(this.controls?.physics || this.physics);
+        }
+      };
+      btnCarExit.addEventListener('touchstart', handleCarExit);
+      btnCarExit.addEventListener('click', handleCarExit);
+    }
   }
 
   initPauseMenu() {
@@ -1162,6 +1210,15 @@ export class UIManager {
         sound.playClick();
         const active = this.controls.toggleAiming();
         btnAim.classList.toggle('active', active);
+        const crosshair = document.getElementById('crosshair');
+        const scopeOverlay = document.getElementById('rifle-scope-overlay');
+        if (crosshair) {
+          if (active && scopeOverlay && !scopeOverlay.classList.contains('hidden')) {
+            crosshair.classList.add('hidden');
+          } else if (!active) {
+            crosshair.classList.remove('hidden');
+          }
+        }
       });
     }
     const btnShoot = document.getElementById('btn-weapon-shoot');
@@ -1533,7 +1590,33 @@ export class UIManager {
     }
   }
 
+  setScopeVisible(visible) {
+    const scopeOverlay = document.getElementById('rifle-scope-overlay');
+    const crosshair = document.getElementById('crosshair');
+    if (scopeOverlay) {
+      if (visible) {
+        scopeOverlay.classList.remove('hidden');
+        if (crosshair) crosshair.classList.add('hidden');
+      } else {
+        scopeOverlay.classList.add('hidden');
+        if (crosshair) crosshair.classList.remove('hidden');
+      }
+    }
+  }
+
   updateHUD(fps, pos) {
+    // Synchronize crosshair visibility with sniper scope overlay
+    const scopeOverlay = document.getElementById('rifle-scope-overlay');
+    const crosshair = document.getElementById('crosshair');
+    if (scopeOverlay && crosshair) {
+      const scopeVisible = !scopeOverlay.classList.contains('hidden');
+      if (scopeVisible && !crosshair.classList.contains('hidden')) {
+        crosshair.classList.add('hidden');
+      } else if (!scopeVisible && crosshair.classList.contains('hidden') && !this.controls?.isAiming) {
+        crosshair.classList.remove('hidden');
+      }
+    }
+
     // Update live connected count badge
     this.updatePlayerCountBadge();
 
@@ -1622,6 +1705,82 @@ export class UIManager {
       this.highlightBox.visible = false;
       const blockLabel = document.getElementById('target-block-name');
       if (blockLabel) blockLabel.textContent = '';
+    }
+
+    // Update Vehicle Driving HUD, Speedometer & Proximity Enter Prompt
+    const drivingHud = document.getElementById('vehicle-driving-hud');
+    const enterPrompt = document.getElementById('vehicle-enter-prompt');
+    const mobileCarExitBtn = document.getElementById('mobile-btn-car-exit');
+    const mobileCarBtn = document.getElementById('mobile-btn-car');
+
+    const isDriving = !!(this.vehicleManager && this.vehicleManager.isDriving());
+    if (isDriving) {
+      if (drivingHud) {
+        drivingHud.classList.remove('hidden');
+      }
+      if (enterPrompt) {
+        enterPrompt.classList.add('hidden');
+      }
+      if (mobileCarExitBtn) {
+        mobileCarExitBtn.classList.remove('hidden');
+      }
+      if (mobileCarBtn) {
+        mobileCarBtn.classList.add('hidden');
+      }
+
+      const car = this.vehicleManager.activeCar;
+      if (car) {
+        const speedMs = Math.abs(car.speed || 0);
+        const speedKmh = Math.round(speedMs * 3.6);
+        const speedNum = document.getElementById('vehicle-speed-num');
+        const speedMsEl = document.getElementById('vehicle-speed-ms');
+        const speedBar = document.getElementById('vehicle-speed-bar');
+        const modelName = document.getElementById('vehicle-model-name');
+        const camIndicator = document.getElementById('vehicle-cam-indicator');
+
+        if (speedNum) speedNum.textContent = speedKmh;
+        if (speedMsEl) speedMsEl.textContent = `${speedMs.toFixed(1)} m/s`;
+        if (speedBar) {
+          const maxSpd = car.maxSpeed || 16.5;
+          const pct = Math.min(100, Math.max(0, Math.round((speedMs / maxSpd) * 100)));
+          speedBar.style.width = `${pct}%`;
+        }
+        if (modelName) {
+          modelName.textContent = car.name || 'Gran Prix Racer';
+        }
+        if (camIndicator) {
+          const camMode = this.vehicleManager.cameraMode || 'chase';
+          camIndicator.textContent = camMode === 'cockpit' ? '🕹️ CABINA [V]' : '🎥 PERSECUCIÓN [V]';
+        }
+      }
+    } else {
+      if (drivingHud) {
+        drivingHud.classList.add('hidden');
+      }
+      if (mobileCarExitBtn) {
+        mobileCarExitBtn.classList.add('hidden');
+      }
+
+      const playerPos = pos || this.physics?.pos || this.controls?.physics?.pos;
+      if (this.vehicleManager && playerPos) {
+        const nearestCar = this.vehicleManager.getNearestCar(playerPos, 4.5);
+        if (nearestCar && enterPrompt) {
+          enterPrompt.classList.remove('hidden');
+          const promptText = document.getElementById('vehicle-prompt-text');
+          if (promptText) {
+            promptText.innerHTML = `Presiona <strong>[E]</strong> o <strong>[F]</strong> para conducir <strong>${nearestCar.name || 'el coche'}</strong>`;
+          }
+          if (mobileCarBtn) {
+            mobileCarBtn.classList.remove('hidden');
+          }
+        } else {
+          if (enterPrompt) enterPrompt.classList.add('hidden');
+          if (mobileCarBtn) mobileCarBtn.classList.add('hidden');
+        }
+      } else {
+        if (enterPrompt) enterPrompt.classList.add('hidden');
+        if (mobileCarBtn) mobileCarBtn.classList.add('hidden');
+      }
     }
   }
 

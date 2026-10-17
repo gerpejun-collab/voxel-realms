@@ -868,6 +868,7 @@ function isSolidOrObstacle(block) {
   const defs = getSafeBlockDefs();
   if (typeof block === 'number') {
     if (block === blocks.AIR || block === blocks.WATER) return false;
+    if (block === blocks.OAK_LEAVES || block === 7) return false;
     if (block === blocks.TNT) return true;
     if (defs && defs[block]) return Boolean(defs[block].solid);
     return true; // Any other block number is a solid block
@@ -875,6 +876,7 @@ function isSolidOrObstacle(block) {
   if (typeof block === 'object') {
     if (block.id === blocks.AIR || block.type === blocks.AIR) return false;
     if (block.id === blocks.WATER || block.type === blocks.WATER) return false;
+    if (block.id === blocks.OAK_LEAVES || block.type === blocks.OAK_LEAVES || block.id === 7 || block.type === 7) return false;
     if (block.id === blocks.TNT || block.type === blocks.TNT || block.isExplosive) return true;
     if (block.solid !== undefined) return Boolean(block.solid);
     return true;
@@ -1006,41 +1008,58 @@ export class VoxelCar {
     const perpX = hz;
     const perpZ = -hx;
 
+    const isCircle = Boolean(this.route && (this.route.type === 'circle' || this.route === 'circle'));
+    const routeRadius = (this.route && this.route.radius) || 21.0;
+    const routeCx = (this.route && this.route.cx) || 0;
+    const routeCz = (this.route && this.route.cz) || 0;
+    const currentAngle = (typeof this.progress === 'number')
+      ? this.progress
+      : Math.atan2(curZ - routeCz, curX - routeCx);
+
+    const hasLineEndpoint = (!isCircle && this.route && typeof this.route.x2 === 'number' && typeof this.route.z2 === 'number');
+    const remainingRouteDist = hasLineEndpoint
+      ? Math.hypot(this.route.x2 - curX, this.route.z2 - curZ)
+      : Infinity;
+
     // 3 parallel rays: center (0.0), left (-0.6), right (+0.6)
     const lateralOffsets = [0.0, -0.6, 0.6];
     const frontBumper = 1.55;
     const maxDist = (typeof lookAheadDist === 'number' && lookAheadDist > 0) ? lookAheadDist : 8.0;
 
     // First check direct contact at front bumper (d = 0.0)
-    for (const lat of lateralOffsets) {
-      const sampleX = curX + hx * frontBumper + perpX * lat;
-      const sampleZ = curZ + hz * frontBumper + perpZ * lat;
-      const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
-        ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ))
-        : (curY >= 25 ? curY - 1 : 24);
-      const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
-      if (Math.floor(roadSurfaceY) + 1 !== curY) {
-        yLevels.push(curY, curY + 1);
-      }
-      const checkXs = [Math.floor(sampleX)];
-      if (Math.round(sampleX) !== Math.floor(sampleX)) checkXs.push(Math.round(sampleX));
-      const checkZs = [Math.floor(sampleZ)];
-      if (Math.round(sampleZ) !== Math.floor(sampleZ)) checkZs.push(Math.round(sampleZ));
+    if (frontBumper <= remainingRouteDist + 0.25) {
+      for (const lat of lateralOffsets) {
+        let sampleX, sampleZ;
+        if (isCircle) {
+          const arcAngle = currentAngle + (frontBumper / routeRadius);
+          sampleX = routeCx + Math.cos(arcAngle) * (routeRadius + lat);
+          sampleZ = routeCz + Math.sin(arcAngle) * (routeRadius + lat);
+        } else {
+          sampleX = curX + hx * frontBumper + perpX * lat;
+          sampleZ = curZ + hz * frontBumper + perpZ * lat;
+        }
 
-      for (const bx of checkXs) {
-        for (const bz of checkZs) {
-          for (const iy of yLevels) {
-            const block = this.world.getBlock(bx, iy, bz);
-            if (isSolidOrObstacle(block)) {
-              return {
-                distance: 0.0,
-                blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
-                x: sampleX,
-                y: iy,
-                z: sampleZ,
-                isObstacle: true
-              };
-            }
+        const bx = Math.round(sampleX);
+        const bz = Math.round(sampleZ);
+        if (Math.abs(lat) > 0.01 && typeof this.world.isRoadAt === 'function' && !this.world.isRoadAt(bx, bz)) {
+          continue;
+        }
+        const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
+          ? this.world.getRoadHeightAt(bx, bz)
+          : (curY >= 25 ? curY - 1 : 24);
+        const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
+
+        for (const iy of yLevels) {
+          const block = this.world.getBlock(bx, iy, bz);
+          if (isSolidOrObstacle(block)) {
+            return {
+              distance: 0.0,
+              blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
+              x: sampleX,
+              y: iy,
+              z: sampleZ,
+              isObstacle: true
+            };
           }
         }
       }
@@ -1050,42 +1069,44 @@ export class VoxelCar {
     for (let d = 0.1; d <= maxDist + 0.001; d += 0.1) {
       const roundedD = Math.round(d * 10) / 10;
       const distFromCenter = frontBumper + roundedD;
+      if (distFromCenter > remainingRouteDist + 0.25) break;
 
       for (const lat of lateralOffsets) {
-        const sampleX = curX + hx * distFromCenter + perpX * lat;
-        const sampleZ = curZ + hz * distFromCenter + perpZ * lat;
+        let sampleX, sampleZ;
+        if (isCircle) {
+          const arcAngle = currentAngle + (distFromCenter / routeRadius);
+          sampleX = routeCx + Math.cos(arcAngle) * (routeRadius + lat);
+          sampleZ = routeCz + Math.sin(arcAngle) * (routeRadius + lat);
+        } else {
+          sampleX = curX + hx * distFromCenter + perpX * lat;
+          sampleZ = curZ + hz * distFromCenter + perpZ * lat;
+        }
+
+        const bx = Math.round(sampleX);
+        const bz = Math.round(sampleZ);
+        if (Math.abs(lat) > 0.01 && typeof this.world.isRoadAt === 'function' && !this.world.isRoadAt(bx, bz)) {
+          continue;
+        }
 
         const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
-          ? this.world.getRoadHeightAt(Math.round(sampleX), Math.round(sampleZ))
+          ? this.world.getRoadHeightAt(bx, bz)
           : (curY >= 25 ? curY - 1 : 24);
 
         // Heights: road surface + 1 (hood height) and road surface + 2 (windshield height)
         const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
-        if (Math.floor(roadSurfaceY) + 1 !== curY) {
-          yLevels.push(curY, curY + 1);
-        }
 
-        const checkXs = [Math.floor(sampleX)];
-        if (Math.round(sampleX) !== Math.floor(sampleX)) checkXs.push(Math.round(sampleX));
-        const checkZs = [Math.floor(sampleZ)];
-        if (Math.round(sampleZ) !== Math.floor(sampleZ)) checkZs.push(Math.round(sampleZ));
+        for (const iy of yLevels) {
+          const block = this.world.getBlock(bx, iy, bz);
 
-        for (const bx of checkXs) {
-          for (const bz of checkZs) {
-            for (const iy of yLevels) {
-              const block = this.world.getBlock(bx, iy, bz);
-
-              if (isSolidOrObstacle(block)) {
-                return {
-                  distance: roundedD,
-                  blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
-                  x: sampleX,
-                  y: iy,
-                  z: sampleZ,
-                  isObstacle: true
-                };
-              }
-            }
+          if (isSolidOrObstacle(block)) {
+            return {
+              distance: roundedD,
+              blockId: (typeof block === 'object' && block) ? (block.id || block.type || 1) : block,
+              x: sampleX,
+              y: iy,
+              z: sampleZ,
+              isObstacle: true
+            };
           }
         }
       }
@@ -1095,6 +1116,10 @@ export class VoxelCar {
     if (this.trafficManager && Array.isArray(this.trafficManager.cars)) {
       for (const other of this.trafficManager.cars) {
         if (other === this) continue;
+        if (typeof other.getHeadingVector === 'function') {
+          const oh = other.getHeadingVector();
+          if (oh.x * hx + oh.z * hz < 0.5) continue;
+        }
         const toX = other.position.x - curX;
         const toZ = other.position.z - curZ;
         const forwardProj = toX * hx + toZ * hz;
@@ -1138,45 +1163,62 @@ export class VoxelCar {
     const perpX = hz;
     const perpZ = -hx;
 
+    const isCircle = Boolean(this.route && (this.route.type === 'circle' || this.route === 'circle'));
+    const routeRadius = (this.route && this.route.radius) || 21.0;
+    const routeCx = (this.route && this.route.cx) || 0;
+    const routeCz = (this.route && this.route.cz) || 0;
+    const currentAngle = (typeof this.progress === 'number')
+      ? this.progress
+      : Math.atan2(curZ - routeCz, curX - routeCx);
+
+    const hasLineEndpoint = (!isCircle && this.route && typeof this.route.x2 === 'number' && typeof this.route.z2 === 'number');
+    const remainingRouteDist = hasLineEndpoint
+      ? Math.hypot(this.route.x2 - curX, this.route.z2 - curZ)
+      : Infinity;
+
     // Distances to probe: probe distance plus intermediate samples along heading
     const probeDist = typeof distance === 'number' ? distance : 2.5;
     const sampleDistances = [probeDist];
     if (probeDist >= 1.8) {
       sampleDistances.unshift(1.0, 1.8);
     }
+    if (Math.round(probeDist) !== probeDist && Math.round(probeDist) > probeDist) {
+      sampleDistances.push(Math.round(probeDist));
+    }
 
     const lateralOffsets = [0, -0.45, 0.45];
 
     for (const d of sampleDistances) {
-      const baseX = curX + hx * d;
-      const baseZ = curZ + hz * d;
-
+      if (d > remainingRouteDist + 0.25) continue;
       for (const lat of lateralOffsets) {
-        const px = baseX + perpX * lat;
-        const pz = baseZ + perpZ * lat;
-
-        const roadY = (typeof this.world.getRoadHeightAt === 'function')
-          ? this.world.getRoadHeightAt(Math.round(px), Math.round(pz)) + 1
-          : curY;
-
-        const yLevels = [Math.floor(roadY), Math.floor(roadY) + 1];
-        if (Math.floor(roadY) !== curY) {
-          yLevels.push(curY, curY + 1);
+        let sampleX, sampleZ;
+        if (isCircle) {
+          const arcAngle = currentAngle + (d / routeRadius);
+          sampleX = routeCx + Math.cos(arcAngle) * (routeRadius + lat);
+          sampleZ = routeCz + Math.sin(arcAngle) * (routeRadius + lat);
+        } else {
+          sampleX = curX + hx * d + perpX * lat;
+          sampleZ = curZ + hz * d + perpZ * lat;
         }
 
-        const coords = [
-          [Math.floor(px), Math.floor(pz)],
-          [Math.round(px), Math.round(pz)]
-        ];
+        const bx = Math.round(sampleX);
+        const bz = Math.round(sampleZ);
+        if (Math.abs(lat) > 0.01 && typeof this.world.isRoadAt === 'function' && !this.world.isRoadAt(bx, bz)) {
+          continue;
+        }
 
-        for (const [ix, iz] of coords) {
-          for (const iy of yLevels) {
-            const block = this.world.getBlock(ix, iy, iz);
-            if (isSolidOrObstacle(block)) {
-              this.hasObstacle = true;
-              this.isBlocked = true;
-              return true;
-            }
+        const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
+          ? this.world.getRoadHeightAt(bx, bz)
+          : (curY >= 25 ? curY - 1 : 24);
+
+        const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
+
+        for (const iy of yLevels) {
+          const block = this.world.getBlock(bx, iy, bz);
+          if (isSolidOrObstacle(block)) {
+            this.hasObstacle = true;
+            this.isBlocked = true;
+            return true;
           }
         }
       }
@@ -1186,6 +1228,10 @@ export class VoxelCar {
     if (this.trafficManager && Array.isArray(this.trafficManager.cars)) {
       for (const other of this.trafficManager.cars) {
         if (other === this) continue;
+        if (typeof other.getHeadingVector === 'function') {
+          const oh = other.getHeadingVector();
+          if (oh.x * hx + oh.z * hz < 0.5) continue;
+        }
         const toX = other.position.x - curX;
         const toZ = other.position.z - curZ;
         const forwardProj = toX * hx + toZ * hz;
@@ -1217,6 +1263,12 @@ export class VoxelCar {
   isCollisionAt(x, z, hx, hz) {
     if (!this.world || typeof this.world.getBlock !== 'function') return false;
     const curY = Math.floor(this.position.y || 25);
+    const isCircle = Boolean(this.route && (this.route.type === 'circle' || this.route === 'circle'));
+    const hasLineEndpoint = (!isCircle && this.route && typeof this.route.x2 === 'number' && typeof this.route.z2 === 'number');
+    const remainingRouteDist = hasLineEndpoint
+      ? Math.hypot(this.route.x2 - x, this.route.z2 - z)
+      : Infinity;
+
     // Bumper check: front center and front corners (3 points) plus body points
     const collisionOffsets = [
       [0.0, 1.55],
@@ -1230,30 +1282,25 @@ export class VoxelCar {
     const perpZ = -hx;
 
     for (const [lat, fwd] of collisionOffsets) {
+      if (fwd > remainingRouteDist + 0.25) continue;
       const cx = x + hx * fwd + perpX * lat;
       const cz = z + hz * fwd + perpZ * lat;
 
+      const bx = Math.round(cx);
+      const bz = Math.round(cz);
+      if (Math.abs(lat) > 0.01 && typeof this.world.isRoadAt === 'function' && !this.world.isRoadAt(bx, bz)) {
+        continue;
+      }
+
       const roadSurfaceY = (typeof this.world.getRoadHeightAt === 'function')
-        ? this.world.getRoadHeightAt(Math.round(cx), Math.round(cz))
+        ? this.world.getRoadHeightAt(bx, bz)
         : (curY >= 25 ? curY - 1 : 24);
 
       const yLevels = [Math.floor(roadSurfaceY) + 1, Math.floor(roadSurfaceY) + 2];
-      if (Math.floor(roadSurfaceY) + 1 !== curY) {
-        yLevels.push(curY, curY + 1);
-      }
 
-      const checkXs = [Math.floor(cx)];
-      if (Math.round(cx) !== Math.floor(cx)) checkXs.push(Math.round(cx));
-      const checkZs = [Math.floor(cz)];
-      if (Math.round(cz) !== Math.floor(cz)) checkZs.push(Math.round(cz));
-
-      for (const bx of checkXs) {
-        for (const bz of checkZs) {
-          for (const iy of yLevels) {
-            if (isSolidOrObstacle(this.world.getBlock(bx, iy, bz))) {
-              return true;
-            }
-          }
+      for (const iy of yLevels) {
+        if (isSolidOrObstacle(this.world.getBlock(bx, iy, bz))) {
+          return true;
         }
       }
     }
@@ -1503,26 +1550,26 @@ export class TrafficManager {
   initHighwayTraffic() {
     const routes = [
       // Central Roundabout Ring (radius 21 around Spawn Plaza)
-      { type: 'circle', cx: 0, cz: 0, radius: 21.0, speed: 7.5, initialProgress: 0.0, color: 0xd92b2b },
-      { type: 'circle', cx: 0, cz: 0, radius: 21.0, speed: 7.5, initialProgress: Math.PI, color: 0xf4b41b },
+      { type: 'circle', cx: 0, cz: 0, radius: 21.0, speed: 9.0, initialProgress: 0.0, color: 0xd92b2b },
+      { type: 'circle', cx: 0, cz: 0, radius: 21.0, speed: 9.0, initialProgress: Math.PI, color: 0xf4b41b },
 
-      // North-South Grand Highway (Playa Paraíso <-> Central Plaza <-> Norway Fjords)
-      { type: 'line', x1: 1.6, z1: -440, x2: 1.6, z2: 430, speed: 12.0, initialProgress: 0.15, color: 0x2563eb },
-      { type: 'line', x1: 1.6, z1: -440, x2: 1.6, z2: 430, speed: 12.0, initialProgress: 0.55, color: 0x10b981 },
-      { type: 'line', x1: -1.6, z1: 430, x2: -1.6, z2: -440, speed: 12.0, initialProgress: 0.30, color: 0xf97316 },
-      { type: 'line', x1: -1.6, z1: 430, x2: -1.6, z2: -440, speed: 12.0, initialProgress: 0.75, color: 0xf1f5f9 },
+      // North & South Arterial Highways (staying on unobstructed highway lanes outside Central Plaza altar)
+      { type: 'line', x1: 1.6, z1: -435, x2: 1.6, z2: -23, speed: 12.0, initialProgress: 0.15, color: 0x2563eb },
+      { type: 'line', x1: 1.6, z1: 23, x2: 1.6, z2: 430, speed: 12.0, initialProgress: 0.25, color: 0x10b981 },
+      { type: 'line', x1: -1.6, z1: 430, x2: -1.6, z2: 23, speed: 12.0, initialProgress: 0.30, color: 0xf97316 },
+      { type: 'line', x1: -1.6, z1: -23, x2: -1.6, z2: -435, speed: 12.0, initialProgress: 0.45, color: 0xf1f5f9 },
 
-      // East-West Central Highway (Western Highway <-> Central Plaza <-> Eastern Highway)
-      { type: 'line', x1: -225, z1: 1.6, x2: 225, z2: 1.6, speed: 11.0, initialProgress: 0.25, color: 0xd92b2b },
-      { type: 'line', x1: 225, z1: -1.6, x2: -225, z2: -1.6, speed: 11.0, initialProgress: 0.65, color: 0xf4b41b },
+      // East & West Central Highways (staying on unobstructed highway lanes outside Central Plaza altar)
+      { type: 'line', x1: 23, z1: 1.6, x2: 224, z2: 1.6, speed: 11.5, initialProgress: 0.20, color: 0xd92b2b },
+      { type: 'line', x1: -23, z1: -1.6, x2: -224, z2: -1.6, speed: 11.5, initialProgress: 0.35, color: 0xf4b41b },
 
       // Eastern Connector Highway (Paris (+250,-250) <-> Japan (+250,+250) along X = 229)
-      { type: 'line', x1: 230.5, z1: -245, x2: 230.5, z2: 245, speed: 11.5, initialProgress: 0.20, color: 0x10b981 },
-      { type: 'line', x1: 227.5, z1: 245, x2: 227.5, z2: -245, speed: 11.5, initialProgress: 0.70, color: 0x2563eb },
+      { type: 'line', x1: 230.5, z1: -220, x2: 230.5, z2: 220, speed: 11.5, initialProgress: 0.20, color: 0x10b981 },
+      { type: 'line', x1: 227.5, z1: 220, x2: 227.5, z2: -220, speed: 11.5, initialProgress: 0.70, color: 0x2563eb },
 
       // Western Connector Highway (New York (-250,-250) <-> Shanghai (-250,+250) along X = -229)
-      { type: 'line', x1: -227.5, z1: -245, x2: -227.5, z2: 245, speed: 11.5, initialProgress: 0.35, color: 0xf4b41b },
-      { type: 'line', x1: -230.5, z1: 245, x2: -230.5, z2: -245, speed: 11.5, initialProgress: 0.80, color: 0xd92b2b }
+      { type: 'line', x1: -227.5, z1: -220, x2: -227.5, z2: 220, speed: 11.5, initialProgress: 0.35, color: 0xf4b41b },
+      { type: 'line', x1: -230.5, z1: 220, x2: -230.5, z2: -220, speed: 11.5, initialProgress: 0.80, color: 0xd92b2b }
     ];
 
     for (const r of routes) {

@@ -37,6 +37,7 @@ export class DrivableCar {
     // Driver binding
     this.driverId = null;
     this.driverName = null;
+    this.isDriven = false;
 
     // Dimensions for collision box
     this.halfLength = 1.7;
@@ -61,6 +62,7 @@ export class DrivableCar {
       roughness: 0.35,
       metalness: 0.4
     });
+    this.carMat = carMat;
 
     const blackMat = new THREE.MeshStandardMaterial({
       color: 0x18181b,
@@ -251,6 +253,25 @@ export class DrivableCar {
       this.group.add(exh);
     }
 
+    // Racing Livery Center Stripe & Side Mirrors for high visual clarity
+    const stripeMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.25
+    });
+    const noseStripe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 1.25), stripeMat);
+    noseStripe.position.set(0, 0.57, -1.32);
+    this.group.add(noseStripe);
+
+    const wingStripe = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.02, 0.14), stripeMat);
+    wingStripe.position.set(0, 1.12, 1.75);
+    this.group.add(wingStripe);
+
+    for (const sx of [-0.72, 0.72]) {
+      const mirrorHousing = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.10, 0.12), carMat);
+      mirrorHousing.position.set(sx, 0.68, -0.35);
+      this.group.add(mirrorHousing);
+    }
+
     // 9. Four High-Performance Voxel Racing Tires (with steerable front axle)
     const createWheelMesh = () => {
       const wg = new THREE.Group();
@@ -439,14 +460,17 @@ export class DrivableCar {
       }
     }
 
-    // 6. Ground & Lake Bridge Elevation Follow
+    // 6. Ground & Lake Bridge Elevation Follow (top surface of voxel block is +1 above block Y)
     if (world && typeof world.getHeightAt === 'function') {
       const bx = Math.floor(this.pos.x);
       const bz = Math.floor(this.pos.z);
 
-      // Lake bridge deck at (-500, -500) circuit (X: -425..-395, Z: -525..-440)
-      const isLakeBridge = (bx >= -425 && bx <= -395 && bz >= -525 && bz <= -440);
-      let targetGroundY = isLakeBridge ? 24 : world.getHeightAt(bx, bz);
+      // Lake bridges & mountain tunnels on SE Gran Circuito or NW Grand Prix Sector, or highway road network
+      const isLakeBridge = (bx >= -425 && bx <= -395 && bz >= -570 && bz <= -440) ||
+                           (bx >= 185 && bx <= 210 && bz >= -140 && bz <= -100);
+      const isCircuitZone = (typeof world.isCircuitBridgeOrTunnelAt === 'function' && world.isCircuitBridgeOrTunnelAt(bx, bz));
+      const isRoadSurface = (typeof world.isRoadAt === 'function' && world.isRoadAt(bx, bz));
+      let targetGroundY = (isLakeBridge || isCircuitZone || isRoadSurface) ? 25 : (world.getHeightAt(bx, bz) + 1);
 
       // Smooth step over elevation
       this.pos.y += (targetGroundY - this.pos.y) * Math.min(1.0, dt * 14.0);
@@ -496,6 +520,89 @@ export class DrivableCar {
     ];
   }
 
+  enter(player) {
+    this.driverId = (player && player.id) ? player.id : 'local';
+    this.driverName = (player && player.name) ? player.name : 'Tú';
+    this.isDriven = true;
+    if (player && player.pos) {
+      const seat = this.getSeatPosition();
+      player.pos.x = seat.x;
+      player.pos.y = seat.y;
+      player.pos.z = seat.z;
+    }
+    if (player) {
+      player.action = 'driving';
+    }
+    return true;
+  }
+
+  exit(player = null) {
+    this.driverId = null;
+    this.driverName = null;
+    this.isDriven = false;
+    if (player && player.pos) {
+      const exitOffset = 1.8;
+      const sinY = Math.sin(this.yaw);
+      const cosY = Math.cos(this.yaw);
+      player.pos.x = this.pos.x + (cosY * exitOffset);
+      player.pos.z = this.pos.z + (-sinY * exitOffset);
+      if (player.vel) {
+        player.vel.x = 0;
+        player.vel.y = 0;
+        player.vel.z = 0;
+      }
+      player.action = 'idle';
+    }
+    return true;
+  }
+
+  getSeatPosition() {
+    const sinY = Math.sin(this.yaw);
+    const cosY = Math.cos(this.yaw);
+    return {
+      x: this.pos.x + (-sinY * 0.1),
+      y: this.pos.y + 0.15,
+      z: this.pos.z + (-cosY * 0.1)
+    };
+  }
+
+  getSeatRotation() {
+    return {
+      yaw: this.yaw,
+      pitch: this.pitch,
+      roll: this.roll
+    };
+  }
+
+  setColor(colorHex) {
+    this.colorHex = colorHex;
+    if (this.color && typeof this.color.setHex === 'function') {
+      this.color.setHex(colorHex);
+    } else if (THREE.Color) {
+      this.color = new THREE.Color(colorHex);
+    }
+    if (this.carMat) {
+      if (this.carMat.color && typeof this.carMat.color.setHex === 'function') {
+        this.carMat.color.setHex(colorHex);
+      } else {
+        this.carMat.color = this.color;
+      }
+    }
+    if (this.group && typeof this.group.traverse === 'function') {
+      this.group.traverse((obj) => {
+        if (obj && obj.material === this.carMat) {
+          if (obj.material.color && typeof obj.material.color.setHex === 'function') {
+            obj.material.color.setHex(colorHex);
+          }
+        }
+      });
+    }
+  }
+
+  update(dt, input, world = null) {
+    return this.updatePhysics(dt, input, world || this.world);
+  }
+
   dispose() {
     if (this.group.parent) {
       this.group.parent.remove(this.group);
@@ -530,19 +637,28 @@ export class VehicleManager {
   }
 
   initCircuitCars() {
-    // 6 Distinct Grand Prix Cars placed on the Starting Grid & Pit Lane at (-500, -500)
+    // 6 Distinct Grand Prix Cars placed on the Starting Grid & Pit Lane at (-500, -500) (top of Y=24 asphalt is Y=25)
     const carConfigs = [
-      { id: 'car_scuderia_red', color: 0xdc2626, x: -502, y: 24, z: -417, yaw: Math.PI / 2, name: '🏎️ Scuderia Red #1 (Pole)' },
-      { id: 'car_azure_bolt', color: 0x2563eb, x: -498, y: 24, z: -423, yaw: Math.PI / 2, name: '🏎️ Azure Bolt #2 (Grid P2)' },
-      { id: 'car_gold_arrow', color: 0xeab308, x: -490, y: 24, z: -417, yaw: Math.PI / 2, name: '🏎️ Gold Arrow #3 (Grid P3)' },
-      { id: 'car_british_racing', color: 0x16a34a, x: -486, y: 24, z: -423, yaw: Math.PI / 2, name: '🏎️ Emerald GP #4 (Grid P4)' },
-      { id: 'car_papaya_speed', color: 0xea580c, x: -512, y: 24, z: -433, yaw: Math.PI / 2, name: '🏎️ Papaya Speed #5 (Pit Stall 1)' },
-      { id: 'car_silver_star', color: 0x94a3b8, x: -478, y: 24, z: -433, yaw: Math.PI / 2, name: '🏎️ Silver Star #6 (Pit Stall 2)' },
+      { id: 'car_scuderia_red', color: 0xdc2626, x: -502, y: 25, z: -417, yaw: Math.PI / 2, name: '🏎️ Scuderia Red #1 (Pole)' },
+      { id: 'car_azure_bolt', color: 0x2563eb, x: -498, y: 25, z: -423, yaw: Math.PI / 2, name: '🏎️ Azure Bolt #2 (Grid P2)' },
+      { id: 'car_gold_arrow', color: 0xeab308, x: -490, y: 25, z: -417, yaw: Math.PI / 2, name: '🏎️ Gold Arrow #3 (Grid P3)' },
+      { id: 'car_british_racing', color: 0x16a34a, x: -486, y: 25, z: -423, yaw: Math.PI / 2, name: '🏎️ Emerald GP #4 (Grid P4)' },
+      { id: 'car_papaya_speed', color: 0xea580c, x: -512, y: 25, z: -433, yaw: Math.PI / 2, name: '🏎️ Papaya Speed #5 (Pit Stall 1)' },
+      { id: 'car_silver_star', color: 0x94a3b8, x: -478, y: 25, z: -433, yaw: Math.PI / 2, name: '🏎️ Silver Star #6 (Pit Stall 2)' },
+
+      // Gran Circuito SE Quadrant Starting Grid & Pit Lane (X: 50..210, Z: -190..-40)
+      { id: 'car_se_scuderia', color: 0xdc2626, x: 104, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Scuderia Red #1 (Pole SE)' },
+      { id: 'car_se_azure', color: 0x2563eb, x: 98, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Azure Bolt #2 (Grid P2 SE)' },
+      { id: 'car_se_gold', color: 0xeab308, x: 92, y: 25, z: -57, yaw: -Math.PI / 2, name: '🏎️ Gold Arrow #3 (Grid P3 SE)' },
+      { id: 'car_se_emerald', color: 0x16a34a, x: 86, y: 25, z: -61, yaw: -Math.PI / 2, name: '🏎️ Emerald GP #4 (Grid P4 SE)' },
+      { id: 'car_se_papaya', color: 0xea580c, x: 105, y: 25, z: -72, yaw: -Math.PI / 2, name: '🏎️ Papaya Speed #5 (Pit Stall SE)' },
+      { id: 'car_se_silver', color: 0x94a3b8, x: 120, y: 25, z: -72, yaw: -Math.PI / 2, name: '🏎️ Silver Star #6 (Pit Stall SE)' },
 
       // Central Spawn Plaza & Playa Paraíso Spawn Points
       { id: 'car_spawn_gold', color: 0xf59e0b, x: 12, y: 25, z: 12, yaw: 0, name: '🏎️ GT Veloce Oro (Plaza Central)' },
       { id: 'car_spawn_red', color: 0xdc2626, x: -12, y: 25, z: -12, yaw: Math.PI, name: '🏎️ GT Monza Rojo (Plaza Central)' },
-      { id: 'car_beach_cyan', color: 0x06b6d4, x: 14, y: 20, z: -480, yaw: 0, name: '🏎️ Riviera Spyder (Playa Paraíso)' }
+      { id: 'car_spawn_blue', color: 0x2563eb, x: 25, y: 25, z: 0, yaw: -Math.PI / 2, name: '🏎️ GT Paris Azul (Plaza Central)' },
+      { id: 'car_beach_cyan', color: 0x06b6d4, x: 14, y: 21, z: -480, yaw: 0, name: '🏎️ Riviera Spyder (Playa Paraíso)' }
     ];
 
     for (const cfg of carConfigs) {
@@ -554,6 +670,10 @@ export class VehicleManager {
 
   isDriving() {
     return Boolean(this.activeCar);
+  }
+
+  getCarById(id) {
+    return this.cars.get(id) || null;
   }
 
   getNearestCar(playerPos, maxDist = 4.8) {
@@ -680,8 +800,8 @@ export class VehicleManager {
         }
       } else {
         // 3rd-Person Chase Camera trailing behind the car
-        const chaseDist = 5.2;
-        const chaseHeight = 2.2;
+        const chaseDist = 5.5;
+        const chaseHeight = 2.4;
 
         const backX = sinY * chaseDist;
         const backY = chaseHeight;

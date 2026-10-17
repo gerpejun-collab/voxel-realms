@@ -5,12 +5,404 @@ import * as THREE from 'three';
 import { BLOCKS, BLOCK_DEFS } from './blocks.js';
 import { sound } from './audio.js';
 
+// Texture generator for 6-face Minecraft TNT Box Entity
+let cachedTntMaterials = null;
+
+function createTntMaterials(THREE) {
+  if (cachedTntMaterials) {
+    return cachedTntMaterials.map(m => (m && typeof m.clone === 'function') ? m.clone() : m);
+  }
+
+  let texSide = null;
+  let texTop = null;
+  let texBottom = null;
+
+  if (typeof document !== 'undefined' && document.createElement) {
+    try {
+      // 1. Side face: Red dynamite sticks with vertical grooves + white center band with black "TNT"
+      const sideCanvas = document.createElement('canvas');
+      sideCanvas.width = 64;
+      sideCanvas.height = 64;
+      const sctx = sideCanvas.getContext('2d');
+      if (sctx) {
+        sctx.fillStyle = '#b91c1c';
+        sctx.fillRect(0, 0, 64, 64);
+        for (let i = 0; i < 64; i += 8) {
+          sctx.fillStyle = (i % 16 === 0) ? '#991b1b' : '#dc2626';
+          sctx.fillRect(i, 0, 8, 64);
+          sctx.fillStyle = '#7f1d1d';
+          sctx.fillRect(i, 0, 1, 64);
+        }
+        // White center banner
+        sctx.fillStyle = '#f8fafc';
+        sctx.fillRect(0, 20, 64, 24);
+        sctx.fillStyle = '#cbd5e1';
+        sctx.fillRect(0, 20, 64, 2);
+        sctx.fillRect(0, 42, 64, 2);
+        // Bold "TNT" text
+        sctx.fillStyle = '#0f172a';
+        sctx.font = 'bold 18px monospace, sans-serif';
+        sctx.textAlign = 'center';
+        sctx.textBaseline = 'middle';
+        sctx.fillText('TNT', 32, 32);
+      }
+
+      // 2. Top face: Dynamite ends + central fuse wick circle
+      const topCanvas = document.createElement('canvas');
+      topCanvas.width = 64;
+      topCanvas.height = 64;
+      const tctx = topCanvas.getContext('2d');
+      if (tctx) {
+        tctx.fillStyle = '#991b1b';
+        tctx.fillRect(0, 0, 64, 64);
+        for (let gx = 8; gx < 64; gx += 16) {
+          for (let gz = 8; gz < 64; gz += 16) {
+            tctx.fillStyle = '#dc2626';
+            tctx.beginPath();
+            tctx.arc(gx, gz, 6, 0, Math.PI * 2);
+            tctx.fill();
+            tctx.fillStyle = '#7f1d1d';
+            tctx.beginPath();
+            tctx.arc(gx, gz, 2, 0, Math.PI * 2);
+            tctx.fill();
+          }
+        }
+        // Fuse knot circle
+        tctx.fillStyle = '#f59e0b';
+        tctx.beginPath();
+        tctx.arc(32, 32, 5, 0, Math.PI * 2);
+        tctx.fill();
+        tctx.fillStyle = '#1e293b';
+        tctx.beginPath();
+        tctx.arc(32, 32, 2.5, 0, Math.PI * 2);
+        tctx.fill();
+      }
+
+      // 3. Bottom face: Dynamite ends without fuse
+      const botCanvas = document.createElement('canvas');
+      botCanvas.width = 64;
+      botCanvas.height = 64;
+      const bctx = botCanvas.getContext('2d');
+      if (bctx) {
+        bctx.fillStyle = '#991b1b';
+        bctx.fillRect(0, 0, 64, 64);
+        for (let gx = 8; gx < 64; gx += 16) {
+          for (let gz = 8; gz < 64; gz += 16) {
+            bctx.fillStyle = '#dc2626';
+            bctx.beginPath();
+            bctx.arc(gx, gz, 6, 0, Math.PI * 2);
+            bctx.fill();
+            bctx.fillStyle = '#450a0a';
+            bctx.beginPath();
+            bctx.arc(gx, gz, 2, 0, Math.PI * 2);
+            bctx.fill();
+          }
+        }
+      }
+
+      if (typeof THREE.CanvasTexture === 'function') {
+        texSide = new THREE.CanvasTexture(sideCanvas);
+        texTop = new THREE.CanvasTexture(topCanvas);
+        texBottom = new THREE.CanvasTexture(botCanvas);
+      }
+    } catch (_) {}
+  }
+
+  const matSide = new THREE.MeshStandardMaterial({
+    map: texSide,
+    color: 0xdc2626,
+    roughness: 0.85
+  });
+  const matTop = new THREE.MeshStandardMaterial({
+    map: texTop,
+    color: 0xb91c1c,
+    roughness: 0.85
+  });
+  const matBottom = new THREE.MeshStandardMaterial({
+    map: texBottom,
+    color: 0x991b1b,
+    roughness: 0.85
+  });
+
+  // 6 faces: +X, -X, +Y (top), -Y (bottom), +Z, -Z
+  cachedTntMaterials = [matSide, matSide, matTop, matBottom, matSide, matSide];
+  return cachedTntMaterials.map(m => (m && typeof m.clone === 'function') ? m.clone() : m);
+}
+
+class TntEntity {
+  constructor({
+    x = 0, y = 0, z = 0,
+    vx = 0, vy = 0, vz = 0,
+    fuse = 3.0,
+    world = null,
+    scene = null,
+    particleManager = null,
+    onDetonate = null,
+    THREE = null
+  }) {
+    const _THREE = THREE || (typeof window !== 'undefined' ? window.THREE : null);
+    this.THREE = _THREE;
+    this.world = world;
+    this.scene = scene;
+    this.particleManager = particleManager;
+    this.onDetonate = onDetonate;
+
+    this.pos = { x, y, z };
+    this.vel = { x: vx, y: vy, z: vz };
+    this.fuseTotal = fuse;
+    this.fuseRemaining = fuse;
+    this.fuseTimer = 0;
+    this.onGround = false;
+    this.isDead = false;
+
+    // 3D Box geometry: BoxGeometry(0.94, 0.94, 0.94)
+    this.geometry = new _THREE.BoxGeometry(0.94, 0.94, 0.94);
+    this.materials = createTntMaterials(_THREE);
+    this.mesh = new _THREE.Mesh(this.geometry, this.materials);
+    this.mesh.position.set(x, y, z);
+
+    // 3D Burning Fuse Wick & Glowing Spark Tip on top of the TNT box
+    if (this.mesh && typeof this.mesh.add === 'function') {
+      try {
+        const fuseMat = new _THREE.MeshBasicMaterial({ color: 0x27272a });
+        const fuseWick = new _THREE.Mesh(new _THREE.BoxGeometry(0.08, 0.24, 0.08), fuseMat);
+        fuseWick.position.set(0, 0.56, 0);
+        this.mesh.add(fuseWick);
+
+        this.sparkTipMat = new _THREE.MeshBasicMaterial({ color: 0xfef08a });
+        const sparkTip = new _THREE.Mesh(new _THREE.BoxGeometry(0.14, 0.14, 0.14), this.sparkTipMat);
+        sparkTip.position.set(0, 0.70, 0);
+        this.mesh.add(sparkTip);
+      } catch (_) {}
+    }
+    this.sparkAccum = 0;
+
+    if (this.scene && typeof this.scene.add === 'function') {
+      try { this.scene.add(this.mesh); } catch (_) {}
+    }
+
+    // Trigger fuse sizzle sound effect
+    if (typeof sound !== 'undefined' && sound && typeof sound.playFuse === 'function') {
+      try { sound.playFuse(); } catch (_) {}
+    }
+  }
+
+  get x() { return this.pos.x; }
+  get y() { return this.pos.y; }
+  get z() { return this.pos.z; }
+
+  setFlash(isWhite) {
+    if (!this.materials) return;
+    const mats = Array.isArray(this.materials) ? this.materials : [this.materials];
+    for (const mat of mats) {
+      if (mat) {
+        if (mat.emissive && typeof mat.emissive.setHex === 'function') {
+          mat.emissive.setHex(isWhite ? 0xffffff : 0x000000);
+          if ('emissiveIntensity' in mat) mat.emissiveIntensity = isWhite ? 1.0 : 0.0;
+        }
+        if (mat.color && typeof mat.color.setHex === 'function') {
+          mat.color.setHex(isWhite ? 0xffffff : 0xdc2626);
+        }
+      }
+    }
+  }
+
+  update(dt) {
+    if (this.isDead) return;
+
+    this.fuseTimer += dt;
+    this.fuseRemaining -= dt;
+
+    // Accelerating white flashing: from 3.0 Hz up to 12.0 Hz
+    const elapsedRatio = Math.max(0, Math.min(1.0, 1.0 - (this.fuseRemaining / this.fuseTotal)));
+    const flashFreq = 3.0 + elapsedRatio * 9.0;
+    const isWhite = Math.sin(this.fuseTimer * flashFreq * Math.PI * 2) > 0.0;
+    this.setFlash(isWhite);
+
+    // Emit sizzling fuse sparks from the top of the TNT block
+    this.sparkAccum += dt;
+    if (this.sparkAccum >= 0.07 && this.particleManager && typeof this.particleManager.spawnBlockDebris === 'function') {
+      this.sparkAccum = 0;
+      try {
+        this.particleManager.spawnBlockDebris(this.pos.x - 0.5, this.pos.y + 0.1, this.pos.z - 0.5, 0xfef08a, 3);
+      } catch (_) {}
+    }
+
+    // Subtle swell/scale as detonation nears (1.0 -> 1.12)
+    if (this.mesh && this.mesh.scale && typeof this.mesh.scale.setScalar === 'function') {
+      this.mesh.scale.setScalar(1.0 + elapsedRatio * 0.12);
+    }
+
+    // Kinematic simulation with gravity -18.0 m/s^2
+    if (!this.onGround) {
+      this.vel.y -= 18.0 * dt;
+    }
+
+    // Horizontal air drag
+    const drag = Math.pow(0.96, Math.min(1.0, dt * 60));
+    this.vel.x *= drag;
+    this.vel.z *= drag;
+
+    let nx = this.pos.x + this.vel.x * dt;
+    let ny = this.pos.y + this.vel.y * dt;
+    let nz = this.pos.z + this.vel.z * dt;
+
+    // Swept voxel ground collision
+    const halfSize = 0.47;
+    if (this.world) {
+      const checkY = ny - halfSize;
+      const bx = Math.floor(nx);
+      const bz = Math.floor(nz);
+      const by = Math.floor(checkY);
+
+      let isGroundSolid = false;
+      let groundSurfaceY = -999;
+
+      if (typeof this.world.getBlock === 'function') {
+        const blk = this.world.getBlock(bx, by, bz);
+        if (blk !== 0 && blk !== (BLOCKS.WATER || 9)) {
+          isGroundSolid = true;
+          groundSurfaceY = by + 1;
+        }
+      }
+      if (!isGroundSolid && typeof this.world.getHeightAt === 'function') {
+        const gh = this.world.getHeightAt(bx, bz);
+        if (checkY <= gh) {
+          isGroundSolid = true;
+          groundSurfaceY = gh;
+        }
+      }
+
+      if (isGroundSolid && (ny - halfSize <= groundSurfaceY)) {
+        ny = groundSurfaceY + halfSize;
+        if (Math.abs(this.vel.y) > 1.8) {
+          // Restitution bounce
+          this.vel.y = -this.vel.y * 0.38;
+          this.vel.x *= 0.65;
+          this.vel.z *= 0.65;
+        } else {
+          // Settle to rest on ground
+          this.vel.y = 0;
+          this.onGround = true;
+          this.vel.x *= Math.pow(0.5, Math.min(1.0, dt * 60));
+          this.vel.z *= Math.pow(0.5, Math.min(1.0, dt * 60));
+          if (Math.abs(this.vel.x) < 0.05) this.vel.x = 0;
+          if (Math.abs(this.vel.z) < 0.05) this.vel.z = 0;
+        }
+      } else {
+        this.onGround = false;
+      }
+
+      // Horizontal solid wall collision
+      if (Math.abs(this.vel.x) > 0.1 && typeof this.world.getBlock === 'function') {
+        const wallX = Math.floor(nx + Math.sign(this.vel.x) * halfSize);
+        const wallBlk = this.world.getBlock(wallX, Math.floor(ny), bz);
+        if (wallBlk !== 0 && wallBlk !== (BLOCKS.WATER || 9)) {
+          this.vel.x = -this.vel.x * 0.25;
+          nx = this.pos.x;
+        }
+      }
+      if (Math.abs(this.vel.z) > 0.1 && typeof this.world.getBlock === 'function') {
+        const wallZ = Math.floor(nz + Math.sign(this.vel.z) * halfSize);
+        const wallBlk = this.world.getBlock(bx, Math.floor(ny), wallZ);
+        if (wallBlk !== 0 && wallBlk !== (BLOCKS.WATER || 9)) {
+          this.vel.z = -this.vel.z * 0.25;
+          nz = this.pos.z;
+        }
+      }
+    }
+
+    this.pos.x = nx;
+    this.pos.y = ny;
+    this.pos.z = nz;
+
+    if (this.mesh) {
+      this.mesh.position.set(nx, ny, nz);
+      if (!this.onGround) {
+        this.mesh.rotation.x += this.vel.z * dt * 2.2;
+        this.mesh.rotation.z -= this.vel.x * dt * 2.2;
+      } else {
+        this.mesh.rotation.x *= Math.pow(0.2, Math.min(1.0, dt * 10));
+        this.mesh.rotation.z *= Math.pow(0.2, Math.min(1.0, dt * 10));
+      }
+    }
+
+    if (this.fuseRemaining <= 0) {
+      this.detonate(false);
+    }
+  }
+
+  excavateCrater(x, y, z, radius = 3) {
+    if (!this.world) return;
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const rSq = radius * radius;
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+          if (dx * dx + dy * dy + dz * dz <= rSq) {
+            const bx = rx + dx;
+            const by = ry + dy;
+            const bz = rz + dz;
+            if (by >= 19 && by < 63) {
+              const currentBlock = typeof this.world.getBlock === 'function' ? this.world.getBlock(bx, by, bz) : 0;
+              if (currentBlock !== 0 && currentBlock !== (BLOCKS.BEDROCK || 8)) {
+                if (typeof this.world.applyAuthoritativeBlock === 'function') {
+                  this.world.applyAuthoritativeBlock(bx, by, bz, BLOCKS.AIR || 0);
+                } else if (typeof this.world.setBlock === 'function') {
+                  this.world.setBlock(bx, by, bz, BLOCKS.AIR || 0, true);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  detonate(instant = false) {
+    if (this.isDead) return;
+    this.isDead = true;
+
+    const x = this.pos.x;
+    const y = this.pos.y;
+    const z = this.pos.z;
+
+    // 1. Remove 3D Mesh from scene
+    if (this.scene && this.mesh && typeof this.scene.remove === 'function') {
+      try { this.scene.remove(this.mesh); } catch (_) {}
+    }
+
+    // 2. Trigger explosion sound effect (Web Audio API or audio element)
+    if (typeof sound !== 'undefined' && sound && typeof sound.playExplosion === 'function') {
+      try { sound.playExplosion(); } catch (_) {}
+    }
+
+    // 3. Spawn shockwave and flying block debris particles via particleManager.spawnExplosion(x, y, z)
+    if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
+      try { this.particleManager.spawnExplosion(x, y, z); } catch (_) {}
+    }
+
+    // 4. Excavate a radius-3 crater in destructible blocks in the world
+    this.excavateCrater(x, y, z, 3);
+
+    // 5. Notify onDetonate callback
+    if (typeof this.onDetonate === 'function') {
+      try { this.onDetonate(x, y, z, instant); } catch (_) {}
+    }
+  }
+}
+
 export class Controls {
-  constructor(camera, domElement, physics, world) {
+  constructor(camera, domElement, physics, world, particleManager = null) {
     this.camera = camera;
     this.domElement = domElement;
     this.physics = physics;
     this.world = world;
+    this.particleManager = particleManager;
+    this.activeTntEntities = [];
 
     this.isLocked = false;
     const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -86,6 +478,10 @@ export class Controls {
     this.vehicleManager = vm;
   }
 
+  get vehicleMode() {
+    return Boolean(this.vehicleManager && this.vehicleManager.isDriving());
+  }
+
   setLocalAvatar(avatar) {
     this.localAvatar = avatar;
     if (this.localAvatar && this.localAvatar.group) {
@@ -153,7 +549,17 @@ export class Controls {
     const stockMat = new THREE.MeshStandardMaterial({ color: 0x4a2e18, roughness: 0.75 }); // Dark walnut wood stock
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.38, metalness: 0.75 }); // Gunmetal steel receiver
     const barrelMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.32, metalness: 0.82 }); // Dark titanium barrel
-    const lensMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, roughness: 0.15 }); // Glowing cyan optical reticle
+    const lensMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      roughness: 0.15,
+      transparent: true,
+      opacity: 0.0,
+      depthWrite: false
+    }); // Fully transparent optical lens for clear vision
+    lensMat.transparent = true;
+    lensMat.opacity = 0.0;
+    this.scopeLensMat = lensMat;
     const goldMat = new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.7, roughness: 0.28 }); // Polished brass muzzle brake
 
     // 1. Stock: BoxGeometry(0.08, 0.13, 0.32) placed at (0, -0.03, 0.22)
@@ -206,6 +612,8 @@ export class Controls {
     scopeRear.position.set(0, 0.13, 0.04);
     const scopeLens = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.01), lensMat);
     scopeLens.position.set(0, 0.13, 0.06);
+    this.scopeLens = scopeLens;
+    this.scopeOptics = [scopeRail, scopeBody, scopeRings, scopeFront, scopeRear, scopeLens];
 
     // Ergonomic Left Support Arm & Hand holding the handguard underneath
     const leftArmGroup = new THREE.Group();
@@ -285,14 +693,16 @@ export class Controls {
       this.setAiming(false);
     }
     if (this.rifleGroup) {
-      this.rifleGroup.visible = this.weaponsMode;
+      this.rifleGroup.visible = this.weaponsMode && (this.aimBlend <= 0.82);
     }
     if (this.heldBlockMesh) {
       this.heldBlockMesh.visible = !this.weaponsMode;
     }
     if (!this.weaponsMode && typeof document !== 'undefined') {
       const scopeOverlay = document.getElementById('rifle-scope-overlay');
+      const crosshair = document.getElementById('crosshair');
       if (scopeOverlay) scopeOverlay.classList.add('hidden');
+      if (crosshair) crosshair.classList.remove('hidden');
     }
   }
 
@@ -302,7 +712,11 @@ export class Controls {
     this.isAiming = nextAim;
     if (typeof document !== 'undefined') {
       const scopeOverlay = document.getElementById('rifle-scope-overlay');
-      if (scopeOverlay && !this.isAiming) scopeOverlay.classList.add('hidden');
+      const crosshair = document.getElementById('crosshair');
+      if (scopeOverlay && !this.isAiming) {
+        scopeOverlay.classList.add('hidden');
+        if (crosshair) crosshair.classList.remove('hidden');
+      }
       const btnAim = document.getElementById('btn-weapon-aim');
       if (btnAim) btnAim.classList.toggle('active', this.isAiming);
     }
@@ -355,12 +769,51 @@ export class Controls {
       entityHit = this.animalManager.getHitAnimal(origin, dir, 85);
     }
 
+    // Check for active airborne or resting 3D TNT entities along bullet ray
+    let struckTnt = null;
+    let closestTntDist = Infinity;
+    if (this.activeTntEntities && this.activeTntEntities.length > 0) {
+      for (const tnt of this.activeTntEntities) {
+        if (tnt.isDead) continue;
+        const toTntX = tnt.pos.x - origin.x;
+        const toTntY = tnt.pos.y - origin.y;
+        const toTntZ = tnt.pos.z - origin.z;
+        const t = toTntX * dir.x + toTntY * dir.y + toTntZ * dir.z;
+        if (t > 0 && t <= 85.0) {
+          const cx = origin.x + dir.x * t;
+          const cy = origin.y + dir.y * t;
+          const cz = origin.z + dir.z * t;
+          const distSq = (cx - tnt.pos.x) ** 2 + (cy - tnt.pos.y) ** 2 + (cz - tnt.pos.z) ** 2;
+          if (distSq <= 0.45 && t < closestTntDist) {
+            closestTntDist = t;
+            struckTnt = tnt;
+          }
+        }
+      }
+    }
+
+    if (struckTnt) {
+      if (typeof this.sendTntTrigger === 'function') {
+        this.sendTntTrigger(struckTnt.pos.x, struckTnt.pos.y, struckTnt.pos.z, 0);
+      }
+      if (this.onShootTnt) {
+        this.onShootTnt({
+          x: Math.round(struckTnt.pos.x),
+          y: Math.round(struckTnt.pos.y),
+          z: Math.round(struckTnt.pos.z),
+          entity: struckTnt
+        });
+      }
+      struckTnt.detonate(true); // Instant bullet detonation with zero fuse!
+    }
+
     const shotData = {
       origin: { x: origin.x, y: origin.y, z: origin.z },
       dir: { x: dir.x, y: dir.y, z: dir.z },
       muzzlePos: { x: muzzleVec.x, y: muzzleVec.y, z: muzzleVec.z },
       voxelHit: longVoxelHit ? { ...longVoxelHit } : null,
-      entityHit: entityHit || null
+      entityHit: entityHit || null,
+      tntEntityHit: struckTnt || null
     };
 
     // Shoot-to-detonate TNT reactivity: if raycast struck a TNT block (BLOCKS.TNT = 19)
@@ -379,33 +832,94 @@ export class Controls {
     return shotData;
   }
 
+  getScene() {
+    if (this.scene) return this.scene;
+    let cur = this.camera;
+    while (cur) {
+      if (cur.type === 'Scene' || cur.isScene) return cur;
+      if (!cur.parent) return cur;
+      cur = cur.parent;
+    }
+    return null;
+  }
+
+  setScene(scene) {
+    this.scene = scene;
+  }
+
+  setParticleManager(pm) {
+    this.particleManager = pm;
+  }
+
+  get tntEntities() {
+    return this.activeTntEntities;
+  }
+
+  throwTnt() {
+    this.triggerPunch();
+
+    // Forward direction from camera pitch and yaw
+    const dir = new THREE.Vector3(0, 0, -1);
+    dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    if (dir.x === 0 && dir.y === 0 && dir.z === -1 && (this.pitch !== 0 || this.yaw !== 0)) {
+      const cosP = Math.cos(this.pitch);
+      dir.set(
+        -Math.sin(this.yaw) * cosP,
+        Math.sin(this.pitch),
+        -Math.cos(this.yaw) * cosP
+      );
+    }
+
+    const eye = (this.physics && typeof this.physics.getEyePosition === 'function')
+      ? this.physics.getEyePosition()
+      : (this.camera ? this.camera.position : new THREE.Vector3(0, 25, 0));
+
+    // Spawn 3D TNT entity in front of the player
+    const spawnX = eye.x + dir.x * 0.9;
+    const spawnY = eye.y + dir.y * 0.9;
+    const spawnZ = eye.z + dir.z * 0.9;
+
+    // Parabolic velocity: V = cameraDir * 14.0 + (0, 3.5, 0)
+    const vx = dir.x * 14.0;
+    const vy = dir.y * 14.0 + 3.5;
+    const vz = dir.z * 14.0;
+
+    const tnt = new TntEntity({
+      x: spawnX,
+      y: spawnY,
+      z: spawnZ,
+      vx,
+      vy,
+      vz,
+      fuse: 3.0,
+      world: this.world,
+      scene: this.getScene(),
+      particleManager: this.particleManager,
+      THREE: this.THREE || THREE,
+      onDetonate: (x, y, z, instant) => {
+        if (typeof this.sendTntTrigger === 'function') {
+          this.sendTntTrigger(x, y, z, 0);
+        }
+        if (this.onPlaceTnt) {
+          this.onPlaceTnt({ x: Math.round(x), y: Math.round(y), z: Math.round(z) });
+        }
+      }
+    });
+
+    this.activeTntEntities.push(tnt);
+
+    if (this.onPlaceTnt) {
+      this.onPlaceTnt({ x: Math.round(spawnX), y: Math.round(spawnY), z: Math.round(spawnZ) });
+    }
+
+    return tnt;
+  }
+
   triggerTnt() {
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     if (this.lastTntTime && (now - this.lastTntTime < 300)) return null;
     this.lastTntTime = now;
-
-    this.triggerPunch();
-    let targetCoords = null;
-    if (this.targetedVoxel && this.targetedVoxel.place) {
-      targetCoords = {
-        x: this.targetedVoxel.place.x,
-        y: this.targetedVoxel.place.y,
-        z: this.targetedVoxel.place.z
-      };
-    } else if (this.physics) {
-      const eye = this.physics.getEyePosition();
-      const dir = new THREE.Vector3(0, 0, -1);
-      dir.applyEuler(new THREE.Euler(0, this.yaw, 0, 'YXZ'));
-      const tx = Math.floor(eye.x + dir.x * 2.5);
-      const tz = Math.floor(eye.z + dir.z * 2.5);
-      const ty = this.world ? this.world.getHeightAt(tx, tz) + 1 : Math.floor(this.physics.pos.y);
-      targetCoords = { x: tx, y: ty, z: tz };
-    }
-
-    if (targetCoords && this.onPlaceTnt) {
-      this.onPlaceTnt(targetCoords);
-    }
-    return targetCoords;
+    return this.throwTnt();
   }
 
   setupListeners() {
@@ -930,14 +1444,20 @@ export class Controls {
       case 'KeyV':
         e.preventDefault();
         e.__vrHandled = true;
-        this.cycleSpeed();
+        if (this.vehicleMode) {
+          this.vehicleManager.toggleCameraMode();
+        } else {
+          this.cycleSpeed();
+        }
         break;
+      case 'KeyE':
       case 'KeyF':
         if (this.vehicleManager && this.vehicleManager.handleInteract(this.physics)) {
           e.preventDefault();
+          e.__vrHandled = true;
           break;
         }
-        if (this.weaponsMode) {
+        if (e.code === 'KeyF' && this.weaponsMode) {
           e.preventDefault();
           this.triggerShoot();
         }
@@ -1237,14 +1757,39 @@ export class Controls {
       }
     }
 
-    // Toggle #rifle-scope-overlay when aimBlend > 0.82
+    // Prevent 3D scope housing / opaque square from blocking the camera lens during ADS zoom
+    if (this.scopeOptics) {
+      const showOptics = (this.aimBlend <= 0.20);
+      for (const part of this.scopeOptics) {
+        if (part) part.visible = showOptics;
+      }
+    }
+    if (this.rifleGroup) {
+      this.rifleGroup.visible = this.weaponsMode && (this.aimBlend <= 0.60);
+    }
+
+    // Toggle #rifle-scope-overlay and #crosshair when aimBlend > 0.60
     if (typeof document !== 'undefined') {
       const scopeOverlay = document.getElementById('rifle-scope-overlay');
+      const crosshair = document.getElementById('crosshair');
       if (scopeOverlay) {
-        if (this.weaponsMode && this.aimBlend > 0.82) {
+        if (this.weaponsMode && this.aimBlend > 0.60) {
           scopeOverlay.classList.remove('hidden');
+          if (crosshair) crosshair.classList.add('hidden');
         } else {
           scopeOverlay.classList.add('hidden');
+          if (crosshair) crosshair.classList.remove('hidden');
+        }
+      }
+    }
+
+    // Update active 3D throwable TNT entities
+    if (this.activeTntEntities && this.activeTntEntities.length > 0) {
+      for (let i = this.activeTntEntities.length - 1; i >= 0; i--) {
+        const tnt = this.activeTntEntities[i];
+        tnt.update(dt);
+        if (tnt.isDead) {
+          this.activeTntEntities.splice(i, 1);
         }
       }
     }
@@ -1390,3 +1935,5 @@ export class Controls {
     this.raycastVoxel();
   }
 }
+
+Controls.TntEntity = TntEntity;

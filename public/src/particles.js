@@ -73,6 +73,7 @@ export class ParticleManager {
     this.windSpeed = 2.4;
     this.time = 0;
     this.explosions = [];
+    this.primedTnts = [];
     this.tracers = [];
 
     // --- Animal Impact Red Blood / Flesh Particles (Instanced) ---
@@ -134,52 +135,178 @@ export class ParticleManager {
   }
 
   /**
-   * Spawns a dramatic Minecraft TNT explosion (expanding shockwave sphere, fireball core, and 45 high-velocity debris fragments)
+   * Spawns a 3D thrown & primed Minecraft TNT block entity that arcs from startPos to targetPos,
+   * emits fuse sparks, flashes white as the fuse counts down, and triggers detonation.
+   */
+  spawnPrimedTnt(startPos, targetPos, fuseMs = 1500, onDetonate = null) {
+    if (!targetPos) return null;
+    const tx = (targetPos.x !== undefined ? targetPos.x : targetPos[0]) + 0.5;
+    const ty = (targetPos.y !== undefined ? targetPos.y : targetPos[1]) + 0.5;
+    const tz = (targetPos.z !== undefined ? targetPos.z : targetPos[2]) + 0.5;
+
+    const sx = startPos && startPos.x !== undefined ? startPos.x : tx;
+    const sy = startPos && startPos.y !== undefined ? startPos.y : ty + 0.8;
+    const sz = startPos && startPos.z !== undefined ? startPos.z : tz;
+
+    const group = new THREE.Group();
+
+    // Red dynamite body
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0xdc2626,
+      emissive: 0x450a0a,
+      roughness: 0.55
+    });
+    const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.86, 0.86), bodyMat);
+    group.add(bodyMesh);
+
+    // White central "TNT" band wrapping around the block
+    const bandMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      emissive: 0x334155,
+      roughness: 0.4
+    });
+    const bandMesh = new THREE.Mesh(new THREE.BoxGeometry(0.89, 0.28, 0.89), bandMat);
+    group.add(bandMesh);
+
+    // Dark "TNT" lettering bars on front/back/left/right faces
+    const letterMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    for (const offset of [-0.22, 0, 0.22]) {
+      const fBar = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.20, 0.91), letterMat);
+      fBar.position.set(offset, 0, 0);
+      const sBar = new THREE.Mesh(new THREE.BoxGeometry(0.91, 0.20, 0.09), letterMat);
+      sBar.position.set(0, 0, offset);
+      group.add(fBar, sBar);
+    }
+
+    // Top fuse cap & glowing spark tip
+    const capMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+    const capMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 0.24), capMat);
+    capMesh.position.set(0, 0.45, 0);
+    const wickMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+    const wickMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.08), wickMat);
+    wickMesh.position.set(0, 0.54, 0);
+    group.add(capMesh, wickMesh);
+
+    group.position.set(sx, sy, sz);
+    if (this.scene && typeof this.scene.add === 'function') {
+      this.scene.add(group);
+    }
+
+    const totalFuse = Math.max(0.25, (fuseMs || 1500) / 1000);
+    const dist = Math.hypot(tx - sx, ty - sy, tz - sz);
+    const flightDuration = dist > 0.35 ? Math.min(0.32, totalFuse * 0.45) : 0.01;
+
+    const entry = {
+      group,
+      bodyMat,
+      bandMat,
+      wickMesh,
+      startX: sx,
+      startY: sy,
+      startZ: sz,
+      targetX: tx,
+      targetY: ty,
+      targetZ: tz,
+      bx: Math.floor(tx),
+      by: Math.floor(ty),
+      bz: Math.floor(tz),
+      elapsed: 0,
+      flightDuration,
+      totalFuse,
+      sparkTimer: 0,
+      onDetonate
+    };
+    this.primedTnts.push(entry);
+    return entry;
+  }
+
+  /**
+   * Removes any active primed TNT entity matching the given block coordinates
+   */
+  clearPrimedTntAt(x, y, z) {
+    for (let i = this.primedTnts.length - 1; i >= 0; i--) {
+      const tnt = this.primedTnts[i];
+      if (Math.abs(tnt.bx - x) <= 1 && Math.abs(tnt.by - y) <= 1 && Math.abs(tnt.bz - z) <= 1) {
+        if (tnt.group && tnt.group.parent) {
+          tnt.group.parent.remove(tnt.group);
+        }
+        this.primedTnts.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Spawns a dramatic Minecraft TNT explosion (expanding shockwave sphere, fireball core, multi-puff fire/smoke cloud, and 56 high-velocity debris fragments)
    */
   spawnExplosion(x, y, z) {
+    this.clearPrimedTntAt(Math.floor(x), Math.floor(y), Math.floor(z));
     const cx = x + 0.5;
     const cy = y + 0.5;
     const cz = z + 0.5;
 
-    for (let i = 0; i < 42; i++) {
+    for (let i = 0; i < 56; i++) {
       if (this.debrisParticles.length >= this.maxDebris) {
         this.debrisParticles.shift();
       }
       const angle = Math.random() * Math.PI * 2;
       const elev = (Math.random() - 0.15) * Math.PI;
-      const speed = 5.5 + Math.random() * 9.5;
+      const speed = 6.0 + Math.random() * 11.0;
       this.debrisParticles.push({
-        x: cx + (Math.random() - 0.5) * 1.2,
-        y: cy + (Math.random() - 0.5) * 1.2,
-        z: cz + (Math.random() - 0.5) * 1.2,
+        x: cx + (Math.random() - 0.5) * 1.4,
+        y: cy + (Math.random() - 0.5) * 1.4,
+        z: cz + (Math.random() - 0.5) * 1.4,
         vx: Math.cos(angle) * Math.cos(elev) * speed,
-        vy: Math.abs(Math.sin(elev)) * speed + 4.5,
+        vy: Math.abs(Math.sin(elev)) * speed + 5.0,
         vz: Math.sin(angle) * Math.cos(elev) * speed,
-        scale: 1.3 + Math.random() * 1.2,
+        scale: 1.4 + Math.random() * 1.4,
         rotX: Math.random() * 6,
         rotY: Math.random() * 6,
-        life: 1.15,
-        maxLife: 1.15
+        life: 1.25,
+        maxLife: 1.25
       });
     }
 
-    // Visual fireball & shockwave mesh
+    // Visual fireball, multi-puff blast cloud & shockwave mesh
     if (this.scene && typeof this.scene.add === 'function') {
       const coreMat = new THREE.MeshBasicMaterial({
-        color: 0xff7700,
+        color: 0xff6600,
         transparent: true,
-        opacity: 0.92
+        opacity: 0.96
       });
       const shockMat = new THREE.MeshBasicMaterial({
         color: 0xfef08a,
         transparent: true,
-        opacity: 0.65,
+        opacity: 0.78,
         wireframe: true
       });
-      const coreMesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), coreMat);
+      const coreMesh = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), coreMat);
       coreMesh.position.set(cx, cy, cz);
-      const shockMesh = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.8), shockMat);
+      const shockMesh = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.0, 2.0), shockMat);
       shockMesh.position.set(cx, cy, cz);
+
+      const puffs = [];
+      const puffColors = [0xfef08a, 0xff7700, 0xdc2626, 0x52525b, 0x27272a];
+      for (let i = 0; i < 10; i++) {
+        const pCol = puffColors[i % puffColors.length];
+        const pMat = new THREE.MeshBasicMaterial({
+          color: pCol,
+          transparent: true,
+          opacity: 0.90
+        });
+        const sz = 0.75 + (i % 3) * 0.35;
+        const pMesh = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), pMat);
+        const theta = (i / 10) * Math.PI * 2;
+        const phi = ((i % 3) - 0.5) * 0.7;
+        pMesh.position.set(cx, cy, cz);
+        this.scene.add(pMesh);
+        puffs.push({
+          mesh: pMesh,
+          mat: pMat,
+          vx: Math.cos(theta) * (3.2 + (i % 3) * 1.5),
+          vy: 1.8 + Math.sin(phi) * 3.0 + (i % 2) * 1.6,
+          vz: Math.sin(theta) * (3.2 + (i % 3) * 1.5)
+        });
+      }
 
       this.scene.add(coreMesh);
       this.scene.add(shockMesh);
@@ -188,8 +315,9 @@ export class ParticleManager {
         shockMesh,
         coreMat,
         shockMat,
-        life: 0.48,
-        maxLife: 0.48
+        puffs,
+        life: 0.65,
+        maxLife: 0.65
       });
     }
   }
@@ -437,26 +565,115 @@ export class ParticleManager {
       }
     }
 
-    // --- Update Active TNT Fireball Shockwaves ---
+    // --- Update Thrown & Primed 3D TNT Blocks ---
+    for (let i = this.primedTnts.length - 1; i >= 0; i--) {
+      const tnt = this.primedTnts[i];
+      tnt.elapsed += dt;
+      tnt.sparkTimer += dt;
+
+      if (tnt.elapsed >= tnt.totalFuse) {
+        if (tnt.group && tnt.group.parent) {
+          tnt.group.parent.remove(tnt.group);
+        }
+        const cb = tnt.onDetonate;
+        const bx = tnt.bx, by = tnt.by, bz = tnt.bz;
+        this.primedTnts.splice(i, 1);
+        if (typeof cb === 'function') {
+          cb(bx, by, bz);
+        }
+        continue;
+      }
+
+      // Parabolic throw trajectory during flightDuration, then settle at targetPos
+      if (tnt.elapsed < tnt.flightDuration && tnt.flightDuration > 0.02) {
+        const u = Math.min(1, tnt.elapsed / tnt.flightDuration);
+        const arcHeight = 0.85 * 4 * u * (1 - u);
+        const curX = tnt.startX + (tnt.targetX - tnt.startX) * u;
+        const curY = tnt.startY + (tnt.targetY - tnt.startY) * u + arcHeight;
+        const curZ = tnt.startZ + (tnt.targetZ - tnt.startZ) * u;
+        tnt.group.position.set(curX, curY, curZ);
+        tnt.group.rotation.x = u * Math.PI * 2;
+        tnt.group.rotation.y = u * Math.PI;
+      } else {
+        tnt.group.position.set(tnt.targetX, tnt.targetY + Math.abs(Math.sin(tnt.elapsed * 18)) * 0.06, tnt.targetZ);
+        tnt.group.rotation.x = 0;
+      }
+
+      // Accelerating white flash & swell as fuse counts down (classic Minecraft primed TNT)
+      const fuseProgress = tnt.elapsed / tnt.totalFuse;
+      const flashFreq = 12 + fuseProgress * 36;
+      const isWhiteFlash = Math.sin(tnt.elapsed * flashFreq) > 0.15;
+      if (tnt.bodyMat && tnt.bodyMat.color && typeof tnt.bodyMat.color.setHex === 'function') {
+        tnt.bodyMat.color.setHex(isWhiteFlash ? 0xffffff : 0xdc2626);
+      }
+      if (tnt.bodyMat && tnt.bodyMat.emissive && typeof tnt.bodyMat.emissive.setHex === 'function') {
+        tnt.bodyMat.emissive.setHex(isWhiteFlash ? 0xfef08a : 0x450a0a);
+      }
+      const swell = 1.0 + Math.pow(fuseProgress, 2) * 0.24 + (isWhiteFlash ? 0.04 : 0);
+      if (tnt.group.scale && typeof tnt.group.scale.set === 'function') {
+        tnt.group.scale.set(swell, swell, swell);
+      }
+
+      // Fuse spark particles
+      if (tnt.sparkTimer >= 0.05) {
+        tnt.sparkTimer = 0;
+        if (this.debrisParticles.length >= this.maxDebris) {
+          this.debrisParticles.shift();
+        }
+        this.debrisParticles.push({
+          x: tnt.group.position.x + (Math.random() - 0.5) * 0.15,
+          y: tnt.group.position.y + 0.52,
+          z: tnt.group.position.z + (Math.random() - 0.5) * 0.15,
+          vx: (Math.random() - 0.5) * 2.2,
+          vy: 1.8 + Math.random() * 2.4,
+          vz: (Math.random() - 0.5) * 2.2,
+          scale: 0.45,
+          rotX: Math.random() * 4,
+          rotY: Math.random() * 4,
+          life: 0.22,
+          maxLife: 0.22
+        });
+      }
+    }
+
+    // --- Update Active TNT Fireball Shockwaves & Blast Puffs ---
     for (let i = this.explosions.length - 1; i >= 0; i--) {
       const ex = this.explosions[i];
       ex.life -= dt;
       if (ex.life <= 0) {
         if (ex.coreMesh.parent) ex.coreMesh.parent.remove(ex.coreMesh);
         if (ex.shockMesh.parent) ex.shockMesh.parent.remove(ex.shockMesh);
+        if (Array.isArray(ex.puffs)) {
+          for (const p of ex.puffs) {
+            if (p.mesh && p.mesh.parent) p.mesh.parent.remove(p.mesh);
+          }
+        }
         this.explosions.splice(i, 1);
         continue;
       }
       const t = 1 - (ex.life / ex.maxLife);
-      const coreScale = 1 + t * 4.2;
-      const shockScale = 1 + t * 6.8;
+      const coreScale = 1 + t * 4.5;
+      const shockScale = 1 + t * 7.5;
       ex.coreMesh.scale.set(coreScale, coreScale, coreScale);
       ex.coreMesh.rotation.x += dt * 5;
       ex.coreMesh.rotation.y += dt * 6;
       ex.shockMesh.scale.set(shockScale, shockScale, shockScale);
       ex.shockMesh.rotation.y -= dt * 4;
-      ex.coreMat.opacity = Math.max(0, (1 - t) * 0.9);
-      ex.shockMat.opacity = Math.max(0, (1 - t) * 0.65);
+      ex.coreMat.opacity = Math.max(0, (1 - t) * 0.92);
+      ex.shockMat.opacity = Math.max(0, (1 - t) * 0.72);
+
+      if (Array.isArray(ex.puffs)) {
+        for (const p of ex.puffs) {
+          p.mesh.position.x += p.vx * dt;
+          p.mesh.position.y += p.vy * dt;
+          p.mesh.position.z += p.vz * dt;
+          p.mesh.rotation.x += dt * 3;
+          p.mesh.rotation.y += dt * 4;
+          const pScale = 1 + t * 2.8;
+          p.mesh.scale.set(pScale, pScale, pScale);
+          p.mat.opacity = Math.max(0, (1 - t) * 0.88);
+        }
+      }
     }
 
     // --- Update Debris Particles ---
@@ -557,14 +774,15 @@ export class ParticleManager {
       posArr[idx + 2] += (windVz + Math.cos(this.time * 2 + i) * 0.4) * dt;
 
       // Wrap around player's active area
-      const dx = posArr[idx] - playerPos.x;
-      const dz = posArr[idx + 2] - playerPos.z;
-      const dy = posArr[idx + 1] - playerPos.y;
+      const pPos = playerPos || { x: 0, y: 25, z: 0 };
+      const dx = posArr[idx] - pPos.x;
+      const dz = posArr[idx + 2] - pPos.z;
+      const dy = posArr[idx + 1] - pPos.y;
 
-      if (Math.abs(dx) > 25) posArr[idx] = playerPos.x - Math.sign(dx) * 24;
-      if (Math.abs(dz) > 25) posArr[idx + 2] = playerPos.z - Math.sign(dz) * 24;
-      if (dy < -5) posArr[idx + 1] = playerPos.y + 15;
-      if (dy > 20) posArr[idx + 1] = playerPos.y - 4;
+      if (Math.abs(dx) > 25) posArr[idx] = pPos.x - Math.sign(dx) * 24;
+      if (Math.abs(dz) > 25) posArr[idx + 2] = pPos.z - Math.sign(dz) * 24;
+      if (dy < -5) posArr[idx + 1] = pPos.y + 15;
+      if (dy > 20) posArr[idx + 1] = pPos.y - 4;
     }
     posAttr.needsUpdate = true;
   }

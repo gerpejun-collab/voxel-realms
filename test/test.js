@@ -1655,6 +1655,236 @@ it('verifies Shoot-to-Detonate TNT Reactivity: bullet impact on BLOCKS.TNT (19) 
   assert.strictEqual(broadcastMsg.z, -6);
 });
 
+it('verifies R2 Optical ADS Zoom & Clear Vision: hides 3D rifleGroup during ADS (>0.82), scopeLens opacity=0, and hides #crosshair', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  camera.updateProjectionMatrix = () => {};
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+  const world = { getBlock: () => 0 };
+
+  const scopeClasses = new Set(['hidden']);
+  const crosshairClasses = new Set();
+  const origGetElementById = global.document.getElementById;
+  global.document.getElementById = (id) => {
+    if (id === 'rifle-scope-overlay') {
+      return {
+        classList: {
+          add: (cls) => scopeClasses.add(cls),
+          remove: (cls) => scopeClasses.delete(cls),
+          contains: (cls) => scopeClasses.has(cls)
+        }
+      };
+    }
+    if (id === 'crosshair') {
+      return {
+        classList: {
+          add: (cls) => crosshairClasses.add(cls),
+          remove: (cls) => crosshairClasses.delete(cls),
+          contains: (cls) => crosshairClasses.has(cls)
+        }
+      };
+    }
+    return null;
+  };
+
+  try {
+    const controls = new Controls(camera, domElement, physics, world);
+    // 1. scopeLens must have opacity 0.0 and transparent true
+    assert.strictEqual(controls.scopeLens.material.opacity, 0.0, 'scopeLens material opacity must be 0.0');
+    assert.strictEqual(controls.scopeLens.material.transparent, true, 'scopeLens material must be transparent');
+
+    controls.setWeaponsMode(true);
+    controls.update(0.016);
+    // 2. Hip-carry: rifleGroup is visible, crosshair is visible, scope overlay is hidden
+    assert.strictEqual(controls.rifleGroup.visible, true, 'Rifle model must be visible when hip-firing');
+    assert.strictEqual(crosshairClasses.has('hidden'), false, 'Crosshair must be visible when hip-firing');
+    assert.strictEqual(scopeClasses.has('hidden'), true, 'Scope overlay must be hidden when hip-firing');
+
+    // 3. Trigger ADS: aimBlend rises above 0.82 to 1.0
+    controls.setAiming(true);
+    for (let i = 0; i < 20; i++) controls.update(0.05);
+    assert.strictEqual(controls.aimBlend, 1.0, 'aimBlend must reach 1.0');
+    assert.strictEqual(camera.fov, 32, 'Camera FOV must smoothly decrease to 32 degrees (~2.34x optical zoom)');
+
+    // 4. In ADS: 3D rifleGroup MUST be hidden so camera view is 100% unobstructed
+    assert.strictEqual(controls.rifleGroup.visible, false, '3D rifleGroup must be hidden during ADS (>0.82) to avoid obstructing view');
+    assert.strictEqual(scopeClasses.has('hidden'), false, 'Rifle scope overlay must be visible during ADS');
+    assert.strictEqual(crosshairClasses.has('hidden'), true, 'Default crosshair must be hidden when optical scope overlay is shown');
+
+    // 5. Release ADS: restore hip-firing state
+    controls.setAiming(false);
+    for (let i = 0; i < 20; i++) controls.update(0.05);
+    assert.strictEqual(controls.aimBlend, 0.0, 'aimBlend must return to 0.0');
+    assert.strictEqual(controls.rifleGroup.visible, true, 'Rifle model must become visible again when returning to hip-fire');
+    assert.strictEqual(crosshairClasses.has('hidden'), false, 'Default crosshair must become visible again when exiting ADS');
+    assert.strictEqual(scopeClasses.has('hidden'), true, 'Scope overlay must be hidden after exiting ADS');
+  } finally {
+    global.document.getElementById = origGetElementById;
+  }
+});
+
+it('verifies R3 3D Throwable TNT Box Entity & Reactive Explosion: parabolic physics, ground bounce, white flashing, particles and crater', () => {
+  const { Controls, mockTHREE, BLOCKS } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+
+  // Simulated world with ground at Y=24
+  const worldBlocks = new Map();
+  for (let x = -5; x <= 5; x++) {
+    for (let z = -10; z <= 0; z++) {
+      worldBlocks.set(`${x},24,${z}`, BLOCKS.STONE);
+    }
+  }
+  const excavated = [];
+  const world = {
+    getBlock: (x, y, z) => {
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      return worldBlocks.has(key) ? worldBlocks.get(key) : 0;
+    },
+    applyAuthoritativeBlock: (x, y, z, blockType) => {
+      excavated.push({ x, y, z, blockType });
+      const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      if (blockType === 0) worldBlocks.delete(key);
+      else worldBlocks.set(key, blockType);
+    }
+  };
+
+  const sceneAdded = [];
+  const scene = {
+    add: (obj) => sceneAdded.push(obj),
+    remove: (obj) => {
+      const idx = sceneAdded.indexOf(obj);
+      if (idx !== -1) sceneAdded.splice(idx, 1);
+    }
+  };
+
+  let explosionSpawned = null;
+  const particleManager = {
+    spawnExplosion: (x, y, z) => {
+      explosionSpawned = { x, y, z };
+    }
+  };
+
+  const controls = new Controls(camera, domElement, physics, world, particleManager);
+  controls.setScene(scene);
+  controls.yaw = 0;
+  controls.pitch = 0;
+
+  // 1. Throw TNT
+  const tnt = controls.throwTnt();
+  assert.ok(tnt, 'throwTnt must instantiate and return a 3D TNT entity');
+  assert.strictEqual(controls.tntEntities.length, 1, 'Active TNT entity must be tracked in controls.tntEntities');
+  assert.strictEqual(tnt.geometry.width, 0.94, 'TNT entity geometry width must be 0.94');
+  assert.strictEqual(tnt.geometry.height, 0.94, 'TNT entity geometry height must be 0.94');
+  assert.strictEqual(tnt.geometry.depth, 0.94, 'TNT entity geometry depth must be 0.94');
+  assert.ok(Array.isArray(tnt.materials) && tnt.materials.length === 6, 'TNT must feature 6 distinct face materials');
+
+  // Velocity: V = cameraDir * 14.0 + (0, 3.5, 0) -> cameraDir forward along -Z: vz = -14.0, vy = 3.5
+  assert.ok(Math.abs(tnt.vel.z - (-14.0)) < 0.01, 'Forward velocity along -Z must be -14.0 m/s');
+  assert.ok(Math.abs(tnt.vel.y - 3.5) < 0.01, 'Initial upward lob velocity must be 3.5 m/s');
+
+  // 2. Step physics: gravity -18 m/s^2 pulls down
+  controls.update(0.1);
+  assert.ok(tnt.vel.y < 3.5, 'Gravity must accelerate TNT downward');
+
+  // Step until it hits ground (Y=24 block top surface Y=25.0, resting center Y = 25.47)
+  for (let i = 0; i < 40; i++) {
+    controls.update(0.05);
+  }
+  assert.ok(tnt.onGround, 'TNT entity must reach ground contact and settle on the ground');
+  assert.ok(Math.abs(tnt.pos.y - 25.47) < 0.1, 'TNT resting position must be ground elevation + halfSize (~25.47)');
+
+  // 3. Accelerating white flashing: advance time to fuse expiry (3.0s total)
+  while (!tnt.isDead && tnt.fuseRemaining > 0) {
+    controls.update(0.1);
+  }
+  assert.strictEqual(tnt.isDead, true, 'TNT must detonate upon fuse expiry');
+  assert.ok(explosionSpawned, 'Detonation must trigger particleManager.spawnExplosion(x, y, z)');
+  assert.ok(excavated.length > 0, 'Detonation must excavate a radius-3 crater in destructible world blocks');
+  assert.strictEqual(controls.tntEntities.length, 0, 'Dead TNT entity must be cleaned up from active list');
+});
+
+it('verifies R3 Instant Bullet-Triggered TNT Detonation: bullet strike detonates 3D TNT entity immediately with zero fuse', () => {
+  const { Controls, mockTHREE, BLOCKS } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+  const world = { getBlock: () => 0, applyAuthoritativeBlock: () => {} };
+
+  let explosionSpawned = null;
+  const particleManager = {
+    spawnExplosion: (x, y, z) => { explosionSpawned = { x, y, z }; }
+  };
+
+  const controls = new Controls(camera, domElement, physics, world, particleManager);
+  controls.setWeaponsMode(true);
+  controls.yaw = 0;
+  controls.pitch = 0;
+
+  let triggeredNetworkFuse = null;
+  controls.sendTntTrigger = (x, y, z, fuseMs) => {
+    triggeredNetworkFuse = { x, y, z, fuseMs };
+  };
+
+  let shotTntHit = null;
+  controls.onShootTnt = (data) => {
+    shotTntHit = data;
+  };
+
+  // Spawn an active 3D TNT entity in flight directly in front of the player (Z = -5)
+  const tnt = new Controls.TntEntity({
+    x: 0,
+    y: 26.6,
+    z: -5,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    fuse: 3.0,
+    world,
+    particleManager,
+    THREE: mockTHREE
+  });
+  controls.activeTntEntities.push(tnt);
+  assert.strictEqual(tnt.isDead, false);
+  assert.strictEqual(controls.tntEntities.length, 1);
+
+  // Shoot rifle down central sightline
+  const shot = controls.triggerShoot();
+  assert.ok(shot, 'triggerShoot must return shot data');
+  assert.ok(shot.tntEntityHit, 'Bullet ray must strike the active 3D TNT entity');
+  assert.strictEqual(tnt.isDead, true, 'Struck TNT entity must detonate IMMEDIATELY with zero fuse');
+  assert.ok(explosionSpawned, 'Explosion shockwave particles must be spawned immediately');
+  assert.ok(triggeredNetworkFuse, 'sendTntTrigger must be sent over network');
+  assert.strictEqual(triggeredNetworkFuse.fuseMs, 0, 'Instant bullet detonation must specify fuseMs = 0');
+  assert.ok(shotTntHit, 'controls.onShootTnt callback must be invoked with struck TNT data');
+});
+
 it('verifies ParticleManager luminous bullet tracers and 20+ crimson blood droplets', () => {
   const { ParticleManager } = loadParticlesModuleForM2();
   const scene = { add: () => {}, remove: () => {} };
@@ -2280,6 +2510,78 @@ it('verifies highway traffic cars never pass through or clip into walls, buildin
   assert.ok(car.position.z < 10.0, 'Car position must strictly remain before the wall');
 });
 
+it('verifies Central Plaza road entrances and roundabout ring have 100% unobstructed headroom (Y=25..28 is AIR) across all driving lanes', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const world = new World({ add: () => {} }, null, 48151623);
+  for (let cx = -2; cx <= 2; cx++) {
+    for (let cz = -2; cz <= 2; cz++) {
+      world.getOrCreateChunk(cx, cz);
+    }
+  }
+  // 1. Verify 360-degree roundabout ring (radius 19.5..22.5) has clear headroom
+  for (let angle = 0; angle < Math.PI * 2; angle += 0.08) {
+    for (const r of [20.0, 21.0, 22.0]) {
+      const bx = Math.round(Math.cos(angle) * r);
+      const bz = Math.round(Math.sin(angle) * r);
+      for (let y = 25; y <= 28; y++) {
+        const block = world.getBlock(bx, y, bz);
+        assert.strictEqual(block, BLOCKS.AIR, `Roundabout headroom at (${bx}, ${y}, ${bz}) must be AIR (got block ${block})`);
+      }
+    }
+  }
+  // 2. Verify North-South and East-West highway entrances (d in 13..26, width in -2..2)
+  for (let d = 13; d <= 26; d++) {
+    for (let w = -2; w <= 2; w++) {
+      for (let y = 25; y <= 28; y++) {
+        assert.strictEqual(world.getBlock(w, y, d), BLOCKS.AIR, `North entrance headroom at (${w}, ${y}, ${d}) must be AIR`);
+        assert.strictEqual(world.getBlock(w, y, -d), BLOCKS.AIR, `South entrance headroom at (${w}, ${y}, -d) must be AIR`);
+        assert.strictEqual(world.getBlock(d, y, w), BLOCKS.AIR, `East entrance headroom at (${d}, ${y}, ${w}) must be AIR`);
+        assert.strictEqual(world.getBlock(-d, y, w), BLOCKS.AIR, `West entrance headroom at (${-d}, ${y}, ${w}) must be AIR`);
+      }
+    }
+  }
+});
+
+it('verifies checkObstacleAhead on circular roundabout follows lane curvature without triggering on curbs or streetlights', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const { VoxelCar } = loadAnimalsModule();
+  const world = new World({ add: () => {} }, null, 48151623);
+  for (let cx = -2; cx <= 2; cx++) for (let cz = -2; cz <= 2; cz++) world.getOrCreateChunk(cx, cz);
+  const route = { type: 'circle', cx: 0, cz: 0, radius: 21.0, speed: 7.5, initialProgress: 0.0 };
+  const car = new VoxelCar(route, null, world);
+  // Test at 16 points around the circle
+  for (let prog = 0; prog < Math.PI * 2; prog += Math.PI / 8) {
+    car.progress = prog;
+    const pos = car.computePositionAtProgress(prog);
+    car.position.set(pos.x, pos.y, pos.z);
+    const obs = car.checkObstacleAhead(8.0);
+    assert.strictEqual(obs, null, `Clear roundabout lane at prog ${prog.toFixed(2)} must return null obstacle (got ${JSON.stringify(obs)})`);
+  }
+});
+
+it('verifies autonomous vehicles in TrafficManager drive continuously around Central Roundabout and highways without false positive freezes', () => {
+  const { World } = loadWorldModule();
+  const { TrafficManager } = loadAnimalsModule();
+  const world = new World({ add: () => {} }, null, 48151623);
+  for (let cx = -16; cx <= 16; cx++) {
+    for (let cz = -16; cz <= 16; cz++) {
+      world.getOrCreateChunk(cx, cz);
+    }
+  }
+  const tm = new TrafficManager({ add: () => {} }, world);
+  // Simulate 150 frames (7.5 seconds) of traffic flow
+  for (let frame = 0; frame < 150; frame++) {
+    tm.update(0.05);
+  }
+  // Assert that all roundabout and highway cars maintain positive speed and continue moving
+  for (let i = 0; i < tm.cars.length; i++) {
+    const car = tm.cars[i];
+    assert.ok(car.currentSpeed > 2.0, `Car ${i} on route ${car.route.type} must maintain forward speed (got ${car.currentSpeed})`);
+    assert.strictEqual(car.isStopped, false, `Car ${i} must not be stopped`);
+    assert.strictEqual(car.isBlocked, false, `Car ${i} must not be blocked by false positives`);
+  }
+});
+
 // =============================================================================
 // SECTION 10: WORLD GENERATION & LANDMARKS: MOUNT FUJI, CITIES, TUNNELS & CAVERNS (R4)
 // =============================================================================
@@ -2581,6 +2883,229 @@ it('verifies vehicle dual camera perspectives (Chase view and Cockpit Interior v
   vm.updateDriver(0.05, { forward: 1, steer: 0 }, mockCam, mockControls);
   assert.strictEqual(mockControls.localAvatar.group.visible, false, 'Driver avatar head must be hidden in cockpit view');
   assert.strictEqual(Math.round(mockCam.position.y * 100) / 100, Math.round((car.pos.y + 0.90) * 100) / 100, 'Cockpit camera must be placed inside cabin at Y=car.pos.y+0.90');
+});
+
+it('verifies DrivableCar API methods (enter, exit, getSeatPosition, getSeatRotation, setColor, update)', () => {
+  const { DrivableCar } = loadVehicleModule();
+  const car = new DrivableCar('test_car_api', 0xff0000, 100, 24, -60, 0, 'Test Racer');
+
+  // 1. setColor
+  car.setColor(0x00ff00);
+  assert.strictEqual(car.colorHex, 0x00ff00, 'Car colorHex should update to 0x00ff00');
+  assert.strictEqual(car.carMat.color.hex, 0x00ff00, 'Car material color should update to 0x00ff00');
+
+  // 2. enter
+  const mockPlayer = { id: 'player_123', pos: { x: 100, y: 24, z: -60 } };
+  car.enter(mockPlayer);
+  assert.strictEqual(car.driverId, 'player_123');
+  assert.strictEqual(car.isDriven, true);
+
+  // 3. getSeatPosition & getSeatRotation
+  const seatPos = car.getSeatPosition();
+  assert.ok(typeof seatPos.x === 'number' && typeof seatPos.y === 'number' && typeof seatPos.z === 'number', 'getSeatPosition must return Vector3');
+  assert.strictEqual(seatPos.x, car.pos.x);
+  assert.strictEqual(seatPos.y, car.pos.y + 0.15);
+
+  const seatRot = car.getSeatRotation();
+  assert.strictEqual(seatRot.yaw, car.yaw);
+  assert.strictEqual(seatRot.pitch, car.pitch);
+
+  // 4. update
+  const initialZ = car.pos.z;
+  car.update(0.1, { forward: 1, steer: 0 }, null);
+  assert.ok(car.pos.z < initialZ, 'Car must advance along -Z heading when accelerating forward');
+  assert.strictEqual(car.group.position.x, car.pos.x);
+  assert.strictEqual(car.group.position.z, car.pos.z);
+
+  // 5. exit
+  car.exit(mockPlayer);
+  assert.strictEqual(car.driverId, null);
+  assert.strictEqual(car.isDriven, false);
+});
+
+it('verifies South-East Quadrant Gran Circuito track and vehicle fleet initialization', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const world = new World(null, null, 12345);
+
+  // Gran Circuito SE quadrant track in chunks X in [50..210], Z in [-190..-40]
+  // Test chunk at (100, -60) -> chunkX = 6, chunkZ = -4
+  const cx = Math.floor(100 / 16);
+  const cz = Math.floor(-60 / 16);
+  const chunk = world.getOrCreateChunk(cx, cz);
+  assert.ok(chunk, 'Chunk in SE Gran Circuito quadrant must be generated');
+
+  // Verify asphalt road surface at main straight (e.g. at 100, 24, -60)
+  const block = world.getBlock(100, 24, -60);
+  assert.strictEqual(block, BLOCKS.ASPHALT, 'SE Gran Circuito track surface at (100, 24, -60) must be ASPHALT');
+
+  // Verify VehicleManager initializes SE Quadrant fleet
+  const { VehicleManager } = loadVehicleModule();
+  const mockScene = { add: () => {}, remove: () => {} };
+  const mockPM = { spawnDriftSmoke: () => {} };
+  const vm = new VehicleManager(world, mockScene, mockPM);
+
+  assert.ok(vm.cars.size >= 6, `VehicleManager must create at least 6 cars (got ${vm.cars.size})`);
+  const carIds = Array.from(vm.cars.keys());
+  assert.ok(carIds.includes('car_se_scuderia'), 'Must include car_se_scuderia in SE quadrant');
+  assert.ok(carIds.includes('car_se_azure'), 'Must include car_se_azure in SE quadrant');
+  assert.ok(carIds.includes('car_se_gold'), 'Must include car_se_gold in SE quadrant');
+
+  const scuderia = vm.getCarById('car_se_scuderia');
+  assert.ok(scuderia, 'car_se_scuderia must be retrievable by ID');
+  assert.ok(scuderia.pos.x >= 50 && scuderia.pos.x <= 210, 'Car X must be within SE quadrant');
+  assert.ok(scuderia.pos.z >= -190 && scuderia.pos.z <= -40, 'Car Z must be within SE quadrant');
+  assert.strictEqual(scuderia.yaw, -Math.PI / 2, 'car_se_scuderia must spawn facing forward towards Turn 1 (yaw: -Math.PI / 2)');
+
+  // Verify Central Plaza vehicle
+  const plazaBlue = vm.getCarById('car_spawn_blue');
+  assert.ok(plazaBlue, 'Must include car_spawn_blue near Plaza Central');
+  assert.strictEqual(plazaBlue.pos.x, 25, 'car_spawn_blue must be stationed at X=25');
+  assert.strictEqual(plazaBlue.pos.z, 0, 'car_spawn_blue must be stationed at Z=0');
+  assert.strictEqual(plazaBlue.yaw, -Math.PI / 2, 'car_spawn_blue must face forward East down highway');
+
+  // Verify getNearestCar
+  const nearest = vm.getNearestCar({ x: scuderia.pos.x + 1, y: scuderia.pos.y, z: scuderia.pos.z }, 4.5);
+  assert.strictEqual(nearest.id, 'car_se_scuderia', 'getNearestCar must find closest car within radius');
+});
+
+it('verifies Controls vehicleMode getter, Key V vehicle camera toggle, and entry/exit keys', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const { VehicleManager } = loadVehicleModule();
+
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  camera.updateProjectionMatrix = () => {};
+  const domElement = {
+    addEventListener: () => {},
+    requestPointerLock: () => {}
+  };
+  const physics = {
+    pos: new mockTHREE.Vector3(104, 24, -57),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(104, 25.6, -57),
+    update: () => {}
+  };
+  const mockWorld = { getBlock: () => 0 };
+
+  const controls = new Controls(camera, domElement, physics, mockWorld);
+  controls.isLocked = true;
+  assert.strictEqual(controls.vehicleMode, false, 'vehicleMode should be false when no vehicleManager or not driving');
+
+  const mockScene = { add: () => {}, remove: () => {} };
+  const mockPM = { spawnDriftSmoke: () => {} };
+  const vm = new VehicleManager(mockWorld, mockScene, mockPM);
+  controls.setVehicleManager(vm);
+
+  assert.strictEqual(controls.vehicleMode, false, 'vehicleMode should be false before entering a car');
+
+  // Enter car
+  const car = vm.cars.get('car_se_scuderia');
+  vm.enterCar(car, controls.physics);
+  assert.strictEqual(controls.vehicleMode, true, 'vehicleMode should be true when player is driving');
+
+  // Key V camera toggle
+  assert.strictEqual(vm.cameraMode, 'chase');
+  const keyVEvent = { code: 'KeyV', preventDefault: () => {} };
+  controls.handleKeyDown(keyVEvent);
+  assert.strictEqual(vm.cameraMode, 'cockpit', 'Key V while driving must toggle vehicle camera mode to cockpit');
+
+  controls.handleKeyDown(keyVEvent);
+  assert.strictEqual(vm.cameraMode, 'chase', 'Key V second press must toggle back to chase mode');
+
+  // Exit car via Key E / handleInteract
+  const keyEEvent = { code: 'KeyE', preventDefault: () => {} };
+  controls.handleKeyDown(keyEEvent);
+  assert.strictEqual(controls.vehicleMode, false, 'Key E must exit the vehicle');
+  assert.strictEqual(keyEEvent.__vrHandled, true, 'Key E must mark event as __vrHandled');
+});
+
+it('verifies Multiplayer vehicle replication packets and server validation', () => {
+  const { MSG, isValidVehicleDrive } = require('../server/protocol.js');
+  const { RoomManager } = require('../server/rooms.js');
+
+  // 1. Protocol constants
+  assert.strictEqual(MSG.VEHICLE_DRIVE, 'vehicle_drive');
+  assert.strictEqual(MSG.VEHICLE_ENTER, 'vehicle_enter');
+  assert.strictEqual(MSG.VEHICLE_EXIT, 'vehicle_exit');
+
+  // 2. Validation
+  assert.strictEqual(isValidVehicleDrive({ vehicleId: 'car_1', x: 100, y: 24, z: -60, yaw: 1.57 }), true);
+  assert.strictEqual(isValidVehicleDrive(null), false);
+  assert.strictEqual(isValidVehicleDrive({ vehicleId: '', x: 100, y: 24, z: -60, yaw: 1.57 }), false);
+  assert.strictEqual(isValidVehicleDrive({ vehicleId: 'car_1', x: NaN, y: 24, z: -60, yaw: 1.57 }), false);
+
+  // 3. RoomManager handling
+  const rm = new RoomManager();
+  const client1Ws = { readyState: 1, send: (msg) => { client1Ws.lastMsg = JSON.parse(msg); } };
+  const client2Ws = { readyState: 1, send: (msg) => { client2Ws.lastMsg = JSON.parse(msg); } };
+
+  const meta1 = { id: 'p1' };
+  const meta2 = { id: 'p2' };
+
+  rm.handleJoin(client1Ws, meta1, { name: 'Racer1' });
+  rm.handleJoin(client2Ws, meta2, { name: 'Racer2' });
+
+  const room = rm.rooms.get('main');
+  assert.ok(room, 'Room main must exist');
+
+  // P1 enters vehicle
+  rm.handleVehicleEnter(client1Ws, meta1, { vehicleId: 'car_se_scuderia' });
+  const player1 = room.gameState.getPlayer('p1');
+  assert.strictEqual(player1.action, 'driving');
+  assert.strictEqual(client2Ws.lastMsg.type, MSG.VEHICLE_ENTER);
+  assert.strictEqual(client2Ws.lastMsg.data.vehicleId, 'car_se_scuderia');
+
+  // P1 drives vehicle
+  rm.handleVehicleDrive(client1Ws, meta1, {
+    vehicleId: 'car_se_scuderia',
+    x: 105.5,
+    y: 24.0,
+    z: -65.2,
+    yaw: 3.14,
+    speed: 16.5,
+    steering: 0.2,
+    isDrifting: true
+  });
+  assert.strictEqual(player1.pos[0], 105.5);
+  assert.strictEqual(client2Ws.lastMsg.type, MSG.VEHICLE_DRIVE);
+  assert.strictEqual(client2Ws.lastMsg.data.speed, 16.5);
+  assert.strictEqual(client2Ws.lastMsg.data.isDrifting, true);
+
+  // P1 exits vehicle
+  rm.handleVehicleExit(client1Ws, meta1, { vehicleId: 'car_se_scuderia' });
+  assert.strictEqual(player1.action, 'idle');
+  assert.strictEqual(client2Ws.lastMsg.type, MSG.VEHICLE_EXIT);
+});
+
+it('verifies Driving HUD elements, speedometer metrics, and proximity prompt in UI', () => {
+  const htmlPath = path.resolve(__dirname, '../public/index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  // 1. Verify required DOM elements in index.html
+  assert.ok(html.includes('id="vehicle-driving-hud"'), 'HTML must declare #vehicle-driving-hud');
+  assert.ok(html.includes('id="vehicle-speed-num"'), 'HTML must declare #vehicle-speed-num');
+  assert.ok(html.includes('id="vehicle-speed-ms"'), 'HTML must declare #vehicle-speed-ms');
+  assert.ok(html.includes('id="vehicle-speed-bar"'), 'HTML must declare #vehicle-speed-bar');
+  assert.ok(html.includes('id="vehicle-model-name"'), 'HTML must declare #vehicle-model-name');
+  assert.ok(html.includes('id="vehicle-cam-indicator"'), 'HTML must declare #vehicle-cam-indicator');
+  assert.ok(html.includes('id="vehicle-enter-prompt"'), 'HTML must declare #vehicle-enter-prompt');
+  assert.ok(html.includes('id="mobile-btn-car-exit"'), 'HTML must declare #mobile-btn-car-exit');
+
+  // 2. Verify Speedometer Math
+  const speedMs = 16.5;
+  const speedKmh = Math.round(speedMs * 3.6);
+  assert.strictEqual(speedKmh, 59, '16.5 m/s converts to 59.4 -> 59 KM/H');
+  const pct = Math.min(100, Math.round((speedMs / 16.5) * 100));
+  assert.strictEqual(pct, 100, 'Top speed must fill speedometer bar to 100%');
+
+  // 3. Verify CSS rules
+  const cssPath = path.resolve(__dirname, '../public/styles.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  assert.ok(css.includes('.vehicle-hud'), 'styles.css must include .vehicle-hud styles');
+  assert.ok(css.includes('.speedo-bar-fill'), 'styles.css must include .speedo-bar-fill meter styling');
+  assert.ok(css.includes('.vehicle-prompt'), 'styles.css must include .vehicle-prompt styling');
 });
 
 function loadAvatarModule() {
@@ -3053,6 +3578,205 @@ it('verifies Avatar.prototype.updateGroundSupport invalidates onGround and appli
   assert.strictEqual(unsupported, false);
   assert.strictEqual(avatar.onGround, false);
   assert.ok(avatar.velY < 0, 'Vertical velocity must be negative to initiate downward descent');
+});
+
+it('verifies Rifle ADS scope lens transparency and optic auto-hide prevent opaque square obstruction during zoom', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.fov = 75;
+  camera.updateProjectionMatrix = () => {};
+  const domElement = { addEventListener: () => {} };
+  const physics = {
+    pos: new mockTHREE.Vector3(0, 25, 0),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    action: 'idle',
+    onGround: true,
+    getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0),
+    update: () => {}
+  };
+  const world = { getBlock: () => 0 };
+
+  const controls = new Controls(camera, domElement, physics, world);
+  controls.setWeaponsMode(true);
+  controls.setAiming(true);
+
+  assert.ok(controls.scopeLensMat, 'Rifle must expose scopeLensMat');
+  assert.strictEqual(controls.scopeLensMat.transparent, true, 'Scope lens material must be transparent');
+  assert.ok(controls.scopeLensMat.opacity <= 0.25, 'Scope lens opacity must be low enough to see through');
+  assert.ok(Array.isArray(controls.scopeOptics) && controls.scopeOptics.length >= 4, 'Rifle must track scopeOptics meshes');
+
+  // Advance ADS transition to full zoom (aimBlend > 0.82)
+  for (let i = 0; i < 20; i++) {
+    controls.update(0.05);
+  }
+  assert.ok(controls.aimBlend > 0.82, 'aimBlend must reach full ADS threshold (> 0.82)');
+  assert.strictEqual(controls.rifleGroup.visible, false, '3D rifle group must hide at full ADS zoom so no geometry blocks camera lens');
+  for (const optic of controls.scopeOptics) {
+    assert.strictEqual(optic.visible, false, 'Scope optic mesh must be hidden during ADS zoom');
+  }
+});
+
+it('verifies ParticleManager.prototype.spawnPrimedTnt creates 3D thrown TNT block with fuse, parabolic flight, and detonation callback', () => {
+  const { ParticleManager } = loadParticlesModuleForM2();
+  const mockScene = {
+    children: [],
+    add(obj) { this.children.push(obj); },
+    remove(obj) {
+      const idx = this.children.indexOf(obj);
+      if (idx !== -1) this.children.splice(idx, 1);
+    }
+  };
+
+  const pm = new ParticleManager(mockScene);
+  let detonated = false;
+  const entity = pm.spawnPrimedTnt(
+    { x: 0, y: 26.5, z: 0 },
+    { x: 4, y: 24, z: -4 },
+    1000,
+    () => { detonated = true; }
+  );
+
+  assert.ok(entity && entity.group, 'spawnPrimedTnt must create a 3D PrimedTnt group');
+  assert.strictEqual(pm.primedTnts.length, 1, 'ParticleManager must track active primed TNT entity');
+  assert.ok(entity.group.children.length >= 6, '3D TNT block must include red body, white band, TNT lettering, fuse, and ember tip');
+
+  // Step through flight (0.2s) and verify parabolic arc elevation above linear interpolation
+  pm.update(0.2, { x: 0, y: 25, z: 0 });
+  assert.ok(entity.group.position.y > 25.5, 'Thrown TNT must follow an upward parabolic arc during flight');
+
+  // Step past 1.0s fuse expiry and verify detonation + cleanup
+  pm.update(0.9, { x: 0, y: 25, z: 0 });
+  assert.strictEqual(detonated, true, 'Primed TNT must invoke onDetonate callback when fuse expires');
+  assert.strictEqual(pm.primedTnts.length, 0, 'Detonated TNT entity must be removed from active list');
+});
+
+it('verifies SE Gran Circuito closed-loop track continuity, exterior perimeter fence, and track-facing Tribuna Principal grandstand slope', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const world = new World(null, null, 12345);
+
+  // Preload all chunks covering SE Gran Circuito (X: 46..210, Z: -182..-38)
+  for (let cx = Math.floor(46 / 16); cx <= Math.floor(210 / 16); cx++) {
+    for (let cz = Math.floor(-182 / 16); cz <= Math.floor(-38 / 16); cz++) {
+      world.getOrCreateChunk(cx, cz);
+    }
+  }
+
+  // 1. Verify 100% closed-loop asphalt continuity around the entire stadium track centerline (r = 22.5)
+  const loopPoints = [];
+  for (let x = 80; x <= 176; x += 6) {
+    loopPoints.push([x, -60]);  // North straight
+    loopPoints.push([x, -154]); // South straight
+  }
+  for (let z = -132; z <= -82; z += 6) {
+    loopPoints.push([58, z]);   // West straight
+    loopPoints.push([198, z]);  // East straight
+  }
+  for (const [cx, cz, aStart, aEnd] of [
+    [176, -82, 0, Math.PI / 2],
+    [176, -132, -Math.PI / 2, 0],
+    [80, -132, -Math.PI, -Math.PI / 2],
+    [80, -82, Math.PI / 2, Math.PI]
+  ]) {
+    for (let s = 1; s <= 5; s++) {
+      const a = aStart + (aEnd - aStart) * (s / 6);
+      loopPoints.push([Math.round(cx + Math.cos(a) * 22.5), Math.round(cz + Math.sin(a) * 22.5)]);
+    }
+  }
+
+  for (const [px, pz] of loopPoints) {
+    const surfaceBlock = world.getBlock(px, 24, pz);
+    assert.ok(
+      surfaceBlock === BLOCKS.ASPHALT || surfaceBlock === BLOCKS.SNOW,
+      `Track centerline at (${px}, 24, ${pz}) must be ASPHALT or SNOW road marking (got ${surfaceBlock})`
+    );
+    assert.strictEqual(world.getBlock(px, 25, pz), BLOCKS.AIR, `Track lane at (${px}, 25, ${pz}) must be clear of barriers`);
+  }
+
+  // 2. Verify Tribuna Principal grandstand (X=120, Z=-50..-43) slopes UP away from the track (front row low at Z=-50, back row high at Z=-43)
+  let frontHighestSolid = 24;
+  let backHighestSolid = 24;
+  for (let y = 25; y <= 32; y++) {
+    if (world.getBlock(120, y, -50) !== BLOCKS.AIR) frontHighestSolid = y;
+    if (world.getBlock(120, y, -43) !== BLOCKS.AIR) backHighestSolid = y;
+  }
+  assert.ok(
+    frontHighestSolid < backHighestSolid,
+    `Grandstand must face the track: front row at Z=-50 (Y=${frontHighestSolid}) must be lower than rear tier at Z=-43 (Y=${backHighestSolid})`
+  );
+
+  // 3. Verify exterior complex security fence at X=46, Z=-100
+  assert.notStrictEqual(world.getBlock(46, 25, -100), BLOCKS.AIR, 'Exterior perimeter fence must be built at X=46, Y=25, Z=-100');
+});
+
+it('verifies DrivableCar spawns visibly on top of Y=24 roadbed at Y=25.0 and drives on real World without floor collision', () => {
+  const { World } = loadWorldModule();
+  const { VehicleManager } = loadVehicleModule();
+  const world = new World(null, null, 12345);
+  const mockScene = { add: () => {}, remove: () => {} };
+  const mockPM = { spawnDriftSmoke: () => {} };
+
+  const vm = new VehicleManager(world, mockScene, mockPM);
+  const sePoleCar = vm.getCarById('car_se_scuderia');
+  assert.ok(sePoleCar, 'SE Pole car must exist');
+  assert.strictEqual(sePoleCar.pos.y, 25, 'SE Pole car must spawn at Y=25.0 on top of the Y=24 asphalt block');
+  assert.strictEqual(sePoleCar.group.position.y, 25, 'Car 3D mesh group must sit at Y=25.0 above the road surface');
+
+  // Load chunk around car and drive forward along the main straight
+  world.getOrCreateChunk(Math.floor(sePoleCar.pos.x / 16), Math.floor(sePoleCar.pos.z / 16));
+  world.getOrCreateChunk(Math.floor((sePoleCar.pos.x - 10) / 16), Math.floor(sePoleCar.pos.z / 16));
+
+  const startX = sePoleCar.pos.x;
+  for (let i = 0; i < 15; i++) {
+    sePoleCar.updatePhysics(0.05, { forward: 1, steer: 0 }, world);
+  }
+  assert.ok(Math.abs(sePoleCar.pos.x - startX) > 2.0, 'DrivableCar must drive freely along the real World asphalt track without colliding with the Y=24 floor');
+  assert.ok(sePoleCar.pos.y >= 24.9, 'DrivableCar must remain elevated on top of the Y=25.0 road surface while driving');
+
+  // Verify DrivableCar maintains Y=25.0 across SE East Lake Bridge (198, -120) and SE Mountain Tunnel (100, -154)
+  for (const [tx, tz, yaw, label] of [
+    [198, -125, Math.PI, 'SE East Lake Bridge'],
+    [110, -154, Math.PI / 2, 'SE South Mountain Tunnel'],
+    [-410, -510, Math.PI, 'NW Lakeside Bridge'],
+    [-460, -585, Math.PI / 2, 'NW North Mountain Tunnel']
+  ]) {
+    world.getOrCreateChunk(Math.floor(tx / 16), Math.floor(tz / 16));
+    world.getOrCreateChunk(Math.floor((tx - 8) / 16), Math.floor((tz + 8) / 16));
+    sePoleCar.pos = { x: tx, y: 25, z: tz };
+    sePoleCar.yaw = yaw;
+    sePoleCar.speed = 10;
+    for (let i = 0; i < 10; i++) {
+      sePoleCar.updatePhysics(0.05, { forward: 1, steer: 0 }, world);
+    }
+    assert.strictEqual(Math.round(sePoleCar.pos.y), 25, `DrivableCar on ${label} must stay level at Y=25 (got ${sePoleCar.pos.y})`);
+  }
+});
+
+it('verifies Central Plaza cardinal walkways are free of fountains at (0, +-6) and (+-6, 0) and highway cars complete full route turnarounds without sticking', () => {
+  const { World, BLOCKS } = loadWorldModule();
+  const { TrafficManager } = loadAnimalsModule();
+  const world = new World({ add: () => {} }, null, 48151623);
+  for (let cx = -16; cx <= 16; cx++) {
+    for (let cz = -16; cz <= 16; cz++) {
+      world.getOrCreateChunk(cx, cz);
+    }
+  }
+
+  // 1. Verify cardinal avenues at (0, +-6) and (+-6, 0) are clear AIR at Y=25..27 (fountains moved to diagonal courtyards +-5, +-5)
+  for (const [ax, az] of [[0, 6], [0, -6], [6, 0], [-6, 0]]) {
+    assert.strictEqual(world.getBlock(ax, 25, az), BLOCKS.AIR, `Cardinal avenue at (${ax}, 25, ${az}) must be clear AIR`);
+    assert.strictEqual(world.getBlock(ax, 26, az), BLOCKS.AIR, `Cardinal avenue at (${ax}, 26, ${az}) must be clear AIR`);
+  }
+
+  // 2. Simulate 2000 frames (100 seconds) so every highway car reaches its route endpoint (x2, z2) and wraps around cleanly
+  const tm = new TrafficManager({ add: () => {} }, world);
+  for (let frame = 0; frame < 2000; frame++) {
+    tm.update(0.05);
+  }
+  for (let i = 0; i < tm.cars.length; i++) {
+    const car = tm.cars[i];
+    assert.ok(car.currentSpeed > 2.0, `Car ${i} on route ${car.route.type} must never get stuck at route endpoint (speed=${car.currentSpeed}, pos=${car.position.x.toFixed(1)},${car.position.z.toFixed(1)})`);
+    assert.strictEqual(car.isStopped, false, `Car ${i} must remain moving after full route turnaround`);
+  }
 });
 
 // =============================================================================

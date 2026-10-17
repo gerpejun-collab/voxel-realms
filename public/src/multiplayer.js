@@ -38,6 +38,9 @@ export class MultiplayerClient {
     this.onWeaponHit = null;
     this.onTntPrime = null;
     this.onTntExplode = null;
+    this.onVehicleDrive = null;
+    this.onVehicleEnter = null;
+    this.onVehicleExit = null;
   }
 
   connect(playerName) {
@@ -227,6 +230,24 @@ export class MultiplayerClient {
       case 'weapon_hit':
         if (data && this.onWeaponHit) {
           this.onWeaponHit(data);
+        }
+        break;
+
+      case 'vehicle_drive':
+        if (data && this.onVehicleDrive) {
+          this.onVehicleDrive(data);
+        }
+        break;
+
+      case 'vehicle_enter':
+        if (data && this.onVehicleEnter) {
+          this.onVehicleEnter(data);
+        }
+        break;
+
+      case 'vehicle_exit':
+        if (data && this.onVehicleExit) {
+          this.onVehicleExit(data);
         }
         break;
 
@@ -511,6 +532,36 @@ export class MultiplayerClient {
     }
 
     return msg;
+  }
+
+  sendVehicleDrive(car) {
+    if (!this.connected || !car) return;
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (this.lastVehicleSend && (now - this.lastVehicleSend < 35)) return;
+    this.lastVehicleSend = now;
+
+    this.send('vehicle_drive', {
+      vehicleId: car.id,
+      x: car.pos.x,
+      y: car.pos.y,
+      z: car.pos.z,
+      yaw: car.yaw,
+      pitch: car.pitch || 0,
+      roll: car.roll || 0,
+      speed: car.speed || 0,
+      steering: car.steering || 0,
+      isDrifting: Boolean(car.isDrifting)
+    });
+  }
+
+  sendVehicleEnter(vehicleId) {
+    if (!this.connected || !vehicleId) return;
+    this.send('vehicle_enter', { vehicleId });
+  }
+
+  sendVehicleExit(vehicleId) {
+    if (!this.connected || !vehicleId) return;
+    this.send('vehicle_exit', { vehicleId });
   }
 
   update(dt) {

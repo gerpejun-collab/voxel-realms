@@ -17,6 +17,8 @@ const MSG = {
   VEHICLE_EXIT: 'vehicle_exit',
   ADMIN_AUTH: 'admin_auth',
   ADMIN_RESET_SERVER: 'admin_reset_server',
+  ADMIN_LAUNCH_MISSILE: 'admin_launch_missile',
+  MISSILE_DETONATE: 'missile_detonate',
 
   // Server -> Client
   INIT: 'init',
@@ -31,6 +33,8 @@ const MSG = {
   WEAPON_SHOT_FX: 'weapon_shot_fx',
   TNT_PRIMED: 'tnt_primed',
   TNT_EXPLODE: 'tnt_explode',
+  MISSILE_SPAWN: 'missile_spawn',
+  MISSILE_IMPACT: 'missile_impact',
   ANIMALS_UPDATE: 'animals_update',
   ANIMAL_BURST: 'animal_burst',
   ADMIN_STATE: 'admin_state',
@@ -167,6 +171,12 @@ function isValidVehicleDrive(data) {
   return true;
 }
 
+function isValidMissileLaunch(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (typeof data.targetPlayerId !== 'string' || data.targetPlayerId.length === 0 || data.targetPlayerId.length > MAX_PLAYER_ID_LENGTH) return false;
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     MSG,
@@ -182,6 +192,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isValidWeaponShoot,
     isValidTntTrigger,
     isValidVehicleDrive,
+    isValidMissileLaunch,
     ADMIN_EMAIL,
     isValidAdminCredentials
   };

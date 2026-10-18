@@ -11,6 +11,8 @@ import { MultiplayerClient } from './multiplayer.js';
 import { UIManager } from './ui.js';
 import { AnimalManager } from './animals.js';
 import { VehicleManager, DrivableCar } from './vehicle.js';
+import { MissileManager } from './missile.js';
+import { TacticalRadar } from './radar.js';
 import { Avatar } from './avatar.js';
 import { BLOCKS } from './blocks.js';
 import { sound } from './audio.js';
@@ -63,6 +65,15 @@ class VoxelRealmsApp {
     );
     this.controls.setVehicleManager(this.vehicleManager);
 
+    // 6c. Initialize Guided Missile System & Tactical Radar (Admin Exclusive)
+    this.missileManager = new MissileManager(
+      this.sceneManager.scene,
+      this.particleManager,
+      this.multiplayer,
+      sound
+    );
+    this.multiplayer.missileManager = this.missileManager;
+
     // 7. Initialize UI Overlay & HUD
     this.ui = new UIManager(
       this.materialManager,
@@ -73,6 +84,9 @@ class VoxelRealmsApp {
       this.animalManager,
       this.vehicleManager
     );
+
+    this.tacticalRadar = new TacticalRadar(this.multiplayer, this.missileManager);
+    this.ui.setTacticalRadar(this.tacticalRadar);
 
     // Connect Multiplayer Animal & Vehicle Synchronizer
     if (this.multiplayer) {
@@ -421,6 +435,14 @@ class VoxelRealmsApp {
         this.multiplayer.sendVehicleDrive(this.vehicleManager.activeCar);
       }
       this.vehicleManager.update(dt, this.controls, this.multiplayer);
+    }
+
+    // 5c. Guided Missile Simulation & Tactical Radar (Admin Exclusive)
+    if (this.missileManager) {
+      this.missileManager.update(dt, this.physics.pos);
+    }
+    if (this.tacticalRadar) {
+      this.tacticalRadar.update(dt, this.physics.pos);
     }
 
     // 6. Ambient Voxel Animals, Rare NPCs & Highway Traffic

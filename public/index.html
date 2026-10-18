@@ -102,6 +102,10 @@
         <span class="weapon-btn-icon">⚡</span>
         <span class="weapon-btn-label" id="tnt-power-label">POTENCIA: 1x</span>
       </button>
+      <button id="btn-admin-missile" class="weapon-hud-btn mc-btn missile-highlight hidden" title="Lanzar Misil Teledirigido Táctico (Exclusivo Admin)">
+        <span class="weapon-btn-icon">🚀</span>
+        <span class="weapon-btn-label">MISIL TÁCTICO</span>
+      </button>
     </div>
 
     <!-- Selected block toast label -->
@@ -491,13 +495,18 @@
             <span class="admin-panel-title">🛡️ Panel de Control del Servidor</span>
             <span id="admin-online-badge" class="mc-badge">1 conectado</span>
           </div>
+          <div class="admin-quick-bar" style="display:flex;gap:8px;margin-bottom:10px;">
+            <button id="admin-open-radar-btn" class="mc-btn radar-launch-btn" type="button" style="flex:1;padding:8px 12px;font-size:12px;font-weight:bold;">
+              📡 Abrir Radar Táctico de Misiles
+            </button>
+          </div>
           <div class="admin-players-table-wrap">
             <table class="player-table admin-players-table">
               <thead>
                 <tr>
                   <th>Jugador</th>
-                  <th>Hora de Entrada</th>
-                  <th>Ubicación (Clic para ir)</th>
+                  <th>Hora</th>
+                  <th>Teletransporte / Misil</th>
                 </tr>
               </thead>
               <tbody id="admin-players-tbody"></tbody>

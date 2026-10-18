@@ -2836,5 +2836,291 @@ body.mobile-mode .desktop-only {
   border-color: rgba(253, 186, 116, 0.7);
 }
 
+/* =============================================================================
+   TACTICAL RADAR (ADMIN EXCLUSIVE) & GUIDED MISSILE HUD
+   ============================================================================= */
+.tactical-radar-panel {
+  position: fixed;
+  top: 60px;
+  right: 20px;
+  width: 580px;
+  max-width: 95vw;
+  background: rgba(10, 25, 20, 0.94);
+  border: 2px solid #10b981;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8), 0 0 16px rgba(16, 185, 129, 0.35);
+  z-index: 10010;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+
+.tactical-radar-panel.hidden {
+  display: none !important;
+}
+
+.radar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(16, 185, 129, 0.15);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.radar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #34d399;
+  letter-spacing: 0.5px;
+}
+
+.radar-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #10b981;
+  animation: radarDotPulse 1.2s infinite alternate;
+}
+
+@keyframes radarDotPulse {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.3); opacity: 1; }
+}
+
+.radar-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.radar-ctrl-btn {
+  padding: 2px 8px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  cursor: pointer;
+}
+
+.radar-body {
+  display: flex;
+  padding: 12px;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.radar-viewport-wrap {
+  position: relative;
+  width: 340px;
+  height: 340px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#tactical-radar-canvas {
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.radar-range-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  padding: 2px 8px;
+  font-size: 10px;
+  color: #34d399;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.radar-sidebar {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.radar-section-title {
+  font-size: 11px;
+  font-weight: bold;
+  color: #6ee7b7;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(16, 185, 129, 0.25);
+  padding-bottom: 3px;
+  margin-top: 4px;
+}
+
+.radar-missiles-list, .radar-targets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.radar-empty-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  font-style: italic;
+  padding: 4px;
+}
+
+.radar-missile-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.radar-missile-card.critical {
+  border-color: #ef4444;
+  background: rgba(69, 10, 10, 0.85);
+  animation: missileAlertPulse 0.6s infinite alternate;
+}
+
+@keyframes missileAlertPulse {
+  0% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
+  100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.9); }
+}
+
+.rm-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.rm-tag {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.rm-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #cbd5e1;
+}
+
+.rm-alert {
+  color: #f87171;
+  font-weight: bold;
+  font-size: 10px;
+  margin-top: 3px;
+}
+
+.rm-disconnected {
+  color: #facc15;
+  font-size: 9px;
+  margin-top: 2px;
+}
+
+.radar-target-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.rt-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rt-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.rt-coords {
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+.radar-launch-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  border: 1px solid #f87171 !important;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.radar-launch-btn:hover {
+  background: #b91c1c !important;
+}
+
+/* Floating Minimized Radar Pill */
+.radar-floating-pill {
+  position: fixed;
+  top: 65px;
+  right: 18px;
+  background: rgba(6, 18, 14, 0.92);
+  border: 2px solid #10b981;
+  border-radius: 20px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #34d399;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7), 0 0 10px rgba(16, 185, 129, 0.4);
+  z-index: 10010;
+  cursor: pointer;
+  pointer-events: auto !important;
+}
+
+.radar-floating-pill.hidden {
+  display: none !important;
+}
+
+.radar-pill-dot {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: radarDotPulse 1.2s infinite alternate;
+}
+
+.radar-pill-btn {
+  background: rgba(16, 185, 129, 0.25);
+  border: 1px solid #10b981;
+  color: #ffffff;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.weapon-hud-btn.missile-highlight {
+  background: linear-gradient(180deg, rgba(220, 38, 38, 0.85) 0%, rgba(153, 27, 27, 0.85) 100%) !important;
+  border-color: #fca5a5 !important;
+  color: #ffffff !important;
+}
+
+
 
 

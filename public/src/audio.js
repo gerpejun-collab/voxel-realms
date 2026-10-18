@@ -497,6 +497,57 @@ class SoundSystem {
     osc.start(t);
     osc.stop(t + 0.11);
   }
+
+  /**
+   * Rocket ignition thud + accelerating roar for guided missile liftoff
+   */
+  playMissileLaunch() {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+
+    // Deep ignition pop
+    const pop = this.ctx.createOscillator();
+    const popGain = this.ctx.createGain();
+    pop.type = 'triangle';
+    pop.frequency.setValueAtTime(140, t);
+    pop.frequency.exponentialRampToValueAtTime(32, t + 0.35);
+    popGain.gain.setValueAtTime(0.85, t);
+    popGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    pop.connect(popGain);
+    popGain.connect(this.masterGain);
+    pop.start(t);
+    pop.stop(t + 0.35);
+
+    // Roaring rocket exhaust hiss
+    const noiseBuffer = this.createNoiseBuffer(0.95);
+    if (noiseBuffer) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = noiseBuffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(320, t);
+      filter.frequency.exponentialRampToValueAtTime(840, t + 0.95);
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.35, t);
+      gain.gain.linearRampToValueAtTime(0.75, t + 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+      src.start(t);
+      src.stop(t + 0.95);
+    }
+  }
+
+  /**
+   * Heavy hypersonic 4X TNT impact detonation boom
+   */
+  playMissileImpact() {
+    this.playTntExplosion();
+  }
 }
 
 export const sound = new SoundSystem();

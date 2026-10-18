@@ -11,6 +11,7 @@ const {
   isValidWeaponShoot,
   isValidTntTrigger,
   isValidVehicleDrive,
+  isValidMissileLaunch,
   isValidAdminCredentials
 } = require('./protocol');
 const { GameState } = require('./game-state');
@@ -24,6 +25,7 @@ class RoomManager {
     this.socketMeta = new Map(); // ws -> { id, roomId, lastMsgTime, msgCount }
     this.pendingTntTimers = new Set();
     this.playerHitCooldowns = new Map(); // "shooterId->targetId" -> timestamp
+    this.lastKnownPlayerPositions = new Map(); // playerId -> [x, y, z]
 
     // Start tick loop for movement broadcasts (20 updates/second)
     this.tickInterval = setInterval(() => this.tick(), 50);
@@ -193,6 +195,14 @@ class RoomManager {
 
       case MSG.ADMIN_RESET_SERVER:
         this.handleAdminResetServer(ws, meta, data);
+        break;
+
+      case MSG.ADMIN_LAUNCH_MISSILE:
+        this.handleAdminLaunchMissile(ws, meta, data);
+        break;
+
+      case MSG.MISSILE_DETONATE:
+        this.handleMissileDetonate(ws, meta, data);
         break;
     }
   }
@@ -676,19 +686,118 @@ class RoomManager {
     if (meta.roomId) {
       const room = this.rooms.get(meta.roomId);
       if (room) {
-        const player = room.gameState.removePlayer(meta.id);
+        const player = room.gameState.getPlayer(meta.id);
+        if (player && Array.isArray(player.pos)) {
+          this.lastKnownPlayerPositions.set(meta.id, [...player.pos]);
+        }
+        room.gameState.removePlayer(meta.id);
         room.clients.delete(ws);
 
         if (player) {
           this.broadcast(room, MSG.PLAYER_LEFT, {
             id: player.id,
-            name: player.name
+            name: player.name,
+            lastPos: player.pos ? [...player.pos] : null
           });
         }
       }
     }
 
     this.socketMeta.delete(ws);
+  }
+
+  handleAdminLaunchMissile(ws, meta, data) {
+    if (!meta.roomId || !meta.isAdmin) {
+      this.send(ws, MSG.ERROR, { message: 'Acceso no autorizado: Requiere permisos de Administrador.' });
+      return;
+    }
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidMissileLaunch(data)) return;
+
+    const launcher = room.gameState.getPlayer(meta.id);
+    if (!launcher) return;
+
+    // Look up target either online or from last known positions
+    const targetPlayer = room.gameState.getPlayer(data.targetPlayerId);
+    let targetPos = null;
+    let targetName = 'Objetivo';
+
+    if (targetPlayer) {
+      targetPos = [...targetPlayer.pos];
+      targetName = targetPlayer.name;
+    } else if (this.lastKnownPlayerPositions.has(data.targetPlayerId)) {
+      targetPos = [...this.lastKnownPlayerPositions.get(data.targetPlayerId)];
+      targetName = 'Jugador (Desconectado)';
+    } else if (Array.isArray(data.targetPos)) {
+      targetPos = [...data.targetPos];
+    } else {
+      this.send(ws, MSG.ERROR, { message: 'El jugador objetivo no está disponible.' });
+      return;
+    }
+
+    const missileId = 'msl_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const startPos = Array.isArray(data.origin) ? [...data.origin] : [...launcher.pos];
+    const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
+
+    const payload = {
+      missileId,
+      launcherId: meta.id,
+      launcherName: launcher.name,
+      targetPlayerId: data.targetPlayerId,
+      targetName,
+      targetPos,
+      startPos,
+      startYaw,
+      power: 4 // 4X TNT equivalent (radius 9m)
+    };
+
+    // Broadcast missile spawn to everyone in the room
+    this.broadcast(room, MSG.MISSILE_SPAWN, payload);
+
+    // Announce to launcher
+    this.send(ws, MSG.CHAT_BROADCAST, {
+      senderId: 'SYSTEM',
+      senderName: 'RADAR TÁCTICO',
+      text: `🚀 Misil teledirigido lanzado con éxito hacia ${targetName}.`,
+      timestamp: Date.now()
+    });
+  }
+
+  handleMissileDetonate(ws, meta, data) {
+    if (!meta.roomId || !meta.isAdmin) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !data) return;
+
+    const rx = Math.round(data.x);
+    const ry = Math.round(data.y);
+    const rz = Math.round(data.z);
+    const radius = 9; // 4x TNT power
+
+    const explosion = room.gameState.detonateTnt(rx, ry, rz, radius);
+    this.broadcast(room, MSG.TNT_EXPLODE, explosion);
+    this.broadcast(room, MSG.MISSILE_IMPACT, {
+      missileId: data.missileId,
+      x: rx,
+      y: ry,
+      z: rz,
+      radius
+    });
+
+    if (explosion.hitAnimals && explosion.hitAnimals.length > 0) {
+      for (const anim of explosion.hitAnimals) {
+        this.broadcast(room, MSG.ANIMAL_BURST, {
+          animalId: anim.id,
+          type: anim.type,
+          x: anim.x,
+          y: anim.y,
+          z: anim.z,
+          shooterId: meta.id
+        });
+      }
+      this.broadcast(room, MSG.ANIMALS_UPDATE, {
+        animals: room.gameState.getAnimalsSnapshot()
+      });
+    }
   }
 
   tick() {

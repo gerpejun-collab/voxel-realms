@@ -130,6 +130,7 @@ export class UIManager {
     this.isMapOpen = false;
     this.isPlayerListOpen = false;
     this.currentSpeedTier = 1; // 1: 1x, 2: 2.5x, 3: 5x flight
+    this.tacticalRadar = null;
 
     // Wire controls callbacks
     if (this.controls) {
@@ -200,13 +201,16 @@ export class UIManager {
 
       this.multiplayer.onAdminState = (state) => {
         const adminPanel = document.getElementById('admin-settings-panel');
+        const btnAdminMissile = document.getElementById('btn-admin-missile');
         if (!adminPanel) return;
         if (!state || !state.isAdmin) {
           adminPanel.classList.add('hidden');
+          if (btnAdminMissile) btnAdminMissile.classList.add('hidden');
           return;
         }
 
         adminPanel.classList.remove('hidden');
+        if (btnAdminMissile) btnAdminMissile.classList.remove('hidden');
         const badge = document.getElementById('admin-online-badge');
         if (badge) {
           badge.textContent = `${state.onlineCount || 1} conectado(s)`;
@@ -224,7 +228,10 @@ export class UIManager {
             tr.innerHTML = `
               <td><strong>${p.name || 'Player'}</strong> ${p.id === this.multiplayer.myId ? '(Tú)' : ''}</td>
               <td>${dateStr}</td>
-              <td><button class="mc-btn admin-tp-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;">(${px}, ${py}, ${pz}) 🚀</button></td>
+              <td style="display:flex;gap:4px;align-items:center;">
+                <button class="mc-btn admin-tp-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;">(${px}, ${py}, ${pz}) 📍</button>
+                ${p.id !== this.multiplayer.myId ? `<button class="mc-btn admin-missile-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;background:#dc2626;color:#ffffff;border-color:#f87171;font-weight:bold;">🚀 Misil</button>` : ''}
+              </td>
             `;
             const tpBtn = tr.querySelector('.admin-tp-btn');
             if (tpBtn) {
@@ -246,10 +253,48 @@ export class UIManager {
                 if (!this.controls.isMobile) this.controls.lock();
               });
             }
+            const missileBtn = tr.querySelector('.admin-missile-btn');
+            if (missileBtn) {
+              missileBtn.addEventListener('click', () => {
+                sound.playClick();
+                if (p.id === this.multiplayer.myId) return;
+                this.multiplayer.sendAdminLaunchMissile(p.id);
+                this.showNotification('🚀 Misil guiado lanzado hacia ' + (p.name || 'Jugador'));
+                if (this.tacticalRadar) {
+                  this.tacticalRadar.toggle(true);
+                  this.tacticalRadar.toggleMinimize(false);
+                }
+                this.pauseMenu.classList.add('hidden');
+                if (!this.controls.isMobile) this.controls.lock();
+              });
+            }
             tbody.appendChild(tr);
           }
         }
       };
+
+      const openRadarBtn = document.getElementById('admin-open-radar-btn');
+      if (openRadarBtn) {
+        openRadarBtn.addEventListener('click', () => {
+          sound.playClick();
+          if (this.tacticalRadar) {
+            this.tacticalRadar.toggle(true);
+            this.tacticalRadar.toggleMinimize(false);
+          }
+          this.pauseMenu.classList.add('hidden');
+          if (!this.controls.isMobile) this.controls.lock();
+        });
+      }
+
+      const btnAdminMissile = document.getElementById('btn-admin-missile');
+      if (btnAdminMissile) {
+        btnAdminMissile.addEventListener('click', () => {
+          sound.playClick();
+          if (this.tacticalRadar) {
+            this.tacticalRadar.toggle();
+          }
+        });
+      }
 
       const adminResetBtn = document.getElementById('admin-reset-server-btn');
       if (adminResetBtn) {
@@ -766,11 +811,20 @@ export class UIManager {
       } else if (e.code === 'KeyV') {
         sound.playClick();
         this.cycleSpeed();
+      } else if (e.code === 'KeyR' && this.multiplayer && this.multiplayer.isAdmin) {
+        sound.playClick();
+        if (this.tacticalRadar) {
+          this.tacticalRadar.toggle();
+        }
       } else if (e.code === 'Escape' && this.isMapOpen) {
         sound.playClick();
         this.toggleMap(false);
       }
     });
+  }
+
+  setTacticalRadar(radar) {
+    this.tacticalRadar = radar;
   }
 
   teleportToLandmark(landmark) {

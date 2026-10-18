@@ -253,7 +253,13 @@ export class MultiplayerClient {
       case 'player_left':
         this.removeRemotePlayer(data.id);
         if (data && data.id) {
-          this.playerDirectory.delete(data.id);
+          if (data.lastPos && this.playerDirectory.has(data.id)) {
+            const existing = this.playerDirectory.get(data.id);
+            existing.pos = [...data.lastPos];
+            existing.isDisconnected = true;
+          } else {
+            this.playerDirectory.delete(data.id);
+          }
         }
         if (this.onPlayerCountChange) {
           this.onPlayerCountChange(this.remoteAvatars.size + 1);
@@ -262,7 +268,7 @@ export class MultiplayerClient {
           this.onAdminState({
             isAdmin: true,
             onlineCount: this.remoteAvatars.size + 1,
-            players: Array.from(this.playerDirectory.values())
+            players: Array.from(this.playerDirectory.values()).filter(p => !p.isDisconnected)
           });
         }
         if (this.onNotification) {
@@ -476,6 +482,21 @@ export class MultiplayerClient {
           if (this.onTntExplode) {
             this.onTntExplode(data);
           }
+        }
+        break;
+
+      case 'missile_spawn':
+        if (data && this.missileManager && typeof this.missileManager.spawnMissile === 'function') {
+          this.missileManager.spawnMissile(data);
+        }
+        if (this.onNotification && data) {
+          this.onNotification(`🚀 Alerta: Misil guiado lanzado hacia ${data.targetName || 'un objetivo'}.`);
+        }
+        break;
+
+      case 'missile_impact':
+        if (data && this.onMissileImpact) {
+          this.onMissileImpact(data);
         }
         break;
 
@@ -786,6 +807,19 @@ export class MultiplayerClient {
 
   requestAdminResetServer() {
     return this.sendAdminResetServer();
+  }
+
+  sendAdminLaunchMissile(targetPlayerId, origin = null, yaw = null) {
+    if (!this.isAdmin) return;
+    this.send('admin_launch_missile', {
+      targetPlayerId,
+      origin,
+      yaw
+    });
+  }
+
+  sendMissileDetonate(data) {
+    this.send('missile_detonate', data);
   }
 
   update(dt) {

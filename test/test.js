@@ -4481,6 +4481,105 @@ it('Weapons HUD & Mobile Action Controls: active by default, TNT placement puts 
 });
 
 // =============================================================================
+// SECTION 14: GUIDED HOMING MISSILE (ADMIN) & TACTICAL HOLOGRAPHIC RADAR
+// =============================================================================
+console.log('\n[SECTION 14: GUIDED HOMING MISSILE (ADMIN) & TACTICAL HOLOGRAPHIC RADAR]');
+
+it('Admin Guided Missile: server enforces strict admin authentication for missile launch', () => {
+  const rm = new RoomManager();
+  const room = rm.getOrCreateRoom('main');
+  const normalSent = [];
+  const normalWs = { readyState: 1, send: (m) => normalSent.push(JSON.parse(m)), on: () => {} };
+  const normalMeta = { id: 'p_norm', roomId: 'main', isAdmin: false, msgCount: 0, lastMsgTime: Date.now() };
+  rm.socketMeta.set(normalWs, normalMeta);
+  room.gameState.addPlayer('p_norm', 'NormalPlayer');
+  room.gameState.addPlayer('target_1', 'TargetPlayer');
+
+  // Try to launch without admin rights
+  rm.handleAdminLaunchMissile(normalWs, normalMeta, { targetPlayerId: 'target_1' });
+  const errorMsg = normalSent.find(m => m.type === MSG.ERROR);
+  assert.ok(errorMsg, 'Unauthorized launch must send error');
+  assert.ok(errorMsg.data.message.includes('Administrador'), 'Error message must mention Administrador');
+
+  // Launch with admin rights
+  const adminSent = [];
+  const adminWs = { readyState: 1, send: (m) => adminSent.push(JSON.parse(m)), on: () => {} };
+  const adminMeta = { id: 'admin_1', roomId: 'main', isAdmin: true, msgCount: 0, lastMsgTime: Date.now() };
+  rm.socketMeta.set(adminWs, adminMeta);
+  const adminPlayer = room.gameState.addPlayer('admin_1', 'AdminUser');
+  adminPlayer.isAdmin = true;
+  room.clients.set(adminWs, 'admin_1');
+
+  rm.handleAdminLaunchMissile(adminWs, adminMeta, { targetPlayerId: 'target_1' });
+  const spawnPacket = adminSent.find(m => m.type === MSG.MISSILE_SPAWN);
+  assert.ok(spawnPacket, 'Authorized admin launch must broadcast missile_spawn');
+  assert.strictEqual(spawnPacket.data.targetPlayerId, 'target_1');
+  assert.strictEqual(spawnPacket.data.power, 4, 'Missile power must be 4X TNT');
+  rm.destroy();
+});
+
+it('Admin Guided Missile: tracks disconnected target to last known position and executes 4X TNT detonation', () => {
+  const rm = new RoomManager();
+  const room = rm.getOrCreateRoom('main');
+  const targetWs = { readyState: 1, send: () => {}, on: () => {} };
+  const targetMeta = { id: 'target_dis', roomId: 'main', isAdmin: false, msgCount: 0, lastMsgTime: Date.now() };
+  rm.socketMeta.set(targetWs, targetMeta);
+  const tPlayer = room.gameState.addPlayer('target_dis', 'MovingTarget');
+  tPlayer.pos = [250, 25, 250]; // In Japan
+  room.clients.set(targetWs, 'target_dis');
+
+  // Player disconnects -> position is cached
+  rm.handleDisconnect(targetWs);
+  assert.ok(rm.lastKnownPlayerPositions.has('target_dis'), 'Disconnected player position must be cached');
+  assert.deepStrictEqual(rm.lastKnownPlayerPositions.get('target_dis'), [250, 25, 250]);
+
+  // Admin launches at disconnected player -> uses cached coordinates
+  const adminSent = [];
+  const adminWs = { readyState: 1, send: (m) => adminSent.push(JSON.parse(m)), on: () => {} };
+  const adminMeta = { id: 'admin_dis', roomId: 'main', isAdmin: true, msgCount: 0, lastMsgTime: Date.now() };
+  rm.socketMeta.set(adminWs, adminMeta);
+  const adminPlayer = room.gameState.addPlayer('admin_dis', 'AdminUser');
+  adminPlayer.isAdmin = true;
+  room.clients.set(adminWs, 'admin_dis');
+
+  rm.handleAdminLaunchMissile(adminWs, adminMeta, { targetPlayerId: 'target_dis' });
+  const spawnPacket = adminSent.find(m => m.type === MSG.MISSILE_SPAWN);
+  assert.ok(spawnPacket, 'Launch at disconnected player must succeed using cached position');
+  assert.deepStrictEqual(spawnPacket.data.targetPos, [250, 25, 250]);
+
+  // Test detonation handler
+  rm.handleMissileDetonate(adminWs, adminMeta, {
+    missileId: spawnPacket.data.missileId,
+    x: 250,
+    y: 25,
+    z: 250
+  });
+  const explodePacket = adminSent.find(m => m.type === MSG.TNT_EXPLODE);
+  assert.ok(explodePacket, 'Missile detonate must broadcast tnt_explode');
+  assert.strictEqual(explodePacket.data.radius, 9, 'Detonation radius must be 9 (4X TNT)');
+  rm.destroy();
+});
+
+it('Guided Missile 3D Kinematics and Multi-Target Radar Management Modules', () => {
+  const missileJs = fs.readFileSync(path.resolve(__dirname, '../public/src/missile.js'), 'utf8');
+  assert.ok(missileJs.includes('class GuidedMissile'), 'missile.js must export GuidedMissile');
+  assert.ok(missileJs.includes('class MissileManager'), 'missile.js must export MissileManager');
+  assert.ok(missileJs.includes('maxSpeed = 82'), 'missile.js must support cruise acceleration up to 82 m/s');
+  assert.ok(missileJs.includes('maxTurnRate = 2.4'), 'missile.js must apply realistic turn rate limit');
+  assert.ok(missileJs.includes('targetDisconnected'), 'missile.js must support targetDisconnected fallback');
+
+  const radarJs = fs.readFileSync(path.resolve(__dirname, '../public/src/radar.js'), 'utf8');
+  assert.ok(radarJs.includes('class TacticalRadar'), 'radar.js must export TacticalRadar');
+  assert.ok(radarJs.includes('tactical-radar-panel'), 'radar.js must create #tactical-radar-panel');
+  assert.ok(radarJs.includes('radar-floating-pill'), 'radar.js must support floating minimized pill');
+  assert.ok(radarJs.includes('toggleMinimize'), 'radar.js must support minimize/expand');
+
+  const html = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+  assert.ok(html.includes('id="btn-admin-missile"'), 'index.html must define #btn-admin-missile in weapons HUD');
+  assert.ok(html.includes('id="admin-open-radar-btn"'), 'index.html must define #admin-open-radar-btn in admin panel');
+});
+
+// =============================================================================
 // SUITE EXECUTION SUMMARY
 // =============================================================================
 console.log('\n=============================================================================');

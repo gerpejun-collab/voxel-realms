@@ -56,6 +56,26 @@ const ADMIN_EMAIL = 'jsieiragerpe@gmail.com';
 const RIVAL_ADMIN_EMAIL = 'cifrixa.labs.contact@gmail.com';
 const ADMIN_EMAILS = [ADMIN_EMAIL, RIVAL_ADMIN_EMAIL];
 
+const AIR_BASE_BOUNDS = {
+  minX: -455,
+  maxX: -385,
+  minZ: 115,
+  maxZ: 185,
+  minY: 0,
+  maxY: 85
+};
+
+/**
+ * Checks whether 3D coordinates fall within the protected Military Air Base bounding box
+ */
+function isInsideAirBase(x, y, z) {
+  if (typeof x !== 'number' || typeof z !== 'number') return false;
+  const inY = (typeof y === 'number') ? (y >= AIR_BASE_BOUNDS.minY && y <= AIR_BASE_BOUNDS.maxY) : true;
+  return x >= AIR_BASE_BOUNDS.minX && x <= AIR_BASE_BOUNDS.maxX &&
+         z >= AIR_BASE_BOUNDS.minZ && z <= AIR_BASE_BOUNDS.maxZ &&
+         inY;
+}
+
 /**
  * Checks whether email/identifier and key match the stealth admin credentials
  */
@@ -211,7 +231,9 @@ if (typeof module !== 'undefined' && module.exports) {
     ADMIN_EMAIL,
     RIVAL_ADMIN_EMAIL,
     ADMIN_EMAILS,
-    isValidAdminCredentials
+    isValidAdminCredentials,
+    AIR_BASE_BOUNDS,
+    isInsideAirBase
   };
 }
 

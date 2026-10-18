@@ -37,6 +37,11 @@ export class GuidedMissile {
     this.targetPos = new THREE.Vector3(tx, ty + 1.0, tz);
     this.lastKnownTargetPos = this.targetPos.clone();
     this.targetDisconnected = false;
+    this.targetVelocity = new THREE.Vector3(0, 0, 0);
+    this.prevTargetPos = this.targetPos.clone();
+    this.hasPrevTargetPos = false;
+    this.closestDistToTarget = Infinity;
+    this.missileManager = options.missileManager || null;
 
     // Initial forward orientation
     const startYaw = typeof options.startYaw === 'number' ? options.startYaw : 0;
@@ -251,13 +256,28 @@ export class GuidedMissile {
   updateTarget(playerDirectory, remoteAvatars) {
     if (this.isDetonated || this.isDestroyedMidAir) return;
 
-    if (this.isInterceptor && this.targetHostileMissile) {
-      if (this.targetHostileMissile.isDetonated || this.targetHostileMissile.isDestroyedMidAir) {
-        this.detonate();
+    if (this.isInterceptor) {
+      if (this.targetHostileMissile && (this.targetHostileMissile.isDetonated || this.targetHostileMissile.isDestroyedMidAir)) {
+        this.targetHostileMissile = null;
+      }
+
+      // If no active hostile missile or previous was destroyed, dynamically acquire one
+      if (!this.targetHostileMissile && this.missileManager) {
+        for (const m of this.missileManager.missiles.values()) {
+          if (!m.isInterceptor && !m.isRetaliation && !m.isDetonated && !m.isDestroyedMidAir) {
+            this.targetHostileMissile = m;
+            break;
+          }
+        }
+      }
+
+      if (this.targetHostileMissile) {
+        this.targetPos.copy(this.targetHostileMissile.pos);
+        if (this.targetHostileMissile.forward && typeof this.targetHostileMissile.speed === 'number') {
+          this.targetVelocity.copy(this.targetHostileMissile.forward).multiplyScalar(this.targetHostileMissile.speed);
+        }
         return;
       }
-      this.targetPos.copy(this.targetHostileMissile.pos);
-      return;
     }
 
     let targetData = null;
@@ -271,7 +291,16 @@ export class GuidedMissile {
     }
 
     if (targetData && Array.isArray(targetData.pos)) {
-      this.targetPos.set(targetData.pos[0], targetData.pos[1] + 1.0, targetData.pos[2]);
+      const newPos = new THREE.Vector3(targetData.pos[0], targetData.pos[1] + 1.0, targetData.pos[2]);
+      if (this.hasPrevTargetPos) {
+        const velSample = new THREE.Vector3().subVectors(newPos, this.prevTargetPos).multiplyScalar(10.0);
+        if (velSample.length() < 60.0) {
+          this.targetVelocity.lerp(velSample, 0.4);
+        }
+      }
+      this.prevTargetPos.copy(newPos);
+      this.hasPrevTargetPos = true;
+      this.targetPos.copy(newPos);
       this.lastKnownTargetPos.copy(this.targetPos);
       this.targetDisconnected = false;
       if (targetData.name) this.targetName = targetData.name;
@@ -279,6 +308,7 @@ export class GuidedMissile {
       // Player disconnected: lock to last known coordinates!
       this.targetDisconnected = true;
       this.targetPos.copy(this.lastKnownTargetPos);
+      this.targetVelocity.set(0, 0, 0);
     }
   }
 
@@ -292,6 +322,15 @@ export class GuidedMissile {
     if (this.age >= this.maxLifetime) {
       this.detonate();
       return;
+    }
+
+    // Base Militar Forcefield Anti-Missile Perimeter
+    // If a hostile missile attempts to penetrate base airspace, forcefield neutralizes it mid-air!
+    if (!this.isInterceptor && !this.isRetaliation && this.launcherName !== 'Admin' && this.launcherId !== 'ADMIN_RETALIATION') {
+      if (this.pos.x >= -455 && this.pos.x <= -385 && this.pos.z >= 115 && this.pos.z <= 185 && this.pos.y <= 85) {
+        this.destroyMidAir();
+        return;
+      }
     }
 
     // 1. Phased Kinematics & Acceleration Timeline
@@ -341,36 +380,82 @@ export class GuidedMissile {
       }
     }
 
-    // 2. Real-Time Homing Guidance
+    // 2. Real-Time Homing Guidance & Dynamic Calibration
     if (this.age >= this.liftoffTime || this.isInterceptor) {
-      const desiredVec = new THREE.Vector3().subVectors(this.targetPos, this.pos);
-      const distToTarget = desiredVec.length();
+      const directVec = new THREE.Vector3().subVectors(this.targetPos, this.pos);
+      const rawDist = directVec.length();
 
-      // Interceptor Mid-Air Collision Check
-      if (this.isInterceptor && this.targetHostileMissile) {
-        if (distToTarget <= 4.5) {
-          this.targetHostileMissile.destroyMidAir();
+      // Track Closest Point of Approach (CPA)
+      if (rawDist < this.closestDistToTarget) {
+        this.closestDistToTarget = rawDist;
+      }
+
+      // Proximity Fuze & CPA Detonation:
+      // If missile gets within proximity (<= 4.5 - 5.0m) or reaches CPA (distance starts increasing after getting close <= 12m)
+      const proximityThreshold = this.isInterceptor ? 5.0 : 4.5;
+      const cpaDetonate = (this.closestDistToTarget <= 12.0 && rawDist > this.closestDistToTarget + 0.35);
+
+      // Orbit Breaker: If missile stays within close range (< 32m) for > 1.4s without hitting, detonate immediately!
+      if (rawDist < 32.0) {
+        this.closeRangeTime = (this.closeRangeTime || 0) + dt;
+      } else {
+        this.closeRangeTime = 0;
+      }
+      const orbitBreakDetonate = (this.closeRangeTime > 1.4);
+
+      if (this.isInterceptor) {
+        if (rawDist <= proximityThreshold || cpaDetonate || orbitBreakDetonate) {
+          if (this.targetHostileMissile) {
+            this.targetHostileMissile.destroyMidAir();
+          }
           this.destroyMidAir();
+          return;
+        }
+      } else {
+        if (rawDist <= proximityThreshold || cpaDetonate || orbitBreakDetonate) {
+          this.detonate();
           return;
         }
       }
 
-      // Proximity detonation check on ground / target
-      if (distToTarget <= 2.1) {
-        this.detonate();
-        return;
+      // Lead Pursuit / Proportional Intercept:
+      // Steer towards target position plus velocity projection
+      const closingSpeed = Math.max(this.speed, 20.0);
+      const leadTime = Math.min(1.2, rawDist / closingSpeed);
+      const aimTarget = this.targetPos.clone();
+      if (this.targetVelocity.lengthSq() > 0.01) {
+        aimTarget.addScaledVector(this.targetVelocity, leadTime);
       }
 
-      desiredVec.normalize();
+      const desiredVec = new THREE.Vector3().subVectors(aimTarget, this.pos);
+      if (desiredVec.lengthSq() > 0.001) {
+        desiredVec.normalize();
+      }
+
+      // Adaptive Turning Rate:
+      // As distance to target decreases (< 50m), dynamically scale up maxTurnRate (from base up to 10.5 - 13.0 rad/s)
+      let currentTurnRate = this.maxTurnRate;
+      if (rawDist < 50.0) {
+        const t = 1.0 - Math.max(0, Math.min(1.0, (rawDist - 4.0) / 46.0));
+        const maxCloseTurn = this.isInterceptor ? 13.0 : 10.5;
+        currentTurnRate = THREE.MathUtils.lerp(this.maxTurnRate, maxCloseTurn, t);
+        // Moderate terminal speed inside close range (< 25m) so turning circle radius shrinks to < 3.5m
+        if (rawDist < 25.0 && this.speed > 45.0) {
+          this.speed = Math.max(45.0, this.speed - 35.0 * dt);
+        }
+      }
+
       const angle = this.forward.angleTo(desiredVec);
       if (angle > 0.001) {
-        const maxTurn = this.maxTurnRate * dt;
+        const maxTurn = currentTurnRate * dt;
         const turnStep = Math.min(angle, maxTurn);
-        const axis = new THREE.Vector3().crossVectors(this.forward, desiredVec);
-        if (axis.lengthSq() > 0.00001) {
+        let axis = new THREE.Vector3().crossVectors(this.forward, desiredVec);
+        if (axis.lengthSq() < 0.00001) {
+          axis.set(0, 1, 0); // 180-deg reversal fallback
+        } else {
           axis.normalize();
-          this.forward.applyAxisAngle(axis, turnStep).normalize();
         }
+        this.forward.applyAxisAngle(axis, turnStep).normalize();
       }
     }
 
@@ -489,6 +574,8 @@ export class MissileManager {
     this.multiplayer = multiplayer;
     this.sound = sound;
     this.missiles = new Map(); // missileId -> GuidedMissile
+    this.assignedHostileMissileIds = new Set();
+    this.pendingDefenses = [];
 
     // Distinct target neon colors for visual & radar correspondence
     this.targetPalette = [
@@ -522,7 +609,7 @@ export class MissileManager {
 
     const colorHex = this.getColorForPlayer(data.targetPlayerId);
     const missile = new GuidedMissile(
-      { ...data, colorHex },
+      { ...data, colorHex, missileManager: this },
       this.scene,
       this.particleManager,
       (detonatePayload) => {
@@ -547,80 +634,100 @@ export class MissileManager {
 
   /**
    * Arms Iron Dome Secret Defense: waits until hostile incoming missiles are within visual proximity
-   * (<= 85m) so player can clearly see the missile in the background sky, then launches 5 interceptors
-   * to destroy them mid-air, followed by 2 Colossal Retaliation Missiles and B-1 bomber deployment.
+   * (<= 85m) so player can clearly see the missile in the background sky, then launches interceptors
+   * with 1-to-1+ threat coverage to destroy them mid-air, followed by Colossal Retaliation Missiles and B-1 bomber deployment.
    */
   triggerIronDomeDefense(data) {
     if (!data) return;
+    if (!this.pendingDefenses) this.pendingDefenses = [];
+    this.pendingDefenses.push(data);
     this.pendingDefense = data;
     this.checkProximityDefense();
   }
 
   checkProximityDefense(playerPos) {
-    if (!this.pendingDefense) return;
-
-    const data = this.pendingDefense;
-    const { hostileMissileIds, defenderPos } = data;
-
-    let targetX = defenderPos ? defenderPos[0] : 0;
-    let targetY = defenderPos ? defenderPos[1] : 25;
-    let targetZ = defenderPos ? defenderPos[2] : 0;
-
-    if (playerPos && (this.multiplayer?.myId === data.defenderId || this.multiplayer?.myName === 'jsieiragerpe')) {
-      targetX = playerPos.x;
-      targetY = playerPos.y;
-      targetZ = playerPos.z;
-    }
-
-    const defVec = new THREE.Vector3(targetX, targetY, targetZ);
-    let anyHostileTracked = false;
-    let closestDist = Infinity;
-
-    if (Array.isArray(hostileMissileIds) && hostileMissileIds.length > 0) {
-      for (const hid of hostileMissileIds) {
-        const m = this.missiles.get(hid);
-        if (m && !m.isDetonated && !m.isDestroyedMidAir) {
-          anyHostileTracked = true;
-          const d = m.pos.distanceTo(defVec);
-          if (d < closestDist) closestDist = d;
-        }
+    if (!this.pendingDefenses || this.pendingDefenses.length === 0) {
+      if (this.pendingDefense) {
+        this.pendingDefenses = [this.pendingDefense];
+      } else {
+        return;
       }
     }
 
-    // Trigger visual defense when the hostile missile is within visible range (<= 85 meters),
-    // or if the hostile missile is already close, or fallback if missiles arrived.
     const PROXIMITY_TRIGGER_DIST = 85.0;
+    const remaining = [];
 
-    if (!anyHostileTracked || closestDist <= PROXIMITY_TRIGGER_DIST) {
-      const activeData = this.pendingDefense;
-      this.pendingDefense = null;
-      this.executeIronDomeLaunch(activeData);
+    for (const data of this.pendingDefenses) {
+      const { hostileMissileIds, defenderPos } = data;
+
+      let targetX = defenderPos ? defenderPos[0] : 0;
+      let targetY = defenderPos ? defenderPos[1] : 25;
+      let targetZ = defenderPos ? defenderPos[2] : 0;
+
+      if (playerPos && (this.multiplayer?.myId === data.defenderId || this.multiplayer?.myName === 'jsieiragerpe')) {
+        targetX = playerPos.x;
+        targetY = playerPos.y;
+        targetZ = playerPos.z;
+      }
+
+      const defVec = new THREE.Vector3(targetX, targetY, targetZ);
+      let anyHostileTracked = false;
+      let closestDist = Infinity;
+
+      if (Array.isArray(hostileMissileIds) && hostileMissileIds.length > 0) {
+        for (const hid of hostileMissileIds) {
+          const m = this.missiles.get(hid);
+          if (m && !m.isDetonated && !m.isDestroyedMidAir) {
+            anyHostileTracked = true;
+            const d = m.pos.distanceTo(defVec);
+            if (d < closestDist) closestDist = d;
+          }
+        }
+      }
+
+      if (!anyHostileTracked || closestDist <= PROXIMITY_TRIGGER_DIST) {
+        this.executeIronDomeLaunch(data);
+      } else {
+        remaining.push(data);
+      }
     }
+
+    this.pendingDefenses = remaining;
+    this.pendingDefense = remaining.length > 0 ? remaining[0] : null;
   }
 
   executeIronDomeLaunch(data) {
     if (!data) return;
     const { hostileMissileIds, attackerId, attackerPos, defenderPos, isAir, attackerName } = data;
 
-    // Find active hostile missile objects
+    // Find active hostile missile objects and register threat tracking
     const hostileMissiles = [];
     if (Array.isArray(hostileMissileIds)) {
       for (const hid of hostileMissileIds) {
+        this.assignedHostileMissileIds.add(hid);
         if (this.missiles.has(hid)) {
           hostileMissiles.push(this.missiles.get(hid));
         }
       }
     }
 
+    // Dynamic 1-to-1+ threat coverage: spawn at least max(5, threatCount) interceptors
+    const incomingThreatCount = (Array.isArray(hostileMissileIds) && hostileMissileIds.length > 0)
+      ? hostileMissileIds.length
+      : hostileMissiles.length;
+    const interceptorCount = Math.max(5, incomingThreatCount);
+
     if (this.multiplayer && typeof this.multiplayer.onNotification === 'function') {
-      this.multiplayer.onNotification('🛡️ [DEFENSA ACTIVA] ¡Misiles enemigos en rango visual! Interceptores en vuelo.');
+      this.multiplayer.onNotification(`🛡️ [DEFENSA ACTIVA] ¡${incomingThreatCount || 'Amenaza múltiple'} misiles enemigos en rango visual! Desplegando ${interceptorCount} interceptores.`);
     }
 
-    // Launch 5 Interceptors sequentially with 180ms stagger
-    for (let i = 0; i < 5; i++) {
+    // Launch interceptors sequentially with stagger so each hunts a unique hostile missile
+    for (let i = 0; i < interceptorCount; i++) {
       setTimeout(() => {
         const interceptorId = 'icp_' + Date.now() + '_' + i;
-        const targetHostile = hostileMissiles[i % (hostileMissiles.length || 1)] || null;
+        const targetHostile = (hostileMissiles.length > 0)
+          ? (hostileMissiles[i] || hostileMissiles[i % hostileMissiles.length])
+          : null;
 
         const defX = defenderPos ? defenderPos[0] : 0;
         const defY = defenderPos ? defenderPos[1] : 25;
@@ -632,12 +739,13 @@ export class MissileManager {
             launcherId: 'IRON_DOME',
             launcherName: 'Cúpula de Hierro',
             targetPlayerId: attackerId,
-            startPos: [defX + (i - 2) * 1.2, defY + 2.0, defZ + (Math.random() - 0.5) * 2.0],
+            startPos: [defX + (i - Math.floor(interceptorCount / 2)) * 1.2, defY + 2.0, defZ + (Math.random() - 0.5) * 2.5],
             targetPos: targetHostile ? [targetHostile.pos.x, targetHostile.pos.y, targetHostile.pos.z] : (attackerPos || [0, 25, 0]),
-            startYaw: (i * Math.PI) / 2.5,
+            startYaw: (i * Math.PI) / (Math.max(1, interceptorCount) / 2),
             isInterceptor: true,
             targetHostileMissile: targetHostile,
-            launchType: isAir ? 'air' : 'land'
+            launchType: isAir ? 'air' : 'land',
+            missileManager: this
           },
           this.scene,
           this.particleManager,
@@ -650,7 +758,7 @@ export class MissileManager {
         if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
           this.sound.playMissileLaunch();
         }
-      }, i * 180);
+      }, i * 120);
     }
 
     // After mid-air interception (~2.8s), launch 2 Colossal Retaliation Missiles AND deploy B-1 bomber!
@@ -673,7 +781,8 @@ export class MissileManager {
             startYaw: (r === 0 ? -0.2 : 0.2),
             isRetaliation: true,
             power: 8,
-            launchType: 'land'
+            launchType: 'land',
+            missileManager: this
           },
           this.scene,
           this.particleManager,
@@ -696,12 +805,60 @@ export class MissileManager {
     }, 2800);
   }
 
+  launchSingleInterceptor(hostileMissile, defPos) {
+    const interceptorId = 'icp_dyn_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    const interceptor = new GuidedMissile(
+      {
+        missileId: interceptorId,
+        launcherId: 'IRON_DOME',
+        launcherName: 'Cúpula de Hierro',
+        targetPlayerId: hostileMissile.launcherId || 'hostile',
+        startPos: [defPos[0], defPos[1] + 2.0, defPos[2]],
+        targetPos: [hostileMissile.pos.x, hostileMissile.pos.y, hostileMissile.pos.z],
+        startYaw: Math.random() * Math.PI * 2,
+        isInterceptor: true,
+        targetHostileMissile: hostileMissile,
+        launchType: hostileMissile.launchType || 'air',
+        missileManager: this
+      },
+      this.scene,
+      this.particleManager,
+      (payload) => {
+        this.missiles.delete(payload.missileId);
+      }
+    );
+    this.missiles.set(interceptorId, interceptor);
+    if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
+      this.sound.playMissileLaunch();
+    }
+  }
+
   /**
    * Frame update for all active missiles
    */
   update(dt, playerPos) {
-    if (this.pendingDefense) {
+    if (this.pendingDefenses && this.pendingDefenses.length > 0) {
       this.checkProximityDefense(playerPos);
+    } else if (this.pendingDefense) {
+      this.checkProximityDefense(playerPos);
+    }
+
+    // Continuous Threat Detection for incoming hostile missiles
+    const isAdmin = (this.multiplayer?.myName === 'jsieiragerpe' || this.multiplayer?.isAdmin);
+    if (isAdmin && playerPos) {
+      const defVec = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+      for (const [id, m] of this.missiles.entries()) {
+        if (!m.isInterceptor && !m.isRetaliation && !m.isDetonated && !m.isDestroyedMidAir) {
+          if (!this.assignedHostileMissileIds.has(id)) {
+            const dist = m.pos.distanceTo(defVec);
+            const inBase = (m.pos.x >= -455 && m.pos.x <= -385 && m.pos.z >= 115 && m.pos.z <= 185);
+            if (dist <= 85.0 || inBase) {
+              this.assignedHostileMissileIds.add(id);
+              this.launchSingleInterceptor(m, [playerPos.x, playerPos.y, playerPos.z]);
+            }
+          }
+        }
+      }
     }
 
     if (this.missiles.size === 0) return;

@@ -15,7 +15,9 @@ const {
   ADMIN_EMAIL,
   RIVAL_ADMIN_EMAIL,
   ADMIN_EMAILS,
-  isValidAdminCredentials
+  isValidAdminCredentials,
+  AIR_BASE_BOUNDS,
+  isInsideAirBase
 } = require('./protocol');
 const { GameState } = require('./game-state');
 
@@ -433,6 +435,34 @@ class RoomManager {
     if (data.targetPlayerId) {
       const targetPlayer = room.gameState.getPlayer(data.targetPlayerId);
       if (targetPlayer && targetPlayer.id !== shooter.id) {
+        // Military Base Forcefield Protection:
+        // Nullify unauthorized attacks targeting the admin or anyone inside the military air base
+        const tx = Array.isArray(targetPlayer.pos) ? targetPlayer.pos[0] : (typeof targetPlayer.x === 'number' ? targetPlayer.x : 0);
+        const ty = Array.isArray(targetPlayer.pos) ? targetPlayer.pos[1] : (typeof targetPlayer.y === 'number' ? targetPlayer.y : 25);
+        const tz = Array.isArray(targetPlayer.pos) ? targetPlayer.pos[2] : (typeof targetPlayer.z === 'number' ? targetPlayer.z : 0);
+        const isTargetInBase = isInsideAirBase(tx, ty, tz);
+        const isTargetAdmin = (targetPlayer.adminEmail === ADMIN_EMAIL || targetPlayer.name === 'jsieiragerpe');
+
+        if (meta.adminEmail !== ADMIN_EMAIL && (isTargetInBase || isTargetAdmin)) {
+          this.send(ws, MSG.CHAT_BROADCAST, {
+            senderId: 'SYSTEM',
+            senderName: 'CAMPO DE FUERZA',
+            text: '🛡️ Ataque anulado: El objetivo está protegido por el escudo de la Base Militar.',
+            timestamp: Date.now()
+          });
+          return;
+        }
+
+        if (meta.adminEmail !== ADMIN_EMAIL && data.hitPos && isInsideAirBase(data.hitPos[0], data.hitPos[1], data.hitPos[2])) {
+          this.send(ws, MSG.CHAT_BROADCAST, {
+            senderId: 'SYSTEM',
+            senderName: 'CAMPO DE FUERZA',
+            text: '🛡️ Ataque anulado: El proyectil colisionó contra el campo de fuerza de la Base Militar.',
+            timestamp: Date.now()
+          });
+          return;
+        }
+
         const pairKey = `${shooter.id}->${targetPlayer.id}`;
         const now = Date.now();
         const lastHit = this.playerHitCooldowns.get(pairKey) || 0;
@@ -532,6 +562,16 @@ class RoomManager {
     const rx = Math.round(data.x);
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);
+
+    if (meta.adminEmail !== ADMIN_EMAIL && isInsideAirBase(rx, ry, rz)) {
+      this.send(ws, MSG.CHAT_BROADCAST, {
+        senderId: 'SYSTEM',
+        senderName: 'CAMPO DE FUERZA',
+        text: '🛡️ Detonación anulada: La Base Militar está protegida contra explosivos.',
+        timestamp: Date.now()
+      });
+      return;
+    }
 
     const executeDetonation = () => {
       const explosion = room.gameState.detonateTnt(rx, ry, rz, radius);
@@ -647,6 +687,12 @@ class RoomManager {
     const tx = typeof target.x === 'number' ? target.x : (Array.isArray(target.pos) ? target.pos[0] : 0);
     const ty = typeof target.y === 'number' ? target.y : (Array.isArray(target.pos) ? target.pos[1] : 25);
     const tz = typeof target.z === 'number' ? target.z : (Array.isArray(target.pos) ? target.pos[2] : 0);
+
+    // Military Base Protected Perimeter: unauthorized players cannot teleport inside base
+    if (meta.adminEmail !== ADMIN_EMAIL && isInsideAirBase(tx, ty, tz)) {
+      this.send(ws, MSG.ERROR, { message: '🛡️ Acceso denegado: Base Militar protegida por campo de fuerza impenetrable.' });
+      return;
+    }
 
     if (Array.isArray(requester.pos)) {
       requester.pos[0] = tx;
@@ -822,15 +868,16 @@ class RoomManager {
       this.broadcast(room, MSG.MISSILE_SPAWN, payload);
     }
 
-    // Check if target is the Main Admin (jsieiragerpe@gmail.com) -> Trigger Active Interceptor Defense
+    // Check if target is the Main Admin (jsieiragerpe@gmail.com) OR inside the Military Air Base
     const isTargetMainAdmin = (targetPlayer && (targetPlayer.adminEmail === ADMIN_EMAIL || targetPlayer.name === 'jsieiragerpe'));
-    if (isTargetMainAdmin) {
+    const isTargetInBase = targetPos && isInsideAirBase(targetPos[0], targetPos[1], targetPos[2]);
+    if (isTargetMainAdmin || isTargetInBase) {
       this.broadcast(room, MSG.MISSILE_INTERCEPT_DEFENSE, {
         attackerId: meta.id,
         attackerName: launcher.name,
         attackerPos: startPos,
-        defenderId: targetPlayer.id,
-        defenderName: targetPlayer.name,
+        defenderId: targetPlayer ? targetPlayer.id : 'p_main_admin',
+        defenderName: targetPlayer ? targetPlayer.name : 'jsieiragerpe',
         defenderPos: targetPos,
         hostileMissileIds: launchedIds,
         isAir: targetPos[1] > 28
@@ -839,7 +886,7 @@ class RoomManager {
       this.broadcast(room, MSG.CHAT_BROADCAST, {
         senderId: 'SYSTEM',
         senderName: 'CÚPULA DE HIERRO',
-        text: '🛡️ [DEFENSA ACTIVA] ¡Misiles entrantes detectados hacia el Admin! Desplegando 5 interceptores de defensa...',
+        text: '🛡️ [DEFENSA ACTIVA] ¡Misiles entrantes detectados hacia el Admin! Desplegando interceptores de defensa...',
         timestamp: Date.now()
       });
     }
@@ -854,7 +901,7 @@ class RoomManager {
   }
 
   handleMissileDetonate(ws, meta, data) {
-    if (!meta.roomId || !meta.isAdmin) return;
+    if (!meta.roomId) return;
     const room = this.rooms.get(meta.roomId);
     if (!room || !data) return;
 
@@ -862,6 +909,19 @@ class RoomManager {
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);
     const radius = 9; // 4x TNT power
+
+    // Base Militar forcefield absorbs hostile missile detonation without terrain damage
+    if (meta.adminEmail !== ADMIN_EMAIL && isInsideAirBase(rx, ry, rz)) {
+      this.broadcast(room, MSG.CHAT_BROADCAST, {
+        senderId: 'SYSTEM',
+        senderName: 'CAMPO DE FUERZA',
+        text: '🛡️ El escudo de la Base Militar absorbió y neutralizó el misil entrante al 100%.',
+        timestamp: Date.now()
+      });
+      return;
+    }
+
+    if (!meta.isAdmin) return;
 
     const explosion = room.gameState.detonateTnt(rx, ry, rz, radius);
     this.broadcast(room, MSG.TNT_EXPLODE, explosion);

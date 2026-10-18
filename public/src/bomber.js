@@ -35,6 +35,11 @@ export class StrategicBomber {
     this.bombDropTimer = 0;
     this.maxBombs = 10;
     this.wingSweep = 0.25; // Variable wing sweep angle
+    this.missionQueue = [];
+    this.bankAngle = 0;
+    this.targetBank = 0;
+    this.lastTargetId = null;
+    this.lastLaunchTimestamp = 0;
 
     // Build 3D mesh
     this.mesh = this.buildMesh();
@@ -52,9 +57,15 @@ export class StrategicBomber {
 
   /**
    * Procedural 3D B-1 Strategic Bomber Model (~22m length, ~48m wingspan)
+   * The modelGroup is rotated +PI/2 around Y so the aerodynamic nose points along +Z,
+   * aligning directly with Three.js lookAt forward convention and eliminating sideways taxiing.
    */
   buildMesh() {
     const group = new THREE.Group();
+    const modelGroup = new THREE.Group();
+    modelGroup.rotation.y = Math.PI / 2;
+    this.modelGroup = modelGroup;
+    group.add(modelGroup);
 
     // Stealth Matte Dark Charcoal Finish
     const skinMat = new THREE.MeshStandardMaterial({
@@ -79,20 +90,20 @@ export class StrategicBomber {
     const fuseGeom = new THREE.CylinderGeometry(0.85, 1.6, 22, 12);
     fuseGeom.rotateZ(Math.PI / 2);
     const fuse = new THREE.Mesh(fuseGeom, skinMat);
-    group.add(fuse);
+    modelGroup.add(fuse);
 
     // Aerodynamic Nose Radome
     const noseGeom = new THREE.ConeGeometry(0.85, 4.5, 12);
     noseGeom.rotateZ(-Math.PI / 2);
     const nose = new THREE.Mesh(noseGeom, darkMat);
     nose.position.set(-13.25, 0, 0);
-    group.add(nose);
+    modelGroup.add(nose);
 
     // Cockpit Glazing
     const canopyGeom = new THREE.BoxGeometry(3.6, 0.9, 1.4);
     const canopy = new THREE.Mesh(canopyGeom, canopyMat);
     canopy.position.set(-8.5, 1.05, 0);
-    group.add(canopy);
+    modelGroup.add(canopy);
 
     // 2. Variable-Sweep Wings (~48m total wingspan)
     this.leftWingPivot = new THREE.Group();
@@ -101,7 +112,7 @@ export class StrategicBomber {
     const lWing = new THREE.Mesh(lWingGeom, skinMat);
     lWing.position.set(-1.5, 0, 11);
     this.leftWingPivot.add(lWing);
-    group.add(this.leftWingPivot);
+    modelGroup.add(this.leftWingPivot);
 
     this.rightWingPivot = new THREE.Group();
     this.rightWingPivot.position.set(-1.0, 0.15, -1.8);
@@ -109,7 +120,7 @@ export class StrategicBomber {
     const rWing = new THREE.Mesh(rWingGeom, skinMat);
     rWing.position.set(-1.5, 0, -11);
     this.rightWingPivot.add(rWing);
-    group.add(this.rightWingPivot);
+    modelGroup.add(this.rightWingPivot);
 
     // 3. Four Turbofan Jet Engines in Twin Under-Wing Nacelles
     const nacelleMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85 });
@@ -124,7 +135,7 @@ export class StrategicBomber {
       const nacelleGeom = new THREE.BoxGeometry(6.2, 1.4, 2.8);
       const nacelle = new THREE.Mesh(nacelleGeom, nacelleMat);
       nacelle.position.set(1.5, -0.65, no.z);
-      group.add(nacelle);
+      modelGroup.add(nacelle);
 
       // Twin Exhaust Nozzles per nacelle
       for (const dz of [-0.65, 0.65]) {
@@ -132,7 +143,7 @@ export class StrategicBomber {
         exhGeom.rotateZ(Math.PI / 2);
         const exh = new THREE.Mesh(exhGeom, exhaustMat);
         exh.position.set(4.8, -0.65, no.z + dz);
-        group.add(exh);
+        modelGroup.add(exh);
         this.exhaustMeshes.push(exh);
       }
     }
@@ -141,18 +152,18 @@ export class StrategicBomber {
     const vTailGeom = new THREE.BoxGeometry(3.8, 4.6, 0.35);
     const vTail = new THREE.Mesh(vTailGeom, darkMat);
     vTail.position.set(9.0, 2.5, 0);
-    group.add(vTail);
+    modelGroup.add(vTail);
 
     const hTailGeom = new THREE.BoxGeometry(3.5, 0.25, 9.8);
     const hTail = new THREE.Mesh(hTailGeom, skinMat);
     hTail.position.set(9.5, 0.6, 0);
-    group.add(hTail);
+    modelGroup.add(hTail);
 
     // 5. Bomb Bay Doors (under belly)
     const bayGeom = new THREE.BoxGeometry(4.2, 0.15, 1.8);
     this.bombBayDoor = new THREE.Mesh(bayGeom, darkMat);
     this.bombBayDoor.position.set(-1.2, -1.0, 0);
-    group.add(this.bombBayDoor);
+    modelGroup.add(this.bombBayDoor);
 
     return group;
   }
@@ -206,7 +217,41 @@ export class StrategicBomber {
    * Dispatches the B-1 Bomber on an autonomous strategic strike mission
    */
   launchMission(targetPlayerId, targetPos, targetName = 'Objetivo') {
-    if (this.state !== 'IDLE') return false;
+    const now = Date.now();
+    // Debounce duplicate triggers within 3500ms for the same target to prevent duplicate sorties
+    if (this.lastTargetId === targetPlayerId && this.lastLaunchTimestamp && (now - this.lastLaunchTimestamp < 3500)) {
+      return true;
+    }
+    this.lastTargetId = targetPlayerId;
+    this.lastLaunchTimestamp = now;
+
+    if (this.state !== 'IDLE') {
+      // Dynamic Re-Engagement: If returning to base (RTB), turn around and re-attack ("gira y vuelve")!
+      if (this.state === 'RTB') {
+        this.targetPlayerId = targetPlayerId;
+        this.targetPos = new THREE.Vector3(targetPos[0], targetPos[1] || 25, targetPos[2]);
+        this.targetName = targetName;
+        this.state = 'CRUISE';
+        this.stateTimer = 0;
+        this.bombsDropped = 0;
+        this.bombDropTimer = 0;
+        return true;
+      }
+      // If already airborne on a strike (CRUISE or BOMB_RUN), update target coordinates dynamically
+      if (this.state === 'CRUISE' || this.state === 'BOMB_RUN') {
+        this.targetPlayerId = targetPlayerId;
+        this.targetPos = new THREE.Vector3(targetPos[0], targetPos[1] || 25, targetPos[2]);
+        this.targetName = targetName;
+        return true;
+      }
+      // If busy in hangar or takeoff/landing, queue next mission cleanly without duplicates
+      if (!this.missionQueue) this.missionQueue = [];
+      const alreadyQueued = this.missionQueue.some(m => m.targetPlayerId === targetPlayerId);
+      if (!alreadyQueued) {
+        this.missionQueue.push({ targetPlayerId, targetPos, targetName });
+      }
+      return true;
+    }
 
     this.targetPlayerId = targetPlayerId;
     this.targetPos = new THREE.Vector3(targetPos[0], targetPos[1] || 25, targetPos[2]);
@@ -253,11 +298,12 @@ export class StrategicBomber {
         break;
 
       case 'TAXI':
-        // Roll slowly out of hangar towards runway start
+        // Roll slowly out of hangar doors towards runway start
         this.speed = 8.0;
-        this.forward.set(-1, 0, 0);
+        this.forward.set(-1, 0, 0); // Heading straight West down runway
         this.pos.x -= this.speed * dt;
         this.pos.y = 25.5;
+        this.targetBank = 0;
 
         if (this.pos.x <= this.runwayStart.x) {
           this.state = 'TAKEOFF';
@@ -267,14 +313,15 @@ export class StrategicBomber {
 
       case 'TAKEOFF':
         // Accelerate along runway and ski-jump ramp
-        this.speed = Math.min(38.0, this.speed + 14.0 * dt);
+        this.speed = Math.min(42.0, this.speed + 15.0 * dt);
         this.pos.x -= this.speed * dt;
+        this.targetBank = 0;
 
         // Ramp elevation
         if (this.pos.x <= -440) {
           const t = Math.min(1.0, (-440 - this.pos.x) / 15);
           this.pos.y = 25.5 + t * 4.0;
-          this.forward.y = 0.22;
+          this.forward.set(-1, 0.22, 0).normalize();
         }
 
         // Lift off into the sky
@@ -285,10 +332,10 @@ export class StrategicBomber {
         break;
 
       case 'CRUISE':
-        // Climb to cruise altitude and steer towards target
-        this.speed = 68.0;
+        // Climb smoothly to cruise altitude (64m) and accelerate to supersonic cruise
+        this.speed = Math.min(68.0, this.speed + dt * 20.0);
         if (this.pos.y < this.cruiseAltitude) {
-          this.pos.y += dt * 12.0;
+          this.pos.y = Math.min(this.cruiseAltitude, this.pos.y + dt * 14.0);
         }
 
         const toTarget = new THREE.Vector3().subVectors(this.targetPos, this.pos);
@@ -297,8 +344,26 @@ export class StrategicBomber {
 
         if (distToTarget > 0.1) {
           toTarget.normalize();
-          this.forward.lerp(toTarget, dt * 1.8).normalize();
+          const angle = this.forward.angleTo(toTarget);
+          if (angle > 0.001) {
+            const maxTurn = 1.6 * dt;
+            const turnStep = Math.min(angle, maxTurn);
+            let axis = new THREE.Vector3().crossVectors(this.forward, toTarget);
+            if (axis.lengthSq() < 0.0001) {
+              axis.set(0, 1, 0); // Turnaround fallback for 180-deg reversal
+            } else {
+              axis.normalize();
+            }
+            this.forward.applyAxisAngle(axis, turnStep).normalize();
+            this.targetBank = -Math.sign(axis.y) * Math.min(0.65, angle * 0.9);
+          } else {
+            this.targetBank = 0;
+          }
         }
+
+        // Continuous Flight Kinematics: Integrate forward position across the world
+        this.pos.x += this.forward.x * this.speed * dt;
+        this.pos.z += this.forward.z * this.speed * dt;
 
         // Begin bomb run when within 45m horizontal distance
         if (distToTarget <= 45.0) {
@@ -310,8 +375,13 @@ export class StrategicBomber {
 
       case 'BOMB_RUN':
         // Fly level overhead and discharge 10x 1X TNT carpet bomb
-        this.speed = 60.0;
+        this.speed = 62.0;
+        this.targetBank = 0;
         this.bombDropTimer += dt;
+
+        // Continuous Flight Kinematics: Fly forward steadily during carpet bomb
+        this.pos.x += this.forward.x * this.speed * dt;
+        this.pos.z += this.forward.z * this.speed * dt;
 
         if (this.bombsDropped < this.maxBombs && this.bombDropTimer >= 0.35) {
           this.bombDropTimer = 0;
@@ -319,42 +389,62 @@ export class StrategicBomber {
           this.dropSingleBomb();
         }
 
-        if (this.bombsDropped >= this.maxBombs && this.stateTimer >= 4.5) {
+        if (this.bombsDropped >= this.maxBombs && this.stateTimer >= 4.0) {
           this.state = 'RTB';
           this.stateTimer = 0;
         }
         break;
 
       case 'RTB':
-        // Wide smooth banking turn, navigate back to runway approach at (-470, 45, 150)
-        this.speed = 62.0;
-        const returnWp = new THREE.Vector3(-470, 32, 150);
+        // Wide smooth banking turn, navigate back to runway approach at (-475, 30, 150)
+        this.speed = 60.0;
+        const returnWp = new THREE.Vector3(-475, 30, 150);
         const toBase = new THREE.Vector3().subVectors(returnWp, this.pos);
-        const distToBase = Math.hypot(toBase.x, toBase.z);
-
         toBase.y = 0;
-        if (toBase.lengthSq() > 0.1) {
+        const distToBase = toBase.length();
+
+        if (distToBase > 0.1) {
           toBase.normalize();
-          this.forward.lerp(toBase, dt * 1.6).normalize();
+          const angle = this.forward.angleTo(toBase);
+          if (angle > 0.001) {
+            const maxTurn = 1.4 * dt;
+            const turnStep = Math.min(angle, maxTurn);
+            let axis = new THREE.Vector3().crossVectors(this.forward, toBase);
+            if (axis.lengthSq() < 0.0001) {
+              axis.set(0, 1, 0);
+            } else {
+              axis.normalize();
+            }
+            this.forward.applyAxisAngle(axis, turnStep).normalize();
+            this.targetBank = -Math.sign(axis.y) * Math.min(0.65, angle * 0.9);
+          } else {
+            this.targetBank = 0;
+          }
         }
 
-        // Descend gradually
-        if (this.pos.y > 28.0) {
-          this.pos.y -= dt * 7.5;
+        // Descend gradually towards runway approach height
+        if (this.pos.y > 27.5) {
+          this.pos.y = Math.max(27.5, this.pos.y - dt * 8.0);
         }
 
-        if (distToBase <= 25.0) {
+        // Continuous Flight Kinematics: Fly forward back to airbase
+        this.pos.x += this.forward.x * this.speed * dt;
+        this.pos.z += this.forward.z * this.speed * dt;
+
+        if (distToBase <= 30.0 && this.pos.x <= -460) {
           this.state = 'LANDING';
           this.stateTimer = 0;
-          this.forward.set(1, 0, 0); // Facing East back into hangar
+          this.forward.set(1, 0, 0); // Facing East back down runway towards hangar
+          this.targetBank = 0;
         }
         break;
 
       case 'LANDING':
-        // Descend onto runway and decelerate
+        // Descend onto runway and decelerate smoothly
         this.speed = Math.max(10.0, this.speed - 18.0 * dt);
         this.pos.x += this.speed * dt;
         this.pos.y = Math.max(25.5, this.pos.y - dt * 6.0);
+        this.targetBank = 0;
 
         if (this.pos.x >= this.runwayStart.x) {
           this.state = 'TAXI_IN';
@@ -367,6 +457,7 @@ export class StrategicBomber {
         this.speed = 6.0;
         this.pos.x += this.speed * dt;
         this.pos.y = 25.5;
+        this.targetBank = 0;
 
         if (this.pos.x >= this.hangarPos.x) {
           this.pos.copy(this.hangarPos);
@@ -386,8 +477,32 @@ export class StrategicBomber {
           this.state = 'IDLE';
           this.stateTimer = 0;
           this.forward.set(-1, 0, 0);
+          this.targetBank = 0;
+          this.bankAngle = 0;
+          if (this.missionQueue && this.missionQueue.length > 0) {
+            const nextMission = this.missionQueue.shift();
+            this.launchMission(nextMission.targetPlayerId, nextMission.targetPos, nextMission.targetName);
+          }
         }
         break;
+    }
+
+    // Dynamic Variable-Sweep Wings: 0.15 rad (takeoff/landing) to 0.75 rad (supersonic cruise & bomb run)
+    const targetSweep = (this.state === 'CRUISE' || this.state === 'BOMB_RUN' || this.state === 'RTB') ? 0.75 : 0.15;
+    this.wingSweep = THREE.MathUtils.lerp(this.wingSweep, targetSweep, dt * 2.0);
+    if (this.leftWingPivot) this.leftWingPivot.rotation.y = this.wingSweep;
+    if (this.rightWingPivot) this.rightWingPivot.rotation.y = -this.wingSweep;
+
+    // Animated Bomb Bay Doors
+    if (this.bombBayDoor) {
+      const targetBayY = (this.state === 'BOMB_RUN') ? -1.45 : -1.0;
+      this.bombBayDoor.position.y = THREE.MathUtils.lerp(this.bombBayDoor.position.y, targetBayY, dt * 4.0);
+    }
+
+    // Dynamic Banking Roll: smoothly roll aircraft along longitudinal fuselage axis
+    this.bankAngle = THREE.MathUtils.lerp(this.bankAngle, this.targetBank || 0, dt * 3.5);
+    if (this.modelGroup) {
+      this.modelGroup.rotation.x = this.bankAngle;
     }
 
     // Integrate position & heading

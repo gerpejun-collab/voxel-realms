@@ -288,7 +288,10 @@ export class MultiplayerClient {
             if (p.id !== this.myId) {
               const avatar = this.remoteAvatars.get(p.id);
               if (avatar) {
-                avatar.setTargetState(p.pos, p.rot, p.action);
+                avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled);
+                if (p.weaponsEnabled !== undefined && typeof avatar.setWeaponsEnabled === 'function') {
+                  avatar.setWeaponsEnabled(p.weaponsEnabled);
+                }
               }
             }
           }
@@ -549,7 +552,10 @@ export class MultiplayerClient {
     avatar.world = this.world;
     if (p.pos) {
       avatar.group.position.set(p.pos[0], p.pos[1], p.pos[2]);
-      avatar.setTargetState(p.pos, p.rot, p.action);
+      avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled);
+    }
+    if (p.weaponsEnabled !== undefined && typeof avatar.setWeaponsEnabled === 'function') {
+      avatar.setWeaponsEnabled(p.weaponsEnabled);
     }
     this.remoteAvatars.set(p.id, avatar);
   }
@@ -642,8 +648,8 @@ export class MultiplayerClient {
     this.send('weapon_shoot', payload);
   }
 
-  sendTntTrigger(x, y, z, fuseMs = 1800) {
-    this.send('tnt_trigger', { x, y, z, fuseMs });
+  sendTntTrigger(x, y, z, fuseMs = 1800, radius = 3) {
+    this.send('tnt_trigger', { x, y, z, fuseMs, radius });
   }
 
   /**
@@ -753,6 +759,10 @@ export class MultiplayerClient {
 
   sendAdminResetServer() {
     this.send('admin_reset_server', { email: this.myEmail, adminKey: this.adminKey });
+  }
+
+  requestAdminResetServer() {
+    return this.sendAdminResetServer();
   }
 
   update(dt) {

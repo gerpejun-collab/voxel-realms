@@ -2232,6 +2232,24 @@ body.mobile-mode .desktop-only {
     inset -2px -2px 0px #9a3412;
 }
 
+.weapon-hud-btn.power-highlight {
+  background: #7c2d12;
+  box-shadow: 
+    inset 2px 2px 0px #fde047,
+    inset -2px -2px 0px #451a03;
+}
+
+.weapon-hud-btn.power-highlight.power-max {
+  background: #b91c1c !important;
+  color: #fef08a !important;
+  animation: pulse-nuclear 1.2s infinite;
+}
+
+@keyframes pulse-nuclear {
+  0%, 100% { box-shadow: 0 0 8px #ef4444, inset 2px 2px 0px #fde047; }
+  50% { box-shadow: 0 0 18px #f59e0b, inset 2px 2px 0px #ffffff; }
+}
+
 /* Sniper Scope Overlay */
 #rifle-scope-overlay {
   position: absolute;
@@ -2283,15 +2301,20 @@ body.mobile-mode .desktop-only {
 
 .scope-center-dot {
   position: absolute;
-  width: 4px;
-  height: 4px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 5px;
+  height: 5px;
   background: #ef4444;
   border-radius: 50%;
+  box-shadow: 0 0 6px #ef4444;
+  z-index: 2;
 }
 
 .scope-telemetry {
   position: absolute;
-  bottom: 24px;
+  bottom: 84px;
   font-family: var(--font-title);
   font-size: 12px;
   font-weight: 800;
@@ -2300,6 +2323,57 @@ body.mobile-mode .desktop-only {
   background: rgba(0, 0, 0, 0.8);
   padding: 4px 16px;
   border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.scope-overlay-actions {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  z-index: 999;
+  pointer-events: auto !important;
+}
+
+.scope-action-btn {
+  pointer-events: auto !important;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 22px;
+  font-family: var(--font-title);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  border-radius: 4px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+}
+
+.scope-shoot-btn {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  border: 2px solid #f87171 !important;
+}
+
+.scope-shoot-btn:active {
+  background: #b91c1c !important;
+  transform: scale(0.96);
+}
+
+.scope-exit-btn {
+  background: #374151 !important;
+  color: #ffffff !important;
+  border: 2px solid #9ca3af !important;
+}
+
+.scope-exit-btn:active {
+  background: #1f2937 !important;
+  transform: scale(0.96);
 }
 
 /* Weapon Hit Toast */

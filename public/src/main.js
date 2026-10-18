@@ -172,8 +172,9 @@ class VoxelRealmsApp {
 
     // Rifle Shoot (Authentic 3D rifle, luminous tracer, animal blood particles & shoot-to-detonate TNT)
     this.controls.onWeaponShoot = ({ origin, dir, muzzlePos, voxelHit, range, isSniperShot }) => {
-      const tracerStart = muzzlePos || origin;
-      const effectiveRange = typeof range === 'number' ? range : ((isSniperShot || (this.controls && this.controls.isAiming)) ? 1000 : 85);
+      const isScoped = Boolean(isSniperShot || (this.controls && (this.controls.isAiming || this.controls.aimBlend > 0.3)));
+      const tracerStart = isScoped ? (this.controls?.camera?.position || origin) : (muzzlePos || origin);
+      const effectiveRange = typeof range === 'number' ? range : (isScoped ? 1000 : 85);
 
       // 1. Particle muzzle flash & smoke at gun barrel
       if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
@@ -284,13 +285,15 @@ class VoxelRealmsApp {
     // Shoot-to-detonate TNT callback
     this.controls.onShootTnt = (voxelHit) => {
       if (!voxelHit) return;
+      const radius = voxelHit.radius || (this.controls?.getTntRadius ? this.controls.getTntRadius() : 3);
       if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
-        this.multiplayer.sendTntTrigger(voxelHit.x, voxelHit.y, voxelHit.z, 0);
+        this.multiplayer.sendTntTrigger(voxelHit.x, voxelHit.y, voxelHit.z, 0, radius);
       }
     };
-    this.controls.sendTntTrigger = (x, y, z, fuseMs = 0) => {
+    this.controls.sendTntTrigger = (x, y, z, fuseMs = 0, radius = null) => {
+      const blastRadius = typeof radius === 'number' ? radius : (this.controls?.getTntRadius ? this.controls.getTntRadius() : 3);
       if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
-        this.multiplayer.sendTntTrigger(x, y, z, fuseMs);
+        this.multiplayer.sendTntTrigger(x, y, z, fuseMs, blastRadius);
       }
     };
 

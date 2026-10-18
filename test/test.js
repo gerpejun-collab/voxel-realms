@@ -4283,6 +4283,167 @@ it('Performance: Traffic car checkObstacleAhead throttles raycasts, detects pede
 });
 
 // =============================================================================
+// SECTION 13: ADMIN TELEPORT, CALIBRATED ADS, VISIBLE WEAPONS, TNT POWER & SCOPE BUTTONS
+// =============================================================================
+console.log('\n[SECTION 13: ADMIN TELEPORT, CALIBRATED ADS, VISIBLE WEAPONS, TNT POWER & SCOPE BUTTONS]');
+
+it('Admin Teleport: requestTeleportToPlayer and server handleTeleportToPlayer send TELEPORT_CONFIRM with target player coordinates', () => {
+  const rm = new RoomManager();
+  const room = rm.getOrCreateRoom('main');
+
+  // Player 1 (target)
+  const targetWs = { readyState: 1, send: () => {}, on: () => {} };
+  rm.handleConnection(targetWs);
+  const targetMeta = rm.socketMeta.get(targetWs);
+  rm.handleJoin(targetWs, targetMeta, { name: 'Player1' });
+  const targetPlayer = room.gameState.getPlayer(targetMeta.id);
+  targetPlayer.pos = [142, 28, -64];
+
+  // Player 2 (admin)
+  const adminSent = [];
+  const adminWs = {
+    readyState: 1,
+    send: (msg) => { adminSent.push(JSON.parse(msg)); },
+    on: () => {}
+  };
+  rm.handleConnection(adminWs);
+  const adminMeta = rm.socketMeta.get(adminWs);
+  rm.handleJoin(adminWs, adminMeta, { name: 'Admin', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+
+  // Admin teleports to Player 1
+  rm.handleTeleportToPlayer(adminWs, adminMeta, { targetPlayerId: targetMeta.id });
+
+  const confirm = adminSent.find(m => m.type === MSG.TELEPORT_CONFIRM);
+  assert.ok(confirm, 'Admin must receive TELEPORT_CONFIRM packet');
+  assert.strictEqual(confirm.data.x, 142);
+  assert.strictEqual(confirm.data.y, 28);
+  assert.strictEqual(confirm.data.z, -64);
+  assert.strictEqual(confirm.data.targetName, 'Player1');
+
+  rm.destroy();
+});
+
+it('Admin Reset: multiplayer.requestAdminResetServer alias works and server handleAdminResetServer resets world', () => {
+  const { Avatar } = loadAvatarModule();
+  const multPath = path.resolve(__dirname, '../public/src/multiplayer.js');
+  let multCode = fs.readFileSync(multPath, 'utf8')
+    .replace(/import\s+.*?from\s+.*?;/g, '')
+    .replace(/export\s+class\s+MultiplayerClient/g, 'class MultiplayerClient');
+
+  const { MultiplayerClient } = new Function(
+    'Avatar',
+    multCode + '\nreturn { MultiplayerClient };'
+  )(Avatar);
+
+  const mp = new MultiplayerClient(null, null, null);
+  let sentReset = false;
+  mp.send = (type, data) => {
+    if (type === 'admin_reset_server') sentReset = true;
+  };
+
+  assert.strictEqual(typeof mp.requestAdminResetServer, 'function', 'mp.requestAdminResetServer must be a function');
+  mp.requestAdminResetServer();
+  assert.strictEqual(sentReset, true, 'Calling requestAdminResetServer must send admin_reset_server packet');
+});
+
+it('Calibrated Sniper ADS: triggerShoot aligns origin and muzzlePos with camera line-of-sight during zoom', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.position.set(10, 26.6, 20);
+  camera.getWorldDirection = (vec) => vec.set(0, 0, -1);
+  camera.fov = 32;
+
+  const physics = {
+    pos: new mockTHREE.Vector3(10, 25, 20),
+    vel: new mockTHREE.Vector3(0, 0, 0),
+    getEyePosition: () => new mockTHREE.Vector3(10, 26.6, 20)
+  };
+
+  const mockWorld = { getBlock: () => 0 };
+  const controls = new Controls(camera, { addEventListener: () => {} }, physics, mockWorld, null);
+  controls.weaponsMode = true;
+  controls.isAiming = true;
+  controls.aimBlend = 1.0;
+
+  let shotPayload = null;
+  controls.onWeaponShoot = (data) => { shotPayload = data; };
+
+  controls.triggerShoot(true);
+  assert.ok(shotPayload, 'Shot payload must be emitted');
+  assert.strictEqual(shotPayload.isSniperShot, true, 'isSniperShot must be true when aiming');
+  assert.strictEqual(shotPayload.range, 1000.0, 'Sniper shot must have 1000m infinite reach');
+  assert.strictEqual(shotPayload.origin.x, 10, 'Origin X must match camera position');
+  assert.strictEqual(shotPayload.origin.y, 26.6, 'Origin Y must match camera position');
+  assert.strictEqual(shotPayload.muzzlePos.x, 10, 'Muzzle tracer X must match camera position to eliminate parallax');
+  assert.strictEqual(shotPayload.muzzlePos.y, 26.6, 'Muzzle tracer Y must match camera position to eliminate parallax');
+});
+
+it('Avatar 3D Rifle: renders weapon mesh on right arm and raises arms in aim posture when weaponsEnabled is true', () => {
+  const { Avatar } = loadAvatarModule();
+  const avatar = new Avatar('armed_player', 'SniperSteve', { add: () => {} }, null);
+
+  assert.ok(avatar.weaponGroup, 'Avatar must have a weaponGroup attached');
+  assert.strictEqual(avatar.weaponsEnabled, false, 'Default weaponsEnabled should be false');
+  assert.strictEqual(avatar.weaponGroup.visible, false, 'Weapon group must be hidden when unarmed');
+
+  // Arm avatar
+  avatar.setWeaponsEnabled(true);
+  assert.strictEqual(avatar.weaponsEnabled, true, 'weaponsEnabled must be true');
+  assert.strictEqual(avatar.weaponGroup.visible, true, 'Weapon group must become visible when armed');
+
+  // Verify two-handed tactical rifle aim stance in update(dt)
+  avatar.update(0.05);
+  assert.ok(avatar.rightArmPivot.rotation.x < -1.0, 'Right arm must be raised forward aiming the rifle');
+  assert.ok(avatar.leftArmPivot.rotation.x < -0.9, 'Left arm must be raised supporting the rifle barrel');
+
+  // Disarm avatar
+  avatar.setWeaponsEnabled(false);
+  assert.strictEqual(avatar.weaponGroup.visible, false, 'Weapon group must hide when disarmed');
+});
+
+it('Adjustable TNT Power: cycles power 1x -> 3x -> 8x -> MAX and scales explosion crater radius up to 35m', () => {
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.position.set(0, 26.6, 0);
+  camera.getWorldDirection = (vec) => vec.set(0, 0, -1);
+
+  const mockWorld = { getBlock: () => 0 };
+  const controls = new Controls(camera, { addEventListener: () => {} }, { pos: new mockTHREE.Vector3(0, 25, 0), getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0) }, mockWorld, null);
+
+  assert.strictEqual(controls.tntPowerLevel, 1, 'Initial TNT power level must be 1 (1x)');
+  assert.strictEqual(controls.getTntRadius(), 3, 'Level 1 radius must be 3m');
+
+  controls.cycleTntPower();
+  assert.strictEqual(controls.tntPowerLevel, 2, 'Cycled to level 2 (3x)');
+  assert.strictEqual(controls.getTntRadius(), 8, 'Level 2 radius must be 8m');
+
+  controls.cycleTntPower();
+  assert.strictEqual(controls.tntPowerLevel, 3, 'Cycled to level 3 (8x)');
+  assert.strictEqual(controls.getTntRadius(), 18, 'Level 3 radius must be 18m');
+
+  controls.cycleTntPower();
+  assert.strictEqual(controls.tntPowerLevel, 4, 'Cycled to level 4 (MAX)');
+  assert.strictEqual(controls.getTntRadius(), 35, 'Level 4 radius must be 35m (capable of devastating Mt. Fuji)');
+
+  // Verify server GameState detonateTnt supports 35m blast radius
+  const gs = new GameState({ seed: 48151623 });
+  const explosion = gs.detonateTnt(0, 30, 0, 35);
+  assert.ok(explosion.destroyedBlocks.length > 500, `MAX explosion must destroy hundreds of blocks in 35m radius (got ${explosion.destroyedBlocks.length})`);
+});
+
+it('Scope Overlay Mobile Action Buttons: styles and markup define visible, touchable #scope-btn-shoot and #scope-btn-exit', () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+  assert.ok(html.includes('id="btn-tnt-power"'), 'index.html must include #btn-tnt-power in weapons HUD');
+  assert.ok(html.includes('id="scope-overlay-actions"'), 'index.html must include #scope-overlay-actions');
+
+  const css = fs.readFileSync(path.resolve(__dirname, '../public/styles.css'), 'utf8');
+  assert.ok(css.includes('.scope-overlay-actions'), 'CSS must define .scope-overlay-actions');
+  assert.ok(css.includes('pointer-events: auto !important;'), 'CSS must give scope buttons pointer-events: auto !important');
+  assert.ok(css.includes('.power-highlight'), 'CSS must define .power-highlight for TNT power');
+  assert.ok(css.includes('.power-max'), 'CSS must define .power-max for MAX TNT power');
+});
+
+// =============================================================================
 // SUITE EXECUTION SUMMARY
 // =============================================================================
 console.log('\n=============================================================================');

@@ -134,6 +134,7 @@ class TntEntity {
     x = 0, y = 0, z = 0,
     vx = 0, vy = 0, vz = 0,
     fuse = 3.0,
+    radius = 3,
     world = null,
     scene = null,
     particleManager = null,
@@ -146,6 +147,7 @@ class TntEntity {
     this.scene = scene;
     this.particleManager = particleManager;
     this.onDetonate = onDetonate;
+    this.radius = radius;
 
     this.pos = { x, y, z };
     this.vel = { x: vx, y: vy, z: vz };
@@ -385,12 +387,13 @@ class TntEntity {
       try { this.particleManager.spawnExplosion(x, y, z); } catch (_) {}
     }
 
-    // 4. Excavate a radius-3 crater in destructible blocks in the world
-    this.excavateCrater(x, y, z, 3);
+    // 4. Excavate a radius crater in destructible blocks in the world
+    const blastRadius = this.radius || 3;
+    this.excavateCrater(x, y, z, blastRadius);
 
     // 5. Notify onDetonate callback
     if (typeof this.onDetonate === 'function') {
-      try { this.onDetonate(x, y, z, instant); } catch (_) {}
+      try { this.onDetonate(x, y, z, instant, blastRadius); } catch (_) {}
     }
   }
 }
@@ -450,6 +453,7 @@ export class Controls {
     this.isAiming = false;
     this.aimBlend = 0;
     this.recoilProgress = 0;
+    this.tntPowerLevel = 1;
 
     // Callbacks
     this.onBreakBlock = null;
@@ -472,6 +476,44 @@ export class Controls {
 
     this.setupListeners();
     this.setupTouchControls();
+  }
+
+  cycleTntPower() {
+    this.tntPowerLevel = (this.tntPowerLevel % 4) + 1;
+    this.updateTntPowerButton();
+    return this.tntPowerLevel;
+  }
+
+  getTntRadius() {
+    switch (this.tntPowerLevel) {
+      case 2: return 8;
+      case 3: return 18;
+      case 4: return 35; // Colossal nuclear-scale detonation
+      case 1:
+      default: return 3;
+    }
+  }
+
+  getTntPowerLabel() {
+    switch (this.tntPowerLevel) {
+      case 2: return 'POTENCIA: 3x';
+      case 3: return 'POTENCIA: 8x';
+      case 4: return 'POTENCIA: MAX 💥';
+      case 1:
+      default: return 'POTENCIA: 1x';
+    }
+  }
+
+  updateTntPowerButton() {
+    if (typeof document === 'undefined') return;
+    const label = document.getElementById('tnt-power-label');
+    if (label) {
+      label.textContent = this.getTntPowerLabel();
+    }
+    const btn = document.getElementById('btn-tnt-power');
+    if (btn) {
+      btn.classList.toggle('power-max', this.tntPowerLevel === 4);
+    }
   }
 
   setVehicleManager(vm) {
@@ -704,6 +746,9 @@ export class Controls {
       if (scopeOverlay) scopeOverlay.classList.add('hidden');
       if (crosshair) crosshair.classList.remove('hidden');
     }
+    if (this.localAvatar && typeof this.localAvatar.setWeaponsEnabled === 'function') {
+      this.localAvatar.setWeaponsEnabled(this.weaponsMode);
+    }
   }
 
   setAiming(aiming) {
@@ -753,22 +798,33 @@ export class Controls {
       sound.playShoot();
     }
 
-    const origin = (this.physics && typeof this.physics.getEyePosition === 'function')
-      ? this.physics.getEyePosition()
-      : (this.camera ? this.camera.position : new THREE.Vector3());
-    const dir = new THREE.Vector3(0, 0, -1);
-    dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    const isSniperShot = Boolean(this.isAiming || this.aimBlend > 0.3);
+    const origin = (isSniperShot && this.camera && this.camera.position)
+      ? this.camera.position.clone()
+      : ((this.physics && typeof this.physics.getEyePosition === 'function')
+        ? this.physics.getEyePosition()
+        : (this.camera ? this.camera.position : new THREE.Vector3()));
+
+    const dir = new THREE.Vector3();
+    if (this.camera && typeof this.camera.getWorldDirection === 'function') {
+      this.camera.getWorldDirection(dir);
+    } else {
+      dir.set(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    }
 
     // Infinite / long-range raycast when in Sniper Scope mode (isAiming), 85m in hip-fire
     // Non-destructive: Bullets NEVER destroy terrain blocks
-    const effectiveRange = (this.isAiming || this.aimBlend > 0.3) ? 1000.0 : 85.0;
+    const effectiveRange = isSniperShot ? 1000.0 : 85.0;
     const savedReach = this.reachDistance;
     this.reachDistance = effectiveRange;
     const longVoxelHit = this.raycastVoxel();
     this.reachDistance = savedReach;
     this.raycastVoxel();
 
-    const muzzleVec = this.getMuzzleWorldPosition(new THREE.Vector3());
+    // In Sniper Scope mode, muzzle tracer fires straight down the optical sightline through the red dot
+    const muzzleVec = isSniperShot
+      ? (this.camera ? this.camera.position.clone() : origin.clone())
+      : this.getMuzzleWorldPosition(new THREE.Vector3());
 
     let entityHit = null;
     if (this.animalManager && typeof this.animalManager.getHitAnimal === 'function') {
@@ -799,15 +855,17 @@ export class Controls {
     }
 
     if (struckTnt) {
+      const radius = struckTnt.radius || this.getTntRadius();
       if (typeof this.sendTntTrigger === 'function') {
-        this.sendTntTrigger(struckTnt.pos.x, struckTnt.pos.y, struckTnt.pos.z, 0);
+        this.sendTntTrigger(struckTnt.pos.x, struckTnt.pos.y, struckTnt.pos.z, 0, radius);
       }
       if (this.onShootTnt) {
         this.onShootTnt({
           x: Math.round(struckTnt.pos.x),
           y: Math.round(struckTnt.pos.y),
           z: Math.round(struckTnt.pos.z),
-          entity: struckTnt
+          entity: struckTnt,
+          radius
         });
       }
       struckTnt.detonate(true); // Instant bullet detonation with zero fuse!
@@ -818,7 +876,7 @@ export class Controls {
       dir: { x: dir.x, y: dir.y, z: dir.z },
       muzzlePos: { x: muzzleVec.x, y: muzzleVec.y, z: muzzleVec.z },
       range: effectiveRange,
-      isSniperShot: Boolean(this.isAiming || this.aimBlend > 0.3),
+      isSniperShot,
       voxelHit: longVoxelHit ? { ...longVoxelHit } : null,
       entityHit: entityHit || null,
       tntEntityHit: struckTnt || null
@@ -826,11 +884,12 @@ export class Controls {
 
     // Shoot-to-detonate TNT reactivity: if raycast struck a TNT block (BLOCKS.TNT = 19)
     if (longVoxelHit && (longVoxelHit.type === BLOCKS.TNT || longVoxelHit.type === 19)) {
+      const radius = this.getTntRadius();
       if (typeof this.sendTntTrigger === 'function') {
-        this.sendTntTrigger(longVoxelHit.x, longVoxelHit.y, longVoxelHit.z, 0);
+        this.sendTntTrigger(longVoxelHit.x, longVoxelHit.y, longVoxelHit.z, 0, radius);
       }
       if (this.onShootTnt) {
-        this.onShootTnt(longVoxelHit);
+        this.onShootTnt({ ...longVoxelHit, radius });
       }
     }
 
@@ -921,6 +980,7 @@ export class Controls {
       vz = dir.z * 14.0;
     }
 
+    const radius = this.getTntRadius();
     const tnt = new TntEntity({
       x: spawnX,
       y: spawnY,
@@ -929,13 +989,14 @@ export class Controls {
       vy,
       vz,
       fuse: 3.0,
+      radius,
       world: this.world,
       scene: this.getScene(),
       particleManager: this.particleManager,
       THREE: this.THREE || THREE,
       onDetonate: (x, y, z, instant) => {
         if (typeof this.sendTntTrigger === 'function') {
-          this.sendTntTrigger(x, y, z, 0);
+          this.sendTntTrigger(x, y, z, 0, radius);
         }
       }
     });
@@ -1327,6 +1388,40 @@ export class Controls {
         e.stopPropagation();
         this.triggerTnt();
       }, { passive: false });
+    }
+
+    const btnTntPower = document.getElementById('btn-tnt-power');
+    if (btnTntPower && !btnTntPower.__fanBound) {
+      btnTntPower.__fanBound = true;
+      const onPower = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (sound && typeof sound.playClick === 'function') sound.playClick(1.2);
+        this.cycleTntPower();
+      };
+      btnTntPower.addEventListener('touchstart', onPower, { passive: false });
+      btnTntPower.addEventListener('click', onPower);
+    }
+
+    const scopeBtnShoot = document.getElementById('scope-btn-shoot');
+    if (scopeBtnShoot && !scopeBtnShoot.__fanBound) {
+      scopeBtnShoot.__fanBound = true;
+      const onScopeShoot = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        this.triggerShoot(true);
+      };
+      scopeBtnShoot.addEventListener('touchstart', onScopeShoot, { passive: false });
+      scopeBtnShoot.addEventListener('click', onScopeShoot);
+    }
+
+    const scopeBtnExit = document.getElementById('scope-btn-exit');
+    if (scopeBtnExit && !scopeBtnExit.__fanBound) {
+      scopeBtnExit.__fanBound = true;
+      const onScopeExit = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        this.setAiming(false);
+      };
+      scopeBtnExit.addEventListener('touchstart', onScopeExit, { passive: false });
+      scopeBtnExit.addEventListener('click', onScopeExit);
     }
   }
 

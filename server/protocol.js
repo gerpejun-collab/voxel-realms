@@ -145,10 +145,13 @@ function isValidWeaponShoot(data) {
  */
 function isValidTntTrigger(data) {
   if (!data || typeof data !== 'object') return false;
-  const { x, y, z } = data;
+  const { x, y, z, radius } = data;
   if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') return false;
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return false;
   if (y < 0 || y > 128 || Math.abs(x) > 10000 || Math.abs(z) > 10000) return false;
+  if (radius !== undefined && radius !== null) {
+    if (typeof radius !== 'number' || !Number.isFinite(radius) || radius < 1 || radius > 50) return false;
+  }
   return true;
 }
 

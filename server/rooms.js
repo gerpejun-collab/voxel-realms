@@ -459,12 +459,13 @@ class RoomManager {
     if (!room || !isValidTntTrigger(data)) return;
 
     const fuseMs = typeof data.fuseMs === 'number' ? Math.max(0, Math.min(4000, data.fuseMs)) : 1800;
+    const radius = typeof data.radius === 'number' ? Math.max(1, Math.min(45, Math.round(data.radius))) : 3;
     const rx = Math.round(data.x);
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);
 
     const executeDetonation = () => {
-      const explosion = room.gameState.detonateTnt(rx, ry, rz, 3);
+      const explosion = room.gameState.detonateTnt(rx, ry, rz, radius);
       this.broadcast(room, MSG.TNT_EXPLODE, explosion);
       if (explosion.hitAnimals && explosion.hitAnimals.length > 0) {
         for (const anim of explosion.hitAnimals) {
@@ -674,6 +675,9 @@ class RoomManager {
   }
 
   tick() {
+    this.adminBroadcastTick = (this.adminBroadcastTick || 0) + 1;
+    const shouldSendAdmin = (this.adminBroadcastTick % 20 === 0);
+
     for (const room of this.rooms.values()) {
       if (!room || !room.clients || room.clients.size === 0) continue;
       try {
@@ -685,10 +689,28 @@ class RoomManager {
           data: { players: snapshot, timeOfDay }
         });
 
+        let adminPayload = null;
+        if (shouldSendAdmin) {
+          adminPayload = JSON.stringify({
+            type: MSG.ADMIN_STATE,
+            data: {
+              isAdmin: true,
+              onlineCount: room.clients.size,
+              players: snapshot
+            }
+          });
+        }
+
         for (const clientWs of room.clients.keys()) {
           if (clientWs.readyState === 1) {
             try {
               clientWs.send(payload);
+              if (adminPayload) {
+                const meta = this.socketMeta.get(clientWs);
+                if (meta && meta.isAdmin) {
+                  clientWs.send(adminPayload);
+                }
+              }
             } catch (e) {
               // handled on close
             }

@@ -231,6 +231,16 @@ export class UIManager {
               tpBtn.addEventListener('click', () => {
                 sound.playClick();
                 if (p.id === this.multiplayer.myId) return;
+                if (this.physics && typeof this.physics.teleport === 'function') {
+                  this.physics.teleport(px, py + 1, pz);
+                } else if (this.controls?.physics && typeof this.controls.physics.teleport === 'function') {
+                  this.controls.physics.teleport(px, py + 1, pz);
+                }
+                if (typeof sound.playTeleport === 'function') sound.playTeleport();
+                if (this.world && typeof this.world.updateStreaming === 'function') {
+                  this.world.updateStreaming(px, pz);
+                }
+                this.showNotification('Teletransportado hacia ' + (p.name || 'Jugador'));
                 this.multiplayer.requestTeleportToPlayer(p.id);
                 this.pauseMenu.classList.add('hidden');
                 if (!this.controls.isMobile) this.controls.lock();
@@ -246,7 +256,11 @@ export class UIManager {
         adminResetBtn.addEventListener('click', () => {
           sound.playClick();
           if (confirm('¿Estás seguro de reiniciar el servidor, borrar todos los cambios del mapa y expulsar a todos los jugadores?')) {
-            this.multiplayer.requestAdminResetServer();
+            if (typeof this.multiplayer.requestAdminResetServer === 'function') {
+              this.multiplayer.requestAdminResetServer();
+            } else if (typeof this.multiplayer.sendAdminResetServer === 'function') {
+              this.multiplayer.sendAdminResetServer();
+            }
           }
         });
       }
@@ -1304,6 +1318,34 @@ export class UIManager {
     if (btnTnt) {
       btnTnt.addEventListener('click', () => {
         this.controls.triggerTnt();
+      });
+    }
+
+    const btnTntPower = document.getElementById('btn-tnt-power');
+    if (btnTntPower) {
+      btnTntPower.addEventListener('click', () => {
+        if (sound && typeof sound.playClick === 'function') sound.playClick(1.2);
+        if (this.controls && typeof this.controls.cycleTntPower === 'function') {
+          this.controls.cycleTntPower();
+        }
+      });
+    }
+
+    const scopeBtnShoot = document.getElementById('scope-btn-shoot');
+    if (scopeBtnShoot) {
+      scopeBtnShoot.addEventListener('click', () => {
+        if (this.controls && typeof this.controls.triggerShoot === 'function') {
+          this.controls.triggerShoot(true);
+        }
+      });
+    }
+
+    const scopeBtnExit = document.getElementById('scope-btn-exit');
+    if (scopeBtnExit) {
+      scopeBtnExit.addEventListener('click', () => {
+        if (this.controls && typeof this.controls.setAiming === 'function') {
+          this.controls.setAiming(false);
+        }
       });
     }
 

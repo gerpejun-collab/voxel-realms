@@ -27,6 +27,7 @@ export class Avatar {
 
     this.animTime = 0;
     this.swingProgress = 0;
+    this.weaponsEnabled = false;
     this.buildModel();
     this.createNameTag();
 
@@ -133,6 +134,46 @@ export class Avatar {
     rightArmMesh.position.y = -0.375;
     rightArmMesh.castShadow = true;
     this.rightArmPivot.add(rightArmMesh);
+
+    // 3D Sniper Rifle model held in right hand
+    this.weaponGroup = new THREE.Group();
+    this.weaponGroup.position.set(0, -0.55, -0.22);
+    this.weaponGroup.visible = false;
+
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.35, metalness: 0.85 });
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.75 });
+    const blueLensMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+    // Gun receiver / chamber
+    const bodyGeom = new THREE.BoxGeometry(0.08, 0.12, 0.42);
+    const bodyMesh = new THREE.Mesh(bodyGeom, metalMat);
+    this.weaponGroup.add(bodyMesh);
+
+    // Wooden stock
+    const stockGeom = new THREE.BoxGeometry(0.07, 0.10, 0.28);
+    const stockMesh = new THREE.Mesh(stockGeom, woodMat);
+    stockMesh.position.set(0, -0.02, 0.30);
+    this.weaponGroup.add(stockMesh);
+
+    // Barrel
+    const barrelGeom = new THREE.BoxGeometry(0.045, 0.045, 0.50);
+    const barrelMesh = new THREE.Mesh(barrelGeom, metalMat);
+    barrelMesh.position.set(0, 0.02, -0.42);
+    this.weaponGroup.add(barrelMesh);
+
+    // Sniper optical scope
+    const scopeGeom = new THREE.BoxGeometry(0.06, 0.06, 0.24);
+    const scopeMesh = new THREE.Mesh(scopeGeom, metalMat);
+    scopeMesh.position.set(0, 0.09, -0.05);
+    this.weaponGroup.add(scopeMesh);
+
+    // Front scope lens
+    const lensGeom = new THREE.BoxGeometry(0.045, 0.045, 0.015);
+    const lensMesh = new THREE.Mesh(lensGeom, blueLensMat);
+    lensMesh.position.set(0, 0.09, -0.175);
+    this.weaponGroup.add(lensMesh);
+
+    this.rightArmPivot.add(this.weaponGroup);
     this.group.add(this.rightArmPivot);
 
     // Left Leg (pivot at hip y = 0.75, Minecraft: 4x12x4 pixels -> 0.25 x 0.75 x 0.25 units, feet bottom aligns exactly at Y = 0.0)
@@ -356,9 +397,19 @@ export class Avatar {
     this.updateGroundSupport(this.world);
   }
 
-  setTargetState(pos, rot, action) {
+  setWeaponsEnabled(enabled) {
+    this.weaponsEnabled = Boolean(enabled);
+    if (this.weaponGroup) {
+      this.weaponGroup.visible = this.weaponsEnabled;
+    }
+  }
+
+  setTargetState(pos, rot, action, weaponsEnabled) {
     if (action) {
       this.action = action;
+    }
+    if (typeof weaponsEnabled === 'boolean') {
+      this.setWeaponsEnabled(weaponsEnabled);
     }
     if (pos) {
       const px = pos[0];
@@ -501,7 +552,27 @@ export class Avatar {
       this.leftLegPivot.position.y = 0.75;
       this.rightLegPivot.position.y = 0.75;
 
-      if (this.action === 'swimming') {
+      if (this.weaponsEnabled) {
+        // Two-handed tactical rifle aim pose
+        const pitchAngle = Math.max(-1.0, Math.min(1.0, this.targetPitch || 0));
+        this.rightArmPivot.rotation.x = -1.25 + pitchAngle * 0.7;
+        this.rightArmPivot.rotation.y = -0.22;
+        this.rightArmPivot.rotation.z = -0.05;
+
+        this.leftArmPivot.rotation.x = -1.15 + pitchAngle * 0.6;
+        this.leftArmPivot.rotation.y = 0.35;
+        this.leftArmPivot.rotation.z = 0.12;
+
+        if (isMoving) {
+          this.animTime += dt * animSpeed;
+          const legSwing = Math.sin(this.animTime) * swingAmp;
+          this.leftLegPivot.rotation.x = -legSwing;
+          this.rightLegPivot.rotation.x = legSwing;
+        } else {
+          this.leftLegPivot.rotation.x *= Math.max(0, 1.0 - dt * 10);
+          this.rightLegPivot.rotation.x *= Math.max(0, 1.0 - dt * 10);
+        }
+      } else if (this.action === 'swimming') {
         this.animTime += dt * 6.0;
         const stroke = Math.sin(this.animTime);
         this.leftArmPivot.rotation.x = -1.2 + stroke * 0.4;

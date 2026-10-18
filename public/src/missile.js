@@ -546,12 +546,61 @@ export class MissileManager {
   }
 
   /**
-   * Activates Iron Dome Secret Defense: launches 5 interceptors to destroy hostile missiles in mid-air,
-   * then launches 2 Colossal 3X Retaliation Missiles counter-attacking the rival admin.
+   * Arms Iron Dome Secret Defense: waits until hostile incoming missiles are within visual proximity
+   * (<= 85m) so player can clearly see the missile in the background sky, then launches 5 interceptors
+   * to destroy them mid-air, followed by 2 Colossal Retaliation Missiles and B-1 bomber deployment.
    */
   triggerIronDomeDefense(data) {
     if (!data) return;
-    const { hostileMissileIds, attackerId, attackerPos, defenderPos, isAir } = data;
+    this.pendingDefense = data;
+    this.checkProximityDefense();
+  }
+
+  checkProximityDefense(playerPos) {
+    if (!this.pendingDefense) return;
+
+    const data = this.pendingDefense;
+    const { hostileMissileIds, defenderPos } = data;
+
+    let targetX = defenderPos ? defenderPos[0] : 0;
+    let targetY = defenderPos ? defenderPos[1] : 25;
+    let targetZ = defenderPos ? defenderPos[2] : 0;
+
+    if (playerPos && (this.multiplayer?.myId === data.defenderId || this.multiplayer?.myName === 'jsieiragerpe')) {
+      targetX = playerPos.x;
+      targetY = playerPos.y;
+      targetZ = playerPos.z;
+    }
+
+    const defVec = new THREE.Vector3(targetX, targetY, targetZ);
+    let anyHostileTracked = false;
+    let closestDist = Infinity;
+
+    if (Array.isArray(hostileMissileIds) && hostileMissileIds.length > 0) {
+      for (const hid of hostileMissileIds) {
+        const m = this.missiles.get(hid);
+        if (m && !m.isDetonated && !m.isDestroyedMidAir) {
+          anyHostileTracked = true;
+          const d = m.pos.distanceTo(defVec);
+          if (d < closestDist) closestDist = d;
+        }
+      }
+    }
+
+    // Trigger visual defense when the hostile missile is within visible range (<= 85 meters),
+    // or if the hostile missile is already close, or fallback if missiles arrived.
+    const PROXIMITY_TRIGGER_DIST = 85.0;
+
+    if (!anyHostileTracked || closestDist <= PROXIMITY_TRIGGER_DIST) {
+      const activeData = this.pendingDefense;
+      this.pendingDefense = null;
+      this.executeIronDomeLaunch(activeData);
+    }
+  }
+
+  executeIronDomeLaunch(data) {
+    if (!data) return;
+    const { hostileMissileIds, attackerId, attackerPos, defenderPos, isAir, attackerName } = data;
 
     // Find active hostile missile objects
     const hostileMissiles = [];
@@ -563,7 +612,11 @@ export class MissileManager {
       }
     }
 
-    // Launch 5 Interceptors sequentially with 200ms stagger
+    if (this.multiplayer && typeof this.multiplayer.onNotification === 'function') {
+      this.multiplayer.onNotification('🛡️ [DEFENSA ACTIVA] ¡Misiles enemigos en rango visual! Interceptores en vuelo.');
+    }
+
+    // Launch 5 Interceptors sequentially with 180ms stagger
     for (let i = 0; i < 5; i++) {
       setTimeout(() => {
         const interceptorId = 'icp_' + Date.now() + '_' + i;
@@ -597,10 +650,10 @@ export class MissileManager {
         if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
           this.sound.playMissileLaunch();
         }
-      }, i * 200);
+      }, i * 180);
     }
 
-    // After 3.2s (threat intercepted), launch 2 Colossal Retaliation Missiles (3X size, power 8)
+    // After mid-air interception (~2.8s), launch 2 Colossal Retaliation Missiles AND deploy B-1 bomber!
     setTimeout(() => {
       for (let r = 0; r < 2; r++) {
         const retalId = 'retal_' + Date.now() + '_' + r;
@@ -614,7 +667,7 @@ export class MissileManager {
             launcherId: 'ADMIN_RETALIATION',
             launcherName: 'Contraataque Colosal',
             targetPlayerId: attackerId,
-            targetName: 'Admin Rival (cifrixa)',
+            targetName: attackerName || 'Admin Rival (cifrixa)',
             startPos: [defX + (r === 0 ? -3 : 3), defY + 1.5, defZ],
             targetPos: attackerPos || [0, 25, 0],
             startYaw: (r === 0 ? -0.2 : 0.2),
@@ -634,13 +687,23 @@ export class MissileManager {
 
         this.missiles.set(retalId, retalMissile);
       }
-    }, 3200);
+
+      // Launch Strategic Bomber mission towards Cifrixa
+      const bManager = this.bomberManager || (this.multiplayer ? this.multiplayer.bomberManager : null);
+      if (bManager && typeof bManager.launchMission === 'function') {
+        bManager.launchMission(attackerId, attackerPos, attackerName || 'Admin Rival (cifrixa)');
+      }
+    }, 2800);
   }
 
   /**
    * Frame update for all active missiles
    */
   update(dt, playerPos) {
+    if (this.pendingDefense) {
+      this.checkProximityDefense(playerPos);
+    }
+
     if (this.missiles.size === 0) return;
 
     const playerDir = this.multiplayer ? this.multiplayer.playerDirectory : null;

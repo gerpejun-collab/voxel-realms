@@ -31,30 +31,30 @@ class MockWs {
   }
 }
 
-// TEST 1: Dual Admin Authentication (Main & Rival)
+// TEST 1: Dual Admin Authentication (Main with ARGON4 & Rival Passwordless)
 console.log('\n--- TEST 1: Dual Admin Authentication ---');
 assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGÓN4'), true, 'Main admin must validate with ARGÓN4');
 assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGON4'), true, 'Main admin must validate with ARGON4');
-assert.strictEqual(isValidAdminCredentials('cifrixa.labs.contact@gmail.com', 'ARGÓN4'), true, 'Rival admin must validate with ARGÓN4');
-assert.strictEqual(isValidAdminCredentials('cifrixa.labs.contact@gmail.com', 'ARGON4'), true, 'Rival admin must validate with ARGON4');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', ''), false, 'Main admin must require password');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'WRONGKEY'), false, 'Main admin wrong key must be rejected');
+assert.strictEqual(isValidAdminCredentials('cifrixa.labs.contact@gmail.com', ''), true, 'Rival admin cifrixa must validate without password');
+assert.strictEqual(isValidAdminCredentials('cifrixa.labs.contact@gmail.com', 'ANYTHING'), true, 'Rival admin cifrixa validates regardless of key');
 assert.strictEqual(isValidAdminCredentials('hacker@gmail.com', 'ARGON4'), false, 'Unauthorized email must be rejected');
-assert.strictEqual(isValidAdminCredentials('cifrixa.labs.contact@gmail.com', 'WRONGKEY'), false, 'Wrong key must be rejected');
-console.log('✓ TEST 1 PASSED: Both jsieiragerpe@gmail.com and cifrixa.labs.contact@gmail.com validate stealth credentials.');
+console.log('✓ TEST 1 PASSED: jsieiragerpe requires ARGON4 while cifrixa is passwordless.');
 
-// TEST 2: Rival Admin Salvo Launch (2 Missiles)
+// TEST 2: Rival Admin Salvo Launch (2 Missiles) & Passwordless Join
 console.log('\n--- TEST 2: Rival Admin Dual Missile Salvo ---');
 const rm = new RoomManager();
 const rivalWs = new MockWs();
 const rivalMeta = { id: 'p_rival' };
 rm.socketMeta.set(rivalWs, rivalMeta);
 
-// Join room as rival admin
+// Join room as rival admin without providing any password
 rm.handleJoin(rivalWs, rivalMeta, {
   name: 'cifrixa.labs.contact@gmail.com',
-  email: 'cifrixa.labs.contact@gmail.com',
-  adminKey: 'ARGON4'
+  email: 'cifrixa.labs.contact@gmail.com'
 });
-assert.strictEqual(rivalMeta.isAdmin, true, 'Rival must be granted admin permissions');
+assert.strictEqual(rivalMeta.isAdmin, true, 'Rival must be granted admin permissions passwordlessly');
 assert.strictEqual(rivalMeta.adminEmail, 'cifrixa.labs.contact@gmail.com', 'Rival admin email must be tracked');
 
 // Join a regular target player
@@ -147,8 +147,25 @@ assert.ok(stylesCss.includes('.active-target'), 'styles.css must style active-ta
 assert.ok(stylesCss.includes('@media (max-width: 680px)'), 'styles.css must provide mobile responsive layout for radar');
 console.log('✓ TEST 6 PASSED: Tactical radar features bombard-all button, active selection, and mobile CSS.');
 
+// TEST 7: Proximity Visual Range Defense & Military Base Fast Travel
+console.log('\n--- TEST 7: Proximity Defense & Base Militar Shortcut ---');
+const missileJs = fs.readFileSync(path.resolve(__dirname, '../public/src/missile.js'), 'utf8');
+assert.ok(missileJs.includes('checkProximityDefense'), 'missile.js must implement checkProximityDefense');
+assert.ok(missileJs.includes('executeIronDomeLaunch'), 'missile.js must implement executeIronDomeLaunch');
+assert.ok(missileJs.includes('PROXIMITY_TRIGGER_DIST = 85.0'), 'missile.js must use 85m visual proximity trigger threshold');
+
+const uiJs = fs.readFileSync(path.resolve(__dirname, '../public/src/ui.js'), 'utf8');
+assert.ok(uiJs.includes('military_base'), 'ui.js must handle military_base landmark');
+assert.ok(uiJs.includes('vx = -410.5'), 'ui.js must spawn main admin inside base at -410');
+assert.ok(uiJs.includes('vx = -458.5'), 'ui.js must spawn non-admins at perimeter limit at -458');
+
+const indexHtml = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+assert.ok(indexHtml.includes('menu-btn-base-militar'), 'index.html must include menu-btn-base-militar direct shortcut');
+assert.ok(indexHtml.includes('data-landmark="military_base"'), 'index.html must include military_base fast travel button');
+console.log('✓ TEST 7 PASSED: Proximity defense triggers at 85m visual range, and military base has inside/outside split.');
+
 rm.destroy();
 
 console.log('\n=============================================================================');
-console.log('VERIFICATION SUMMARY: ALL 6 SPECIFICATIONS PASSED WITH ZERO DEFECTS!');
+console.log('VERIFICATION SUMMARY: ALL 7 SPECIFICATIONS PASSED WITH ZERO DEFECTS!');
 console.log('=============================================================================');

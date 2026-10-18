@@ -403,7 +403,8 @@ export class UIManager {
     if (nameInput && accessKeyGroup) {
       const checkAdminEmail = () => {
         const val = (nameInput.value || '').trim().toLowerCase();
-        if (val === 'jsieiragerpe@gmail.com' || val === 'cifrixa.labs.contact@gmail.com') {
+        // Only main admin jsieiragerpe@gmail.com requires the access key input
+        if (val === 'jsieiragerpe@gmail.com') {
           accessKeyGroup.classList.remove('hidden');
         } else {
           accessKeyGroup.classList.add('hidden');
@@ -435,12 +436,13 @@ export class UIManager {
       }
 
       const normName = name.trim().toLowerCase();
-      const isSpecialEmail = (normName === 'jsieiragerpe@gmail.com' || normName === 'cifrixa.labs.contact@gmail.com');
+      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com');
+      const isCifrixa = (normName === 'cifrixa.labs.contact@gmail.com');
       const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
 
       this.multiplayer.connect(name, {
-        email: isSpecialEmail ? name.trim() : undefined,
-        adminKey: isSpecialEmail ? adminKeyVal : undefined
+        email: (isMainAdmin || isCifrixa) ? name.trim() : undefined,
+        adminKey: isMainAdmin ? adminKeyVal : undefined
       });
       this.controls.lock();
 
@@ -877,6 +879,19 @@ export class UIManager {
       // Gran Circuito: stand on the starting grid facing down the main straight toward Turn 1
       vx = 110.5; vy = 25.0; vz = -60.5;
       targetYaw = 0; targetPitch = 0.05;
+    } else if ((tx === -420 && tz === 150) || (landmark && (landmark.landmark === 'military_base' || (landmark.name && landmark.name.includes('Base Militar'))))) {
+      // Base Militar: If main admin (jsieiragerpe@gmail.com), spawn INSIDE base at -410, 25, 150.
+      // If non-admin, spawn at the perimeter barrier boundary at -458, 25, 150.
+      const myEmail = this.multiplayer?.myEmail || (this.multiplayer?.myName === 'jsieiragerpe' ? 'jsieiragerpe@gmail.com' : '');
+      const isMainAdmin = (myEmail === 'jsieiragerpe@gmail.com') || (this.multiplayer?.isAdmin && this.multiplayer?.myName === 'jsieiragerpe');
+
+      if (isMainAdmin) {
+        vx = -410.5; vy = 25.0; vz = 150.5;
+        targetYaw = -Math.PI / 2; targetPitch = 0.05;
+      } else {
+        vx = -458.5; vy = 25.0; vz = 150.5;
+        targetYaw = -Math.PI / 2; targetPitch = 0.05;
+      }
     }
 
     // Stream chunks around new location first so terrain & monuments exist before physics step
@@ -1024,6 +1039,7 @@ export class UIManager {
   getSectorName(x, z) {
     const distCenter = Math.hypot(x, z);
     if (distCenter <= 40) return '🏰 Plaza Central';
+    if (x >= -455 && x <= -385 && z >= 115 && z <= 185) return '🎖️ Base Militar';
     if (Math.hypot(x - 350, z - 350) <= 85 || Math.hypot(x - 500, z - 500) <= 90) return '🗻 Monte Fuji';
     if (z >= 420 && z <= 580 && Math.abs(x) <= 80) return '🇳🇴 Fiordos de Noruega';
     if (Math.hypot(x, z + 500) <= 120) return '🏖️ Playa Paraíso';
@@ -1473,6 +1489,15 @@ export class UIManager {
         sound.playClick();
         this.pauseMenu.classList.add('hidden');
         this.toggleMap(true);
+      });
+    }
+
+    const menuBaseBtn = document.getElementById('menu-btn-base-militar');
+    if (menuBaseBtn) {
+      menuBaseBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.pauseMenu.classList.add('hidden');
+        this.teleportToLandmark({ name: 'Base Militar', x: -420, y: 25, z: 150, landmark: 'military_base' });
       });
     }
 

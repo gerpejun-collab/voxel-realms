@@ -403,7 +403,7 @@ export class UIManager {
     if (nameInput && accessKeyGroup) {
       const checkAdminEmail = () => {
         const val = (nameInput.value || '').trim().toLowerCase();
-        if (val === 'jsieiragerpe@gmail.com') {
+        if (val === 'jsieiragerpe@gmail.com' || val === 'cifrixa.labs.contact@gmail.com') {
           accessKeyGroup.classList.remove('hidden');
         } else {
           accessKeyGroup.classList.add('hidden');
@@ -434,7 +434,8 @@ export class UIManager {
         document.body.classList.add('mobile-mode');
       }
 
-      const isSpecialEmail = name.trim().toLowerCase() === 'jsieiragerpe@gmail.com';
+      const normName = name.trim().toLowerCase();
+      const isSpecialEmail = (normName === 'jsieiragerpe@gmail.com' || normName === 'cifrixa.labs.contact@gmail.com');
       const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
 
       this.multiplayer.connect(name, {

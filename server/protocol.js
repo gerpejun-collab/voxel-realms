@@ -35,6 +35,10 @@ const MSG = {
   TNT_EXPLODE: 'tnt_explode',
   MISSILE_SPAWN: 'missile_spawn',
   MISSILE_IMPACT: 'missile_impact',
+  MISSILE_INTERCEPT_DEFENSE: 'missile_intercept_defense',
+  BOMBER_TAKEOFF: 'bomber_takeoff',
+  BOMBER_DROP_BOMB: 'bomber_drop_bomb',
+  BOMBER_RETURN: 'bomber_return',
   ANIMALS_UPDATE: 'animals_update',
   ANIMAL_BURST: 'animal_burst',
   ADMIN_STATE: 'admin_state',
@@ -49,6 +53,8 @@ const MAX_BLOCK_ID = 32;
 const MAX_PLAYER_ID_LENGTH = 64;
 
 const ADMIN_EMAIL = 'jsieiragerpe@gmail.com';
+const RIVAL_ADMIN_EMAIL = 'cifrixa.labs.contact@gmail.com';
+const ADMIN_EMAILS = [ADMIN_EMAIL, RIVAL_ADMIN_EMAIL];
 
 /**
  * Checks whether email/identifier and key match the stealth admin credentials
@@ -56,7 +62,7 @@ const ADMIN_EMAIL = 'jsieiragerpe@gmail.com';
 function isValidAdminCredentials(identifier, key) {
   if (typeof identifier !== 'string' || typeof key !== 'string') return false;
   const normEmail = identifier.trim().toLowerCase();
-  if (normEmail !== ADMIN_EMAIL) return false;
+  if (!ADMIN_EMAILS.includes(normEmail)) return false;
   const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return normKey === 'ARGON4';
 }
@@ -66,8 +72,12 @@ function isValidAdminCredentials(identifier, key) {
  */
 function sanitizeName(name) {
   if (typeof name !== 'string') return 'Player';
-  if (name.trim().toLowerCase() === ADMIN_EMAIL) {
+  const normEmail = name.trim().toLowerCase();
+  if (normEmail === ADMIN_EMAIL) {
     return 'jsieiragerpe';
+  }
+  if (normEmail === RIVAL_ADMIN_EMAIL) {
+    return 'cifrixa';
   }
   const clean = name.replace(/[^a-zA-Z0-9_\-]/g, '').trim();
   if (clean.length === 0) return 'Player';
@@ -194,6 +204,8 @@ if (typeof module !== 'undefined' && module.exports) {
     isValidVehicleDrive,
     isValidMissileLaunch,
     ADMIN_EMAIL,
+    RIVAL_ADMIN_EMAIL,
+    ADMIN_EMAILS,
     isValidAdminCredentials
   };
 }

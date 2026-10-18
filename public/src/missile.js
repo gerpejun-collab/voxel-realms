@@ -1,18 +1,24 @@
 // public/src/missile.js
 // Guided Homing Tactical Missile System (Exclusive Admin Weapon)
-// Real-time homing tracking, smooth aerodynamic flight curves, 3D rocket mesh,
-// dense contrail smoke, thruster flame, underground chunk phasing, and 4X TNT detonation.
+// Real-time homing tracking, dual air vs land kinematics, 4-stage ignition timelines,
+// procedural 3D rocket meshes (white air-to-air vs heavy titanium ballistic),
+// dense smoke contrails, active iron dome interceptors, and 3X colossal retaliation missiles.
 
 import * as THREE from 'three';
 
 export class GuidedMissile {
   constructor(options, scene, particleManager, onDetonate) {
-    this.id = options.missileId || ('msl_' + Date.now());
+    this.id = options.missileId || ('msl_' + Date.now() + '_' + Math.floor(Math.random() * 1000));
     this.launcherId = options.launcherId;
     this.launcherName = options.launcherName || 'Admin';
     this.targetPlayerId = options.targetPlayerId;
     this.targetName = options.targetName || 'Objetivo';
-    this.power = options.power || 4; // 4X TNT equivalent (radius 9m)
+    this.launchType = options.launchType || 'land'; // 'air' | 'land'
+    this.isRetaliation = Boolean(options.isRetaliation);
+    this.isInterceptor = Boolean(options.isInterceptor);
+    this.targetHostileMissile = options.targetHostileMissile || null;
+
+    this.power = options.power || (this.isRetaliation ? 8 : 4);
 
     this.scene = scene;
     this.particleManager = particleManager;
@@ -34,110 +40,181 @@ export class GuidedMissile {
 
     // Initial forward orientation
     const startYaw = typeof options.startYaw === 'number' ? options.startYaw : 0;
+    const initialPitch = (this.launchType === 'air') ? 0.25 : 0.65;
     this.forward = new THREE.Vector3(
       -Math.sin(startYaw),
-      0.35, // Initial upward lift angle
+      initialPitch,
       -Math.cos(startYaw)
     ).normalize();
 
     // Flight kinematics: gradual acceleration and realistic turn limits
-    this.speed = 16.0; // Initial liftoff speed (m/s)
-    this.maxSpeed = 82.0; // Cruise hypersonic speed (~300 km/h)
-    this.accel = 24.0; // Smooth continuous acceleration
-    this.maxTurnRate = 2.4; // Max angular turn rate (rad/s) for realistic arcing curves
-    this.liftoffTime = 1.15; // Initial ignition boost stage before full guidance lock
+    this.speed = 16.0;
+    this.maxSpeed = 82.0;
+    this.accel = 24.0;
+    this.maxTurnRate = 2.4;
+    this.liftoffTime = 1.15;
+
+    // Flight kinematics based on Launch Type
+    if (this.isInterceptor) {
+      this.speed = 18.0;
+      this.maxSpeed = 95.0;
+      this.accel = 38.0;
+      this.maxTurnRate = 5.2;
+      this.liftoffTime = 0.4;
+    } else if (this.isRetaliation) {
+      this.speed = 4.0;
+      this.maxSpeed = 80.0;
+      this.accel = 20.0;
+      this.maxTurnRate = 2.0;
+      this.liftoffTime = 3.5;
+    } else if (this.launchType === 'air') {
+      // Air Launch: 0-2s slow climb, 2-3s pre-ignition, 3-4s max thrust, >4s hypersonic cruise
+      this.speed = 8.0;
+      this.maxSpeed = 85.0;
+      this.accel = 26.0;
+      this.maxTurnRate = 2.6;
+      this.liftoffTime = 4.0;
+    } else {
+      // Land Launch: 0-4.5s slow heavy liftoff with dense smoke, then booster stage acceleration
+      this.speed = 5.0;
+      this.maxSpeed = 82.0;
+      this.accel = 22.0;
+      this.maxTurnRate = 2.4;
+      this.liftoffTime = 4.5;
+    }
+
     this.age = 0;
-    this.maxLifetime = 60.0; // Safety self-destruct after 60s
+    this.maxLifetime = 60.0;
     this.isDetonated = false;
+    this.isDestroyedMidAir = false;
     this.smokeTimer = 0;
 
     // Color assigned for missile & radar matching
-    this.colorHex = options.colorHex || 0xef4444;
+    this.colorHex = options.colorHex || (this.isInterceptor ? 0x38bdf8 : (this.isRetaliation ? 0xdc2626 : 0xef4444));
 
     // Build 3D mesh
     this.mesh = this.buildMesh();
     this.mesh.position.copy(this.pos);
+    if (this.isRetaliation) {
+      this.mesh.scale.set(3.0, 3.0, 3.0);
+    } else if (this.isInterceptor) {
+      this.mesh.scale.set(0.75, 0.75, 0.75);
+    }
+
     if (this.scene && typeof this.scene.add === 'function') {
       this.scene.add(this.mesh);
     }
   }
 
   /**
-   * Procedural military missile 3D mesh (~3.6m tall, double player height)
+   * Procedural military missile 3D mesh
+   * - Air Launch: Sleek white aerodynamic missile (AIM-120 style)
+   * - Land Launch: Heavy dark titanium ballistic missile with hazard bands and dual thrusters
+   * - Interceptor: Agile cyan/white rocket
    */
   buildMesh() {
     const group = new THREE.Group();
 
-    // 1. Main Fuselage: Sleek military cylinder (length 3.6m, radius 0.26m)
-    const bodyGeom = new THREE.CylinderGeometry(0.26, 0.28, 3.2, 12);
-    // Align cylinder along +Z axis
-    bodyGeom.rotateX(Math.PI / 2);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x1f2937, // Tactical dark slate / military charcoal
-      roughness: 0.35,
-      metalness: 0.75
-    });
-    const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
-    group.add(bodyMesh);
+    if (this.launchType === 'air' || this.isInterceptor) {
+      // --- AIR LAUNCH / INTERCEPTOR MODEL (Sleek White/Cyan) ---
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: this.isInterceptor ? 0x0284c7 : 0xf8fafc, // Pure military white or sky blue
+        roughness: 0.25,
+        metalness: 0.8
+      });
 
-    // Hazard yellow warhead inspection bands
-    const bandGeom = new THREE.CylinderGeometry(0.265, 0.265, 0.22, 12);
-    bandGeom.rotateX(Math.PI / 2);
-    const bandMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
-    const band1 = new THREE.Mesh(bandGeom, bandMat);
-    band1.position.set(0, 0, 0.95);
-    const band2 = new THREE.Mesh(bandGeom, bandMat);
-    band2.position.set(0, 0, 0.65);
-    group.add(band1, band2);
+      // 1. Fuselage
+      const bodyGeom = new THREE.CylinderGeometry(0.24, 0.25, 3.4, 12);
+      bodyGeom.rotateX(Math.PI / 2);
+      const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
+      group.add(bodyMesh);
 
-    // 2. Conical Radome Nose Cone (length 0.85m)
-    const noseGeom = new THREE.ConeGeometry(0.26, 0.85, 12);
-    noseGeom.rotateX(Math.PI / 2);
-    const noseMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a, // Dark titanium nose tip
-      roughness: 0.25,
-      metalness: 0.85
-    });
-    const noseMesh = new THREE.Mesh(noseGeom, noseMat);
-    noseMesh.position.set(0, 0, 2.025);
-    group.add(noseMesh);
+      // Radome nose
+      const noseGeom = new THREE.ConeGeometry(0.24, 0.95, 12);
+      noseGeom.rotateX(Math.PI / 2);
+      const noseMat = new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        roughness: 0.2,
+        metalness: 0.9
+      });
+      const noseMesh = new THREE.Mesh(noseGeom, noseMat);
+      noseMesh.position.set(0, 0, 2.15);
+      group.add(noseMesh);
 
-    // 3. Tail Stabilizer Fins (4 cruciform delta fins at tail)
-    const finMat = new THREE.MeshStandardMaterial({
-      color: 0xdc2626, // Crimson military fin trim
-      roughness: 0.4,
-      metalness: 0.6
-    });
-    for (let i = 0; i < 4; i++) {
-      const angle = (i * Math.PI) / 2;
-      const finGeom = new THREE.BoxGeometry(0.04, 0.52, 0.75);
-      const finMesh = new THREE.Mesh(finGeom, finMat);
-      finMesh.position.set(
-        Math.cos(angle) * 0.36,
-        Math.sin(angle) * 0.36,
-        -1.35
-      );
-      finMesh.rotation.z = angle;
-      group.add(finMesh);
+      // White Cruciform Tail Fins
+      const finMat = new THREE.MeshStandardMaterial({
+        color: this.isInterceptor ? 0x38bdf8 : 0xe2e8f0,
+        roughness: 0.3,
+        metalness: 0.7
+      });
+      for (let i = 0; i < 4; i++) {
+        const angle = (i * Math.PI) / 2;
+        const finGeom = new THREE.BoxGeometry(0.04, 0.48, 0.85);
+        const finMesh = new THREE.Mesh(finGeom, finMat);
+        finMesh.position.set(Math.cos(angle) * 0.32, Math.sin(angle) * 0.32, -1.35);
+        finMesh.rotation.z = angle;
+        group.add(finMesh);
+      }
+
+      // Canard guidance fins near nose
+      for (let i = 0; i < 4; i++) {
+        const angle = (i * Math.PI) / 2 + Math.PI / 4;
+        const cGeom = new THREE.BoxGeometry(0.02, 0.24, 0.35);
+        const cMesh = new THREE.Mesh(cGeom, finMat);
+        cMesh.position.set(Math.cos(angle) * 0.26, Math.sin(angle) * 0.26, 1.25);
+        cMesh.rotation.z = angle;
+        group.add(cMesh);
+      }
+    } else {
+      // --- LAND LAUNCH MODEL (Imposing Heavy Titanium Ballistic) ---
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: this.isRetaliation ? 0x111827 : 0x1f2937, // Heavy charcoal/stealth black
+        roughness: 0.35,
+        metalness: 0.85
+      });
+
+      // 1. Heavy Fuselage (wider diameter 0.36m, length 3.8m)
+      const bodyGeom = new THREE.CylinderGeometry(0.34, 0.36, 3.6, 14);
+      bodyGeom.rotateX(Math.PI / 2);
+      const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
+      group.add(bodyMesh);
+
+      // Hazard yellow inspection bands
+      const bandGeom = new THREE.CylinderGeometry(0.345, 0.345, 0.25, 14);
+      bandGeom.rotateX(Math.PI / 2);
+      const bandMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+      const b1 = new THREE.Mesh(bandGeom, bandMat);
+      b1.position.set(0, 0, 1.1);
+      const b2 = new THREE.Mesh(bandGeom, bandMat);
+      b2.position.set(0, 0, 0.7);
+      group.add(b1, b2);
+
+      // Heavy conical nose cone
+      const noseGeom = new THREE.ConeGeometry(0.34, 1.1, 14);
+      noseGeom.rotateX(Math.PI / 2);
+      const noseMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        roughness: 0.2,
+        metalness: 0.95
+      });
+      const noseMesh = new THREE.Mesh(noseGeom, noseMat);
+      noseMesh.position.set(0, 0, 2.35);
+      group.add(noseMesh);
+
+      // Heavy swept grid fins at tail
+      const finMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, metalness: 0.7 });
+      for (let i = 0; i < 4; i++) {
+        const angle = (i * Math.PI) / 2;
+        const finGeom = new THREE.BoxGeometry(0.06, 0.65, 0.9);
+        const finMesh = new THREE.Mesh(finGeom, finMat);
+        finMesh.position.set(Math.cos(angle) * 0.44, Math.sin(angle) * 0.44, -1.45);
+        finMesh.rotation.z = angle;
+        group.add(finMesh);
+      }
     }
 
-    // 4. Fore Canard Guidance Fins (4 steerable mini-canards near nose)
-    const canardMat = new THREE.MeshBasicMaterial({ color: 0x475569 });
-    for (let i = 0; i < 4; i++) {
-      const angle = (i * Math.PI) / 2 + Math.PI / 4;
-      const cGeom = new THREE.BoxGeometry(0.02, 0.28, 0.38);
-      const cMesh = new THREE.Mesh(cGeom, canardMat);
-      cMesh.position.set(
-        Math.cos(angle) * 0.28,
-        Math.sin(angle) * 0.28,
-        1.15
-      );
-      cMesh.rotation.z = angle;
-      group.add(cMesh);
-    }
-
-    // 5. Rear Thruster Bell & Incandescent Fire Cone
-    const nozzleGeom = new THREE.CylinderGeometry(0.22, 0.16, 0.35, 12);
+    // Rear Thruster Nozzle
+    const nozzleGeom = new THREE.CylinderGeometry(0.24, 0.18, 0.4, 12);
     nozzleGeom.rotateX(Math.PI / 2);
     const nozzleMat = new THREE.MeshStandardMaterial({
       color: 0x111827,
@@ -145,24 +222,24 @@ export class GuidedMissile {
       roughness: 0.15
     });
     const nozzle = new THREE.Mesh(nozzleGeom, nozzleMat);
-    nozzle.position.set(0, 0, -1.75);
+    nozzle.position.set(0, 0, -1.85);
     group.add(nozzle);
 
     // Pulsating Rocket Flame Mesh
-    const flameGeom = new THREE.ConeGeometry(0.24, 1.45, 10);
+    const flameGeom = new THREE.ConeGeometry(0.26, 1.6, 10);
     flameGeom.rotateX(-Math.PI / 2);
     const flameMat = new THREE.MeshBasicMaterial({
-      color: 0xff6600,
+      color: this.isInterceptor ? 0x38bdf8 : 0xff6600,
       transparent: true,
       opacity: 0.92
     });
     this.flameMesh = new THREE.Mesh(flameGeom, flameMat);
-    this.flameMesh.position.set(0, 0, -2.45);
+    this.flameMesh.position.set(0, 0, -2.65);
     group.add(this.flameMesh);
 
     // Dynamic thruster point light
-    this.light = new THREE.PointLight(0xff7700, 2.8, 14);
-    this.light.position.set(0, 0, -2.2);
+    this.light = new THREE.PointLight(this.isInterceptor ? 0x38bdf8 : 0xff7700, 2.8, 16);
+    this.light.position.set(0, 0, -2.4);
     group.add(this.light);
 
     return group;
@@ -172,7 +249,16 @@ export class GuidedMissile {
    * Updates target position from live player registry or caches last known position on disconnect
    */
   updateTarget(playerDirectory, remoteAvatars) {
-    if (this.isDetonated) return;
+    if (this.isDetonated || this.isDestroyedMidAir) return;
+
+    if (this.isInterceptor && this.targetHostileMissile) {
+      if (this.targetHostileMissile.isDetonated || this.targetHostileMissile.isDestroyedMidAir) {
+        this.detonate();
+        return;
+      }
+      this.targetPos.copy(this.targetHostileMissile.pos);
+      return;
+    }
 
     let targetData = null;
     if (playerDirectory && playerDirectory.has(this.targetPlayerId)) {
@@ -190,7 +276,7 @@ export class GuidedMissile {
       this.targetDisconnected = false;
       if (targetData.name) this.targetName = targetData.name;
     } else {
-      // Player disconnected or unavailable: lock to last known coordinates!
+      // Player disconnected: lock to last known coordinates!
       this.targetDisconnected = true;
       this.targetPos.copy(this.lastKnownTargetPos);
     }
@@ -200,7 +286,7 @@ export class GuidedMissile {
    * Physics, steering curves, contrail emissions and impact detection
    */
   update(dt, playerPos) {
-    if (this.isDetonated) return;
+    if (this.isDetonated || this.isDestroyedMidAir) return;
 
     this.age += dt;
     if (this.age >= this.maxLifetime) {
@@ -208,37 +294,78 @@ export class GuidedMissile {
       return;
     }
 
-    // 1. Speed acceleration: smoothly scales from 16 m/s to 82 m/s
-    if (this.speed < this.maxSpeed) {
-      this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
+    // 1. Phased Kinematics & Acceleration Timeline
+    if (this.launchType === 'air' && !this.isInterceptor && !this.isRetaliation) {
+      // --- AIR LAUNCH PHASES ---
+      // Phase 1 (0 to 2s): slow upward climb (8 m/s), engine warmup
+      if (this.age < 2.0) {
+        this.speed = 8.0 + (this.age / 2.0) * 4.0;
+        this.forward.y += dt * 0.35;
+        this.forward.normalize();
+        if (this.flameMesh) this.flameMesh.scale.set(0.4, 0.4, 0.5);
+      }
+      // Phase 2 (2 to 3s): engine medium ignition
+      else if (this.age < 3.0) {
+        this.speed = 12.0 + (this.age - 2.0) * 14.0;
+        if (this.flameMesh) this.flameMesh.scale.set(0.7, 0.7, 0.85);
+      }
+      // Phase 3 (3 to 4s): max engine thrust with full flame and smoke
+      else if (this.age < 4.0) {
+        this.speed = 26.0 + (this.age - 3.0) * 28.0;
+        if (this.flameMesh) this.flameMesh.scale.set(1.2, 1.2, 1.4);
+      }
+      // Phase 4 (>4s): hypersonic cruise acceleration up to maxSpeed
+      else {
+        if (this.speed < this.maxSpeed) {
+          this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
+        }
+      }
+    } else if (this.launchType === 'land' && !this.isInterceptor && !this.isRetaliation) {
+      // --- LAND LAUNCH PHASES ---
+      // Phase 1 (0 to 4.5s): slow heavy vertical liftoff, dense smoke plume
+      if (this.age < 4.5) {
+        this.speed = 5.0 + (this.age / 4.5) * 12.0;
+        this.forward.y += dt * 0.5;
+        this.forward.normalize();
+      }
+      // Phase 2 (>4.5s): booster stage, aggressive acceleration
+      else {
+        if (this.speed < this.maxSpeed) {
+          this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
+        }
+      }
+    } else {
+      // Interceptor or Retaliation missile: smooth continuous acceleration
+      if (this.speed < this.maxSpeed) {
+        this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
+      }
     }
 
-    // 2. Steering & Real-Time Homing Guidance
-    if (this.age < this.liftoffTime) {
-      // Liftoff stage: initial booster thrust arcs upward & outward
-      this.forward.y += dt * 0.45;
-      this.forward.normalize();
-    } else {
-      // Active homing cruise stage: smoothly steer towards target position
+    // 2. Real-Time Homing Guidance
+    if (this.age >= this.liftoffTime || this.isInterceptor) {
       const desiredVec = new THREE.Vector3().subVectors(this.targetPos, this.pos);
       const distToTarget = desiredVec.length();
 
-      // Proximity detonation check: hits when closer than 1.8m
-      if (distToTarget <= 1.85) {
+      // Interceptor Mid-Air Collision Check
+      if (this.isInterceptor && this.targetHostileMissile) {
+        if (distToTarget <= 4.5) {
+          this.targetHostileMissile.destroyMidAir();
+          this.destroyMidAir();
+          return;
+        }
+      }
+
+      // Proximity detonation check on ground / target
+      if (distToTarget <= 2.1) {
         this.detonate();
         return;
       }
 
       desiredVec.normalize();
-
-      // Angle between current forward and target direction
       const angle = this.forward.angleTo(desiredVec);
       if (angle > 0.001) {
-        // Clamp turn rate for realistic aerodynamic banking and sweeping curves
         const maxTurn = this.maxTurnRate * dt;
         const turnStep = Math.min(angle, maxTurn);
-
-        // Rotation axis
         const axis = new THREE.Vector3().crossVectors(this.forward, desiredVec);
         if (axis.lengthSq() > 0.00001) {
           axis.normalize();
@@ -255,32 +382,28 @@ export class GuidedMissile {
     // Look along forward direction
     const lookTarget = this.pos.clone().add(this.forward);
     this.mesh.lookAt(lookTarget);
-
-    // Aerodynamic roll flicker
     this.mesh.rotateZ(dt * 3.5);
 
     // 4. Animated Thruster Flame & Light
-    if (this.flameMesh) {
-      const flicker = 0.85 + Math.random() * 0.45;
-      this.flameMesh.scale.set(flicker, flicker, 1.0 + Math.random() * 0.35);
-    }
-    if (this.light) {
-      this.light.intensity = 2.2 + Math.random() * 1.2;
+    if (this.flameMesh && this.age >= 2.0) {
+      const flk = 0.85 + Math.random() * 0.4;
+      this.flameMesh.scale.set(flk, flk, 1.0 + Math.random() * 0.35);
     }
 
-    // 5. Continuous Contrail Smoke Puff Emission in Air
+    // 5. Dense Contrail Smoke Particles
     this.smokeTimer += dt;
-    if (this.smokeTimer >= 0.024 && this.particleManager) {
+    const smokeRate = (this.launchType === 'land' && this.age < 4.5) ? 0.012 : 0.024;
+    if (this.smokeTimer >= smokeRate && this.particleManager) {
       this.smokeTimer = 0;
       const tailPos = this.pos.clone().sub(this.forward.clone().multiplyScalar(2.2));
       if (this.particleManager.debrisParticles && this.particleManager.debrisParticles.length < this.particleManager.maxDebris) {
         this.particleManager.debrisParticles.push({
-          x: tailPos.x + (Math.random() - 0.5) * 0.25,
-          y: tailPos.y + (Math.random() - 0.5) * 0.25,
-          z: tailPos.z + (Math.random() - 0.5) * 0.25,
-          vx: -this.forward.x * 2.5 + (Math.random() - 0.5) * 1.5,
-          vy: -this.forward.y * 2.5 + 0.8 + Math.random() * 0.8,
-          vz: -this.forward.z * 2.5 + (Math.random() - 0.5) * 1.5,
+          x: tailPos.x + (Math.random() - 0.5) * 0.3,
+          y: tailPos.y + (Math.random() - 0.5) * 0.3,
+          z: tailPos.z + (Math.random() - 0.5) * 0.3,
+          vx: -this.forward.x * 2.0 + (Math.random() - 0.5) * 1.5,
+          vy: -this.forward.y * 2.0 + 0.8 + Math.random() * 0.8,
+          vz: -this.forward.z * 2.0 + (Math.random() - 0.5) * 1.5,
           scale: 0.95 + Math.random() * 0.8,
           rotX: Math.random() * 4,
           rotY: Math.random() * 4,
@@ -292,22 +415,33 @@ export class GuidedMissile {
   }
 
   /**
-   * Executes detonation: triggers callback, spawns 4X explosion, and disposes 3D resources
+   * Mid-air kinetic interception destruction without excavating terrain
+   */
+  destroyMidAir() {
+    if (this.isDetonated || this.isDestroyedMidAir) return;
+    this.isDestroyedMidAir = true;
+
+    if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
+      this.particleManager.spawnExplosion(this.pos.x, this.pos.y, this.pos.z);
+    }
+    this.dispose();
+  }
+
+  /**
+   * Executes detonation: triggers callback, spawns explosion, and disposes 3D resources
    */
   detonate() {
-    if (this.isDetonated) return;
+    if (this.isDetonated || this.isDestroyedMidAir) return;
     this.isDetonated = true;
 
     const hitX = this.pos.x;
     const hitY = this.pos.y;
     const hitZ = this.pos.z;
 
-    // Visual explosion and shockwaves
     if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
       this.particleManager.spawnExplosion(hitX, hitY, hitZ);
     }
 
-    // Detonation callback to multiplayer & server
     if (typeof this.onDetonate === 'function') {
       try {
         this.onDetonate({
@@ -321,7 +455,6 @@ export class GuidedMissile {
       } catch (_) {}
     }
 
-    // Remove from scene and dispose WebGL buffers cleanly
     this.dispose();
   }
 
@@ -413,6 +546,98 @@ export class MissileManager {
   }
 
   /**
+   * Activates Iron Dome Secret Defense: launches 5 interceptors to destroy hostile missiles in mid-air,
+   * then launches 2 Colossal 3X Retaliation Missiles counter-attacking the rival admin.
+   */
+  triggerIronDomeDefense(data) {
+    if (!data) return;
+    const { hostileMissileIds, attackerId, attackerPos, defenderPos, isAir } = data;
+
+    // Find active hostile missile objects
+    const hostileMissiles = [];
+    if (Array.isArray(hostileMissileIds)) {
+      for (const hid of hostileMissileIds) {
+        if (this.missiles.has(hid)) {
+          hostileMissiles.push(this.missiles.get(hid));
+        }
+      }
+    }
+
+    // Launch 5 Interceptors sequentially with 200ms stagger
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        const interceptorId = 'icp_' + Date.now() + '_' + i;
+        const targetHostile = hostileMissiles[i % (hostileMissiles.length || 1)] || null;
+
+        const defX = defenderPos ? defenderPos[0] : 0;
+        const defY = defenderPos ? defenderPos[1] : 25;
+        const defZ = defenderPos ? defenderPos[2] : 0;
+
+        const interceptor = new GuidedMissile(
+          {
+            missileId: interceptorId,
+            launcherId: 'IRON_DOME',
+            launcherName: 'Cúpula de Hierro',
+            targetPlayerId: attackerId,
+            startPos: [defX + (i - 2) * 1.2, defY + 2.0, defZ + (Math.random() - 0.5) * 2.0],
+            targetPos: targetHostile ? [targetHostile.pos.x, targetHostile.pos.y, targetHostile.pos.z] : (attackerPos || [0, 25, 0]),
+            startYaw: (i * Math.PI) / 2.5,
+            isInterceptor: true,
+            targetHostileMissile: targetHostile,
+            launchType: isAir ? 'air' : 'land'
+          },
+          this.scene,
+          this.particleManager,
+          (payload) => {
+            this.missiles.delete(payload.missileId);
+          }
+        );
+
+        this.missiles.set(interceptorId, interceptor);
+        if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
+          this.sound.playMissileLaunch();
+        }
+      }, i * 200);
+    }
+
+    // After 3.2s (threat intercepted), launch 2 Colossal Retaliation Missiles (3X size, power 8)
+    setTimeout(() => {
+      for (let r = 0; r < 2; r++) {
+        const retalId = 'retal_' + Date.now() + '_' + r;
+        const defX = defenderPos ? defenderPos[0] : 0;
+        const defY = defenderPos ? defenderPos[1] : 25;
+        const defZ = defenderPos ? defenderPos[2] : 0;
+
+        const retalMissile = new GuidedMissile(
+          {
+            missileId: retalId,
+            launcherId: 'ADMIN_RETALIATION',
+            launcherName: 'Contraataque Colosal',
+            targetPlayerId: attackerId,
+            targetName: 'Admin Rival (cifrixa)',
+            startPos: [defX + (r === 0 ? -3 : 3), defY + 1.5, defZ],
+            targetPos: attackerPos || [0, 25, 0],
+            startYaw: (r === 0 ? -0.2 : 0.2),
+            isRetaliation: true,
+            power: 8,
+            launchType: 'land'
+          },
+          this.scene,
+          this.particleManager,
+          (detonatePayload) => {
+            this.missiles.delete(detonatePayload.missileId);
+            if (this.multiplayer && typeof this.multiplayer.sendMissileDetonate === 'function') {
+              this.multiplayer.sendMissileDetonate(detonatePayload);
+            }
+          }
+        );
+
+        this.missiles.set(retalId, retalMissile);
+      }
+    }, 3200);
+  }
+
+  /**
    * Frame update for all active missiles
    */
   update(dt, playerPos) {
@@ -425,7 +650,7 @@ export class MissileManager {
       missile.updateTarget(playerDir, remoteAvatars);
       missile.update(dt, playerPos);
 
-      if (missile.isDetonated) {
+      if (missile.isDetonated || missile.isDestroyedMidAir) {
         this.missiles.delete(id);
       }
     }
@@ -437,7 +662,7 @@ export class MissileManager {
   getActiveMissiles() {
     const list = [];
     for (const m of this.missiles.values()) {
-      if (m.isDetonated) continue;
+      if (m.isDetonated || m.isDestroyedMidAir) continue;
       const dist = m.pos.distanceTo(m.targetPos);
       list.push({
         id: m.id,
@@ -449,7 +674,9 @@ export class MissileManager {
         speed: m.speed,
         distance: dist,
         colorHex: m.colorHex,
-        targetDisconnected: m.targetDisconnected
+        targetDisconnected: m.targetDisconnected,
+        isInterceptor: m.isInterceptor,
+        isRetaliation: m.isRetaliation
       });
     }
     return list;

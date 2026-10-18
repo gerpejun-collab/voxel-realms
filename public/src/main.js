@@ -12,6 +12,7 @@ import { UIManager } from './ui.js';
 import { AnimalManager } from './animals.js';
 import { VehicleManager, DrivableCar } from './vehicle.js';
 import { MissileManager } from './missile.js';
+import { StrategicBomber } from './bomber.js';
 import { TacticalRadar } from './radar.js';
 import { Avatar } from './avatar.js';
 import { BLOCKS } from './blocks.js';
@@ -73,6 +74,44 @@ class VoxelRealmsApp {
       sound
     );
     this.multiplayer.missileManager = this.missileManager;
+
+    // 6d. Initialize Strategic Heavy Bomber B-1 & Carpet Bombing System
+    this.bomber = new StrategicBomber(
+      this.sceneManager.scene,
+      this.particleManager,
+      this.world,
+      sound,
+      (bombPayload) => {
+        if (this.particleManager && typeof this.particleManager.spawnPrimedTnt === 'function') {
+          this.particleManager.spawnPrimedTnt(
+            { x: bombPayload.x, y: bombPayload.y, z: bombPayload.z },
+            { x: bombPayload.x, y: bombPayload.y, z: bombPayload.z },
+            1800,
+            (bx, by, bz) => {
+              if (this.world && typeof this.world.applyBlockDelta === 'function') {
+                for (let dx = -2; dx <= 2; dx++) {
+                  for (let dy = -2; dy <= 2; dy++) {
+                    for (let dz = -2; dz <= 2; dz++) {
+                      if (dx * dx + dy * dy + dz * dz <= 5 && by + dy > 1) {
+                        this.world.applyBlockDelta(bx + dx, by + dy, bz + dz, 0);
+                      }
+                    }
+                  }
+                }
+              }
+              if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
+                this.particleManager.spawnExplosion(bx, by, bz);
+              }
+              if (sound && typeof sound.playExplosion === 'function') sound.playExplosion();
+            }
+          );
+        }
+        if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
+          this.multiplayer.sendTntTrigger(bombPayload.x, bombPayload.y, bombPayload.z, 1800, 3);
+        }
+      }
+    );
+    this.multiplayer.bomberManager = this.bomber;
 
     // 7. Initialize UI Overlay & HUD
     this.ui = new UIManager(
@@ -443,6 +482,9 @@ class VoxelRealmsApp {
     }
     if (this.tacticalRadar) {
       this.tacticalRadar.update(dt, this.physics.pos);
+    }
+    if (this.bomber) {
+      this.bomber.update(dt, this.multiplayer ? this.multiplayer.playerDirectory : null);
     }
 
     // 6. Ambient Voxel Animals, Rare NPCs & Highway Traffic

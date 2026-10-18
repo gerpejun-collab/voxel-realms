@@ -410,6 +410,7 @@ export class World {
     if (Math.abs(wx - (-500)) <= 125 && Math.abs(wz - (-500)) <= 125) return true; // Grand Prix Racing Circuit
     if (wx >= 45 && wx <= 215 && wz >= -195 && wz <= -35) return true; // Gran Circuito SE Quadrant
     if (Math.hypot(wx - 350, wz - 350) <= 70 || Math.hypot(wx - 500, wz - 500) <= 88) return true; // Mount Fuji Volcano & Reflection Lakes
+    if (wx >= -460 && wx <= -365 && wz >= 115 && wz <= 185) return true; // Base Militar Aérea & Hangar
     if (this.isRoadAt(wx, wz) || this.isTunnelAt(wx, wz)) return true;
     return false;
   }
@@ -425,6 +426,7 @@ export class World {
     if (Math.hypot(wx + 250, wz + 250) <= 56) return true;
     if (Math.abs(wx - (-500)) <= 120 && Math.abs(wz - (-500)) <= 120) return true;
     if (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40) return true; // Gran Circuito Plateau
+    if (wx >= -460 && wx <= -365 && wz >= 115 && wz <= 185) return true; // Base Militar Plateau
     return false;
   }
 
@@ -618,6 +620,16 @@ export class World {
         const smoothT = t * t * (3 - 2 * t);
         return Math.floor(24 * (1 - smoothT) + naturalH * smoothT);
       }
+    }
+
+    // 2.7. Base Militar Aérea & Hangar del Bombardero B-1 at (-420, 150)
+    if (wx >= -460 && wx <= -365 && wz >= 115 && wz <= 185) {
+      // West Ski-Jump Ramp at end of runway: rises smoothly from Y=24 to Y=27
+      if (wx >= -458 && wx <= -442 && wz >= 142 && wz <= 158) {
+        const rampT = Math.min(1.0, (-442 - wx) / 16);
+        return Math.round(24 + rampT * 3);
+      }
+      return 24; // Leveled airbase plateau
     }
 
     const BASE_HEIGHT = 24;
@@ -854,6 +866,7 @@ export class World {
     if (typeof this.buildGranCircuito === 'function') this.buildGranCircuito(chunk);
     if (typeof this.buildMountFujiSector === 'function') this.buildMountFujiSector(chunk);
     if (typeof this.buildMountainCaverns === 'function') this.buildMountainCaverns(chunk);
+    if (typeof this.buildMilitaryBaseSector === 'function') this.buildMilitaryBaseSector(chunk);
 
     // 4. Procedural Oak Trees in wild outer areas
     for (let lx = 2; lx < CHUNK_WIDTH - 2; lx++) {
@@ -5343,6 +5356,95 @@ export class World {
       for (const [tx, ty, tz] of torches) {
         this.setVoxelInWorld(chunk, tx, ty, tz, BLOCKS.OAK_LOG);
         this.setVoxelInWorld(chunk, tx, ty + 1, tz, BLOCKS.GOLD_ORE);
+      }
+    }
+  }
+
+  /**
+   * Builds the Fortified Military Airbase, B-1 Runway, Control Tower, Helipad & Hangar at (-420, 150)
+   */
+  buildMilitaryBaseSector(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+
+    // Fast AABB rejection: if chunk doesn't overlap [-460, -365] x [115, 185], skip
+    if (ox + CHUNK_WIDTH < -460 || ox > -365 || oz + CHUNK_DEPTH < 115 || oz > 185) {
+      return;
+    }
+
+    const ASPHALT = BLOCKS.ASPHALT || BLOCKS.COBBLESTONE;
+
+    for (let lx = 0; lx < CHUNK_WIDTH; lx++) {
+      for (let lz = 0; lz < CHUNK_DEPTH; lz++) {
+        const wx = ox + lx;
+        const wz = oz + lz;
+
+        // Base perimeter check
+        if (wx < -460 || wx > -365 || wz < 115 || wz > 185) continue;
+
+        // 1. Airbase Runway (X in -458..-385, Z in 142..158)
+        if (wx >= -458 && wx <= -385 && wz >= 142 && wz <= 158) {
+          const isEdge = (wz === 142 || wz === 158);
+          const isCenter = (wz === 150);
+
+          let rY = 24;
+          if (wx <= -442) {
+            const rampT = Math.min(1.0, (-442 - wx) / 16);
+            rY = Math.round(24 + rampT * 3);
+          }
+
+          // Solid foundation up to runway surface
+          for (let y = 20; y <= rY; y++) {
+            this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.STONE);
+          }
+
+          // Runway surface
+          if (isEdge) {
+            this.setVoxelInWorld(chunk, wx, rY, wz, BLOCKS.STONE);
+            if (wx % 4 === 0) {
+              this.setVoxelInWorld(chunk, wx, rY + 1, wz, BLOCKS.GOLD_ORE); // Runway beacon lights
+            }
+          } else if (isCenter && (Math.abs(wx) % 4 <= 1)) {
+            this.setVoxelInWorld(chunk, wx, rY, wz, BLOCKS.SNOW); // Center white dashed line
+          } else {
+            this.setVoxelInWorld(chunk, wx, rY, wz, ASPHALT);
+          }
+
+          // Headroom clearance above runway
+          for (let y = rY + 1; y <= rY + 14; y++) {
+            if (this.getBlock(wx, y, wz) !== BLOCKS.AIR) {
+              this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
+            }
+          }
+        }
+
+        // 2. Fortified Hangar Floor & Foundations (X in -395..-370, Z in 135..165)
+        if (wx >= -395 && wx <= -370 && wz >= 135 && wz <= 165) {
+          this.setVoxelInWorld(chunk, wx, 24, wz, BLOCKS.STONE);
+          for (let y = 25; y <= 35; y++) {
+            this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
+          }
+        }
+
+        // 3. Helipad at (-420, 126)
+        if (Math.abs(wx - (-420)) <= 6 && Math.abs(wz - 126) <= 6) {
+          this.setVoxelInWorld(chunk, wx, 24, wz, BLOCKS.COBBLESTONE);
+          const dx = wx - (-420);
+          const dz = wz - 126;
+          if ((Math.abs(dx) === 3 && Math.abs(dz) <= 3) || (dz === 0 && Math.abs(dx) <= 3)) {
+            this.setVoxelInWorld(chunk, wx, 24, wz, BLOCKS.GOLD_ORE);
+          }
+        }
+
+        // 4. Perimeter Fence around base
+        const isPerimeterX = (wx === -455 || wx === -370) && (wz >= 120 && wz <= 180);
+        const isPerimeterZ = (wz === 120 || wz === 180) && (wx >= -455 && wx <= -370);
+        if (isPerimeterX || isPerimeterZ) {
+          if (!(wx === -455 && wz >= 140 && wz <= 160)) {
+            this.setVoxelInWorld(chunk, wx, 25, wz, BLOCKS.COBBLESTONE);
+            this.setVoxelInWorld(chunk, wx, 26, wz, BLOCKS.IRON_ORE);
+          }
+        }
       }
     }
   }

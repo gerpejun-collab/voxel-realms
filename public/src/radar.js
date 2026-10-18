@@ -1,7 +1,8 @@
 // public/src/radar.js
 // Exclusive Admin Holographic Tactical Radar HUD
 // 2D real-time scale display of all players, active homing missiles with matching target colors,
-// directional flight arrows, live distance readouts, and collapsible/minimizable floating widget.
+// directional flight arrows, live distance readouts, multi-target bombard-all capability,
+// resilient re-selection without DOM clobbering, and responsive mobile layout.
 
 export class TacticalRadar {
   constructor(multiplayer, missileManager) {
@@ -12,6 +13,10 @@ export class TacticalRadar {
     this.isMinimized = false;
     this.sweepAngle = 0;
     this.radarRange = 1200; // Radius in meters shown on radar
+    this.selectedTargetId = null;
+    this.lastTargetsSignature = '';
+    this.lastMissilesSignature = '';
+    this.sidebarThrottle = 0;
 
     // World landmark anchors for orientation
     this.landmarks = [
@@ -23,7 +28,8 @@ export class TacticalRadar {
       { name: 'Fiordos', icon: '🏔️', x: 0, z: 500 },
       { name: 'Playa', icon: '🏖️', x: 0, z: -500 },
       { name: 'Fuji', icon: '🗻', x: 500, z: 500 },
-      { name: 'Circuito', icon: '🏎️', x: -500, z: -500 }
+      { name: 'Circuito', icon: '🏎️', x: -500, z: -500 },
+      { name: 'Base Militar', icon: '🎖️', x: -420, z: 150 }
     ];
 
     this.createDOM();
@@ -41,7 +47,7 @@ export class TacticalRadar {
       <div class="radar-header">
         <div class="radar-title">
           <span class="radar-pulse-dot"></span>
-          <strong>RADAR TÁCTICO DE MISILES (ADMIN)</strong>
+          <strong>RADAR TÁCTICO MILITAR (ADMIN)</strong>
         </div>
         <div class="radar-controls">
           <button id="radar-btn-minimize" class="mc-btn radar-ctrl-btn" title="Minimizar">➖</button>
@@ -56,12 +62,17 @@ export class TacticalRadar {
         </div>
 
         <div class="radar-sidebar">
-          <div class="radar-section-title">MISILES EN VUELO</div>
+          <div class="radar-section-title">MISILES EN VUELO (<span id="radar-active-missiles-count">0</span>)</div>
           <div id="radar-missiles-list" class="radar-missiles-list">
             <div class="radar-empty-hint">Ningún misil en vuelo. Selecciona un objetivo para lanzar.</div>
           </div>
 
-          <div class="radar-section-title">OBJETIVOS DISPONIBLES</div>
+          <div class="radar-targets-header">
+            <div class="radar-section-title">OBJETIVOS EN LÍNEA (<span id="radar-target-count">0</span>)</div>
+            <button id="radar-btn-bomb-all" class="mc-btn radar-bomb-all-btn" title="Lanzar misil a todos los jugadores conectados">
+              💥 BOMBARDEAR A TODOS
+            </button>
+          </div>
           <div id="radar-targets-list" class="radar-targets-list"></div>
         </div>
       </div>
@@ -74,6 +85,9 @@ export class TacticalRadar {
     this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
     this.missilesListElem = container.querySelector('#radar-missiles-list');
     this.targetsListElem = container.querySelector('#radar-targets-list');
+    this.targetCountElem = container.querySelector('#radar-target-count');
+    this.missilesCountElem = container.querySelector('#radar-active-missiles-count');
+    this.bombAllBtn = container.querySelector('#radar-btn-bomb-all');
 
     // Minimized Floating Pill Widget
     const pill = document.createElement('div');
@@ -104,6 +118,13 @@ export class TacticalRadar {
     pill.addEventListener('click', (e) => {
       if (e.target !== btnExpand) this.toggleMinimize(false);
     });
+
+    // Bombard All Target Action
+    if (this.bombAllBtn) {
+      this.bombAllBtn.addEventListener('click', () => {
+        this.bombardAllTargets();
+      });
+    }
   }
 
   toggle(open = null) {
@@ -123,6 +144,35 @@ export class TacticalRadar {
     }
     if (this.pillElem) {
       this.pillElem.classList.toggle('hidden', !this.isOpen || !this.isMinimized);
+    }
+  }
+
+  /**
+   * Fires missiles at every connected player in the directory
+   */
+  bombardAllTargets() {
+    const playerDir = this.multiplayer ? this.multiplayer.playerDirectory : null;
+    if (!playerDir || playerDir.size <= 1) return;
+
+    let launchedCount = 0;
+    for (const p of playerDir.values()) {
+      if (p.id === this.multiplayer.myId) continue;
+      launchedCount++;
+      if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
+        this.multiplayer.sendAdminLaunchMissile(p.id);
+      }
+    }
+
+    if (this.bombAllBtn) {
+      const origText = this.bombAllBtn.textContent;
+      this.bombAllBtn.textContent = `🚀 ¡${launchedCount} LANZADOS!`;
+      this.bombAllBtn.disabled = true;
+      setTimeout(() => {
+        if (this.bombAllBtn) {
+          this.bombAllBtn.textContent = origText;
+          this.bombAllBtn.disabled = false;
+        }
+      }, 1200);
     }
   }
 
@@ -149,8 +199,12 @@ export class TacticalRadar {
     // Render Canvas Radar Display
     this.renderCanvas(playerPos, activeMissiles);
 
-    // Update Telemetry Sidebar
-    this.updateSidebar(playerPos, activeMissiles);
+    // Throttled Sidebar DOM update to prevent lag and preserve selection state
+    this.sidebarThrottle += dt;
+    if (this.sidebarThrottle >= 0.12) {
+      this.sidebarThrottle = 0;
+      this.updateSidebar(playerPos, activeMissiles);
+    }
   }
 
   renderCanvas(playerPos, activeMissiles) {
@@ -168,7 +222,7 @@ export class TacticalRadar {
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(6, 18, 14, 0.92)';
+    ctx.fillStyle = 'rgba(6, 18, 14, 0.94)';
     ctx.fill();
     ctx.strokeStyle = '#10b981';
     ctx.lineWidth = 2;
@@ -209,7 +263,7 @@ export class TacticalRadar {
     // Rotating Radar Sweep Beam
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
     grad.addColorStop(0, 'rgba(16, 185, 129, 0.0)');
-    grad.addColorStop(1, 'rgba(16, 185, 129, 0.25)');
+    grad.addColorStop(1, 'rgba(16, 185, 129, 0.28)');
 
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -240,21 +294,22 @@ export class TacticalRadar {
         const sx = cx + (px / this.radarRange) * radius;
         const sy = cy + (pz / this.radarRange) * radius;
 
+        const isSelected = (this.selectedTargetId === p.id);
         const colorHex = this.missileManager ? this.missileManager.getColorForPlayer(p.id) : 0x06b6d4;
         const colorCss = '#' + colorHex.toString(16).padStart(6, '0');
 
         // Target glowing blip
         ctx.beginPath();
-        ctx.arc(sx, sy, 4.5, 0, Math.PI * 2);
+        ctx.arc(sx, sy, isSelected ? 7.0 : 4.8, 0, Math.PI * 2);
         ctx.fillStyle = colorCss;
         ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = isSelected ? '#facc15' : '#ffffff';
+        ctx.lineWidth = isSelected ? 2.5 : 1.2;
         ctx.stroke();
 
-        ctx.fillStyle = colorCss;
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText(p.name || 'Player', sx, sy - 7);
+        ctx.fillStyle = isSelected ? '#fef08a' : colorCss;
+        ctx.font = isSelected ? 'bold 11px monospace' : 'bold 10px monospace';
+        ctx.fillText(p.name || 'Player', sx, sy - 8);
       }
     }
 
@@ -286,9 +341,9 @@ export class TacticalRadar {
       ctx.translate(mx, my);
       ctx.rotate(angle);
 
-      // Missile Arrow shape pointing along forward vector
+      // Missile Arrow shape
       ctx.beginPath();
-      ctx.moveTo(9, 0);
+      ctx.moveTo(10, 0);
       ctx.lineTo(-7, -5);
       ctx.lineTo(-4, 0);
       ctx.lineTo(-7, 5);
@@ -301,7 +356,7 @@ export class TacticalRadar {
 
       ctx.restore();
 
-      // Missile Distance tag
+      // Distance tag
       ctx.fillStyle = '#fef08a';
       ctx.font = '9px monospace';
       ctx.fillText(`🚀 ${Math.round(m.distance)}m`, mx, my - 9);
@@ -313,9 +368,14 @@ export class TacticalRadar {
   updateSidebar(playerPos, activeMissiles) {
     if (!this.missilesListElem || !this.targetsListElem) return;
 
+    if (this.missilesCountElem) {
+      this.missilesCountElem.textContent = activeMissiles.length;
+    }
+
     // 1. In-flight missiles
     if (activeMissiles.length === 0) {
       this.missilesListElem.innerHTML = `<div class="radar-empty-hint">Ningún misil en vuelo. Haz clic en "🚀 Lanzar" en la lista inferior.</div>`;
+      this.lastMissilesSignature = '';
     } else {
       let mHtml = '';
       for (const m of activeMissiles) {
@@ -341,59 +401,92 @@ export class TacticalRadar {
       this.missilesListElem.innerHTML = mHtml;
     }
 
-    // 2. Targets list
+    // 2. Targets list: preserve selection and allow rapid repeat-firing
     const playerDir = this.multiplayer ? this.multiplayer.playerDirectory : null;
-    let tHtml = '';
     let targetCount = 0;
+    const onlineTargets = [];
 
     if (playerDir) {
       for (const p of playerDir.values()) {
         if (p.id === this.multiplayer.myId) continue;
-        targetCount++;
-        const colorHex = this.missileManager ? this.missileManager.getColorForPlayer(p.id) : 0x06b6d4;
-        const colorCss = '#' + colorHex.toString(16).padStart(6, '0');
-        const px = p.pos ? Math.floor(p.pos[0]) : 0;
-        const py = p.pos ? Math.floor(p.pos[1]) : 25;
-        const pz = p.pos ? Math.floor(p.pos[2]) : 0;
-
-        let distFromAdmin = '--';
-        if (playerPos) {
-          distFromAdmin = Math.round(Math.hypot(px - playerPos.x, pz - playerPos.z)) + 'm';
-        }
-
-        tHtml += `
-          <div class="radar-target-card">
-            <div class="rt-info">
-              <span class="rt-color" style="background:${colorCss}"></span>
-              <div>
-                <strong>${p.name || 'Player'}</strong>
-                <div class="rt-coords">(${px}, ${py}, ${pz}) • ${distFromAdmin}</div>
-              </div>
-            </div>
-            <button class="mc-btn radar-launch-btn" data-target-id="${p.id}" data-target-name="${p.name || 'Player'}">
-              🚀 Lanzar
-            </button>
-          </div>
-        `;
+        onlineTargets.push(p);
       }
+    }
+
+    targetCount = onlineTargets.length;
+    if (this.targetCountElem) {
+      this.targetCountElem.textContent = targetCount;
     }
 
     if (targetCount === 0) {
       this.targetsListElem.innerHTML = `<div class="radar-empty-hint">No hay otros jugadores en la sala. Esperando exploradores...</div>`;
-    } else {
-      this.targetsListElem.innerHTML = tHtml;
-
-      // Attach launch click handlers
-      const launchBtns = this.targetsListElem.querySelectorAll('.radar-launch-btn');
-      launchBtns.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const targetId = btn.dataset.targetId;
-          const targetName = btn.dataset.targetName;
-          if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
-            this.multiplayer.sendAdminLaunchMissile(targetId);
-          }
-        });
-      });
+      this.selectedTargetId = null;
+      return;
     }
+
+    // Render Clean, Scrollable Target Cards
+    let tHtml = '';
+    for (const p of onlineTargets) {
+      const isSelected = (this.selectedTargetId === p.id);
+      const colorHex = this.missileManager ? this.missileManager.getColorForPlayer(p.id) : 0x06b6d4;
+      const colorCss = '#' + colorHex.toString(16).padStart(6, '0');
+      const px = p.pos ? Math.floor(p.pos[0]) : 0;
+      const py = p.pos ? Math.floor(p.pos[1]) : 25;
+      const pz = p.pos ? Math.floor(p.pos[2]) : 0;
+
+      let distFromAdmin = '--';
+      if (playerPos) {
+        distFromAdmin = Math.round(Math.hypot(px - playerPos.x, pz - playerPos.z)) + 'm';
+      }
+
+      tHtml += `
+        <div class="radar-target-card ${isSelected ? 'active-target' : ''}" data-player-id="${p.id}">
+          <div class="rt-info">
+            <span class="rt-color" style="background:${colorCss}"></span>
+            <div>
+              <div class="rt-name-row">
+                <strong>${p.name || 'Player'}</strong>
+                ${isSelected ? '<span class="rt-selected-badge">FIJADO 🎯</span>' : ''}
+              </div>
+              <div class="rt-coords">(${px}, ${py}, ${pz}) • ${distFromAdmin}</div>
+            </div>
+          </div>
+          <button class="mc-btn radar-launch-btn" data-target-id="${p.id}" data-target-name="${p.name || 'Player'}">
+            🚀 Lanzar
+          </button>
+        </div>
+      `;
+    }
+
+    this.targetsListElem.innerHTML = tHtml;
+
+    // Attach card selection and launch handlers
+    const cards = this.targetsListElem.querySelectorAll('.radar-target-card');
+    cards.forEach((card) => {
+      const pId = card.dataset.playerId;
+      card.addEventListener('click', (e) => {
+        if (!e.target.classList.contains('radar-launch-btn')) {
+          this.selectedTargetId = (this.selectedTargetId === pId) ? null : pId;
+          this.updateSidebar(playerPos, activeMissiles);
+        }
+      });
+    });
+
+    const launchBtns = this.targetsListElem.querySelectorAll('.radar-launch-btn');
+    launchBtns.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetId = btn.dataset.targetId;
+        this.selectedTargetId = targetId; // Keep selected so user can fire repeatedly!
+
+        if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
+          this.multiplayer.sendAdminLaunchMissile(targetId);
+        }
+
+        // Visual flash feedback on button
+        btn.classList.add('launch-flash');
+        setTimeout(() => btn.classList.remove('launch-flash'), 350);
+      });
+    });
   }
 }

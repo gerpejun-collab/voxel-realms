@@ -12,6 +12,9 @@ const {
   isValidTntTrigger,
   isValidVehicleDrive,
   isValidMissileLaunch,
+  ADMIN_EMAIL,
+  RIVAL_ADMIN_EMAIL,
+  ADMIN_EMAILS,
   isValidAdminCredentials
 } = require('./protocol');
 const { GameState } = require('./game-state');
@@ -213,6 +216,7 @@ class RoomManager {
 
     const rawIdentifier = typeof data?.email === 'string' ? data.email : (typeof data?.name === 'string' ? data.name : '');
     const isAdmin = isValidAdminCredentials(rawIdentifier, data?.adminKey || '');
+    const normAdminEmail = isAdmin ? rawIdentifier.trim().toLowerCase() : null;
 
     if (room.clients.size >= this.maxPlayers && !isAdmin) {
       this.send(ws, MSG.ERROR, { message: 'El servidor está lleno (máximo alcanzado). Intenta más tarde.' });
@@ -222,9 +226,11 @@ class RoomManager {
     const cleanName = sanitizeName(data?.name);
     const player = room.gameState.addPlayer(meta.id, cleanName);
     player.isAdmin = isAdmin;
+    player.adminEmail = normAdminEmail;
 
     meta.roomId = roomId;
     meta.isAdmin = isAdmin;
+    meta.adminEmail = normAdminEmail;
     room.clients.set(ws, meta.id);
 
     // Send initial world state & existing players to the new player
@@ -233,6 +239,7 @@ class RoomManager {
       id: meta.id,
       player,
       isAdmin,
+      adminEmail: normAdminEmail,
       ...initialState
     });
 
@@ -254,8 +261,10 @@ class RoomManager {
 
   sendAdminState(ws, room) {
     if (!room) return;
+    const meta = this.socketMeta.get(ws);
     this.send(ws, MSG.ADMIN_STATE, {
       isAdmin: true,
+      adminEmail: meta?.adminEmail || null,
       onlineCount: room.clients.size,
       players: room.gameState.getPlayersSnapshot()
     });
@@ -271,8 +280,11 @@ class RoomManager {
     const identifier = data?.email || data?.name || '';
     const adminKey = data?.adminKey || '';
     if (isValidAdminCredentials(identifier, adminKey)) {
+      const normEmail = identifier.trim().toLowerCase();
       player.isAdmin = true;
+      player.adminEmail = normEmail;
       meta.isAdmin = true;
+      meta.adminEmail = normEmail;
       this.sendAdminState(ws, room);
     } else {
       this.send(ws, MSG.ERROR, { message: 'Clave incorrecta.' });
@@ -346,6 +358,36 @@ class RoomManager {
     if (!meta.roomId) return;
     const room = this.rooms.get(meta.roomId);
     if (!room || !isValidMove(data)) return;
+
+    // Military Base Protected Perimeter Shield
+    // Bounding box: X in [-455, -385], Z in [115, 185], Y in [0, 85]
+    // Only jsieiragerpe@gmail.com is allowed entry.
+    if (meta.adminEmail !== ADMIN_EMAIL && Array.isArray(data.pos)) {
+      const [px, py, pz] = data.pos;
+      if (px >= -455 && px <= -385 && pz >= 115 && pz <= 185 && py <= 85) {
+        const distToWest = Math.abs(px - (-455));
+        const distToEast = Math.abs(px - (-385));
+        const distToSouth = Math.abs(pz - 115);
+        const distToNorth = Math.abs(pz - 185);
+        const minDist = Math.min(distToWest, distToEast, distToSouth, distToNorth);
+
+        if (minDist === distToWest) data.pos[0] = -458;
+        else if (minDist === distToEast) data.pos[0] = -382;
+        else if (minDist === distToSouth) data.pos[2] = 112;
+        else data.pos[2] = 188;
+
+        const now = Date.now();
+        if (!meta.lastShieldNotice || now - meta.lastShieldNotice > 3500) {
+          meta.lastShieldNotice = now;
+          this.send(ws, MSG.CHAT_BROADCAST, {
+            senderId: 'SYSTEM',
+            senderName: 'CAMPO DE FUERZA',
+            text: '🛡️ Acceso denegado: Base Militar protegida por escudo impenetrable.',
+            timestamp: now
+          });
+        }
+      }
+    }
 
     room.gameState.updatePlayer(meta.id, data);
   }
@@ -535,6 +577,18 @@ class RoomManager {
     if (!room || !isValidBlockModify(data)) return;
 
     const { x, y, z, blockType } = data;
+
+    // Military Base Protected Perimeter Shield: block edits prohibited unless jsieiragerpe@gmail.com
+    if (x >= -455 && x <= -385 && z >= 115 && z <= 185 && y >= 0 && y <= 85) {
+      if (meta.adminEmail !== ADMIN_EMAIL) {
+        this.send(ws, MSG.BLOCK_REJECT, {
+          x, y, z,
+          reason: '🛡️ Base militar protegida por campo de fuerza impenetrable.'
+        });
+        return;
+      }
+    }
+
     const result = room.gameState.modifyBlock(meta.id, x, y, z, blockType);
 
     if (result.success) {
@@ -735,30 +789,66 @@ class RoomManager {
       return;
     }
 
-    const missileId = 'msl_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const isAir = (typeof data.launchType === 'string')
+      ? (data.launchType === 'air')
+      : (Array.isArray(data.origin) ? data.origin[1] > 28 : (launcher.pos ? launcher.pos[1] > 28 : false));
+
     const startPos = Array.isArray(data.origin) ? [...data.origin] : [...launcher.pos];
     const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
 
-    const payload = {
-      missileId,
-      launcherId: meta.id,
-      launcherName: launcher.name,
-      targetPlayerId: data.targetPlayerId,
-      targetName,
-      targetPos,
-      startPos,
-      startYaw,
-      power: 4 // 4X TNT equivalent (radius 9m)
-    };
+    const isRivalAdmin = (meta.adminEmail === RIVAL_ADMIN_EMAIL);
+    const missileCount = isRivalAdmin ? 2 : 1;
+    const launchedIds = [];
 
-    // Broadcast missile spawn to everyone in the room
-    this.broadcast(room, MSG.MISSILE_SPAWN, payload);
+    for (let i = 0; i < missileCount; i++) {
+      const missileId = 'msl_' + Date.now() + '_' + Math.floor(Math.random() * 10000) + '_' + i;
+      launchedIds.push(missileId);
+      const yawOffset = (missileCount > 1) ? (i === 0 ? -0.16 : 0.16) : 0;
+
+      const payload = {
+        missileId,
+        launcherId: meta.id,
+        launcherName: launcher.name,
+        targetPlayerId: data.targetPlayerId,
+        targetName,
+        targetPos,
+        startPos: [startPos[0] + (missileCount > 1 ? (i === 0 ? -0.8 : 0.8) : 0), startPos[1], startPos[2]],
+        startYaw: startYaw + yawOffset,
+        power: 4, // 4X TNT equivalent (radius 9m)
+        launchType: isAir ? 'air' : 'land'
+      };
+
+      // Broadcast missile spawn to everyone in the room
+      this.broadcast(room, MSG.MISSILE_SPAWN, payload);
+    }
+
+    // Check if target is the Main Admin (jsieiragerpe@gmail.com) -> Trigger Active Interceptor Defense
+    const isTargetMainAdmin = (targetPlayer && (targetPlayer.adminEmail === ADMIN_EMAIL || targetPlayer.name === 'jsieiragerpe'));
+    if (isTargetMainAdmin) {
+      this.broadcast(room, MSG.MISSILE_INTERCEPT_DEFENSE, {
+        attackerId: meta.id,
+        attackerName: launcher.name,
+        attackerPos: startPos,
+        defenderId: targetPlayer.id,
+        defenderName: targetPlayer.name,
+        defenderPos: targetPos,
+        hostileMissileIds: launchedIds,
+        isAir: targetPos[1] > 28
+      });
+
+      this.broadcast(room, MSG.CHAT_BROADCAST, {
+        senderId: 'SYSTEM',
+        senderName: 'CÚPULA DE HIERRO',
+        text: '🛡️ [DEFENSA ACTIVA] ¡Misiles entrantes detectados hacia el Admin! Desplegando 5 interceptores de defensa...',
+        timestamp: Date.now()
+      });
+    }
 
     // Announce to launcher
     this.send(ws, MSG.CHAT_BROADCAST, {
       senderId: 'SYSTEM',
       senderName: 'RADAR TÁCTICO',
-      text: `🚀 Misil teledirigido lanzado con éxito hacia ${targetName}.`,
+      text: `🚀 ${missileCount > 1 ? 'Salva de 2 misiles teledirigidos lanzada' : 'Misil teledirigido lanzado'} con éxito hacia ${targetName} (${isAir ? 'Modo Aire' : 'Modo Tierra'}).`,
       timestamp: Date.now()
     });
   }

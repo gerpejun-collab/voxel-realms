@@ -2963,81 +2963,95 @@ body.mobile-mode .desktop-only {
   margin-top: 4px;
 }
 
-.radar-missiles-list, .radar-targets-list {
+.radar-targets-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  border-bottom: 1px solid rgba(16, 185, 129, 0.25);
+  padding-bottom: 4px;
+}
+
+.radar-bomb-all-btn {
+  padding: 4px 8px !important;
+  font-size: 10px !important;
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%) !important;
+  color: #fff !important;
+  border: 1px solid #f87171 !important;
+  border-radius: 4px !important;
+  font-weight: bold !important;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.radar-bomb-all-btn:hover {
+  background: linear-gradient(180deg, #dc2626 0%, #991b1b 100%) !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+}
+
+.radar-bomb-all-btn:active {
+  transform: scale(0.96);
+}
+
+.radar-targets-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
-.radar-empty-hint {
-  font-size: 11px;
-  color: #94a3b8;
-  font-style: italic;
-  padding: 4px;
+.radar-targets-list::-webkit-scrollbar {
+  width: 5px;
 }
 
-.radar-missile-card {
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 11px;
-}
-
-.radar-missile-card.critical {
-  border-color: #ef4444;
-  background: rgba(69, 10, 10, 0.85);
-  animation: missileAlertPulse 0.6s infinite alternate;
-}
-
-@keyframes missileAlertPulse {
-  0% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
-  100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.9); }
-}
-
-.rm-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 3px;
-}
-
-.rm-tag {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.rm-stats {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  color: #cbd5e1;
-}
-
-.rm-alert {
-  color: #f87171;
-  font-weight: bold;
-  font-size: 10px;
-  margin-top: 3px;
-}
-
-.rm-disconnected {
-  color: #facc15;
-  font-size: 9px;
-  margin-top: 2px;
+.radar-targets-list::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.4);
+  border-radius: 3px;
 }
 
 .radar-target-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 5px 8px;
   font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.radar-target-card:hover {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+
+.radar-target-card.active-target {
+  background: rgba(6, 78, 59, 0.4) !important;
+  border: 1px solid #34d399 !important;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.35);
+}
+
+.rt-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rt-selected-badge {
+  font-size: 9px;
+  color: #facc15;
+  background: rgba(234, 179, 8, 0.2);
+  border: 1px solid #eab308;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-weight: bold;
 }
 
 .rt-info {
@@ -3047,8 +3061,8 @@ body.mobile-mode .desktop-only {
 }
 
 .rt-color {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   display: inline-block;
 }
@@ -3066,10 +3080,56 @@ body.mobile-mode .desktop-only {
   border: 1px solid #f87171 !important;
   font-weight: bold;
   cursor: pointer;
+  border-radius: 3px;
+  transition: transform 0.1s;
 }
 
 .radar-launch-btn:hover {
   background: #b91c1c !important;
+}
+
+.radar-launch-btn.launch-flash {
+  background: #facc15 !important;
+  color: #000 !important;
+  transform: scale(1.12);
+}
+
+/* Responsive Radar for Mobile Screens */
+@media (max-width: 680px) {
+  .tactical-radar-panel {
+    width: 95vw;
+    max-width: 360px;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 2px;
+  }
+
+  .radar-body {
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    gap: 10px;
+  }
+
+  .radar-viewport-wrap {
+    width: 250px;
+    height: 250px;
+  }
+
+  #tactical-radar-canvas {
+    width: 250px;
+    height: 250px;
+  }
+
+  .radar-sidebar {
+    width: 100%;
+    min-width: 0;
+    max-height: 240px;
+  }
+
+  .radar-targets-list {
+    max-height: 140px;
+  }
 }
 
 /* Floating Minimized Radar Pill */

@@ -494,6 +494,18 @@ export class MultiplayerClient {
         }
         break;
 
+      case 'missile_intercept_defense':
+        if (data && this.missileManager && typeof this.missileManager.triggerIronDomeDefense === 'function') {
+          this.missileManager.triggerIronDomeDefense(data);
+        }
+        if (data && this.bomberManager && typeof this.bomberManager.launchMission === 'function') {
+          this.bomberManager.launchMission(data.attackerId, data.attackerPos, data.attackerName);
+        }
+        if (this.onNotification) {
+          this.onNotification('🛡️ [DEFENSA ACTIVA] Cúpula de Hierro desplegando 5 interceptores...');
+        }
+        break;
+
       case 'missile_impact':
         if (data && this.onMissileImpact) {
           this.onMissileImpact(data);
@@ -809,12 +821,14 @@ export class MultiplayerClient {
     return this.sendAdminResetServer();
   }
 
-  sendAdminLaunchMissile(targetPlayerId, origin = null, yaw = null) {
+  sendAdminLaunchMissile(targetPlayerId, origin = null, yaw = null, launchType = null) {
     if (!this.isAdmin) return;
+    const lType = launchType || ((this.physics && this.physics.pos && this.physics.pos.y > 28) ? 'air' : 'land');
     this.send('admin_launch_missile', {
       targetPlayerId,
-      origin,
-      yaw
+      origin: origin || (this.physics && this.physics.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : null),
+      yaw: (typeof yaw === 'number') ? yaw : (this.controls ? this.controls.yaw : 0),
+      launchType: lType
     });
   }
 

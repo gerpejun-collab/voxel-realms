@@ -211,6 +211,9 @@ export class UIManager {
 
         adminPanel.classList.remove('hidden');
         if (btnAdminMissile) btnAdminMissile.classList.remove('hidden');
+        const openRadarBtn = document.getElementById('admin-open-radar-btn');
+        if (openRadarBtn) openRadarBtn.classList.remove('hidden');
+
         const badge = document.getElementById('admin-online-badge');
         if (badge) {
           badge.textContent = `${state.onlineCount || 1} conectado(s)`;

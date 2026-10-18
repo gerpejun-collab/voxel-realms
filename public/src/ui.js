@@ -105,7 +105,7 @@ export class UIManager {
     this.fpsTelemetryCanvas = document.getElementById('fps-telemetry-canvas');
     this.fpsCanvasCtx = this.fpsTelemetryCanvas?.getContext ? this.fpsTelemetryCanvas.getContext('2d') : null;
     this.boostEnabled = false;
-    this.weaponsEnabled = false;
+    this.weaponsEnabled = true;
 
     // Elements
     this.lobbyOverlay = document.getElementById('lobby-overlay');
@@ -253,14 +253,34 @@ export class UIManager {
 
       const adminResetBtn = document.getElementById('admin-reset-server-btn');
       if (adminResetBtn) {
+        let resetConfirmTimeout = null;
+        let isAwaitingConfirm = false;
+
         adminResetBtn.addEventListener('click', () => {
           sound.playClick();
-          if (confirm('¿Estás seguro de reiniciar el servidor, borrar todos los cambios del mapa y expulsar a todos los jugadores?')) {
-            if (typeof this.multiplayer.requestAdminResetServer === 'function') {
-              this.multiplayer.requestAdminResetServer();
-            } else if (typeof this.multiplayer.sendAdminResetServer === 'function') {
-              this.multiplayer.sendAdminResetServer();
-            }
+          if (!isAwaitingConfirm) {
+            isAwaitingConfirm = true;
+            adminResetBtn.textContent = '⚠️ ¿CONFIRMAR REINICIO?';
+            adminResetBtn.classList.add('confirming');
+            if (resetConfirmTimeout) clearTimeout(resetConfirmTimeout);
+            resetConfirmTimeout = setTimeout(() => {
+              isAwaitingConfirm = false;
+              adminResetBtn.textContent = '🔄 Reiniciar Servidor';
+              adminResetBtn.classList.remove('confirming');
+            }, 4500);
+            return;
+          }
+
+          // Second click within 4.5 seconds: confirmed
+          isAwaitingConfirm = false;
+          if (resetConfirmTimeout) clearTimeout(resetConfirmTimeout);
+          adminResetBtn.textContent = '🔄 Reiniciando servidor...';
+          adminResetBtn.classList.remove('confirming');
+
+          if (typeof this.multiplayer.requestAdminResetServer === 'function') {
+            this.multiplayer.requestAdminResetServer();
+          } else if (typeof this.multiplayer.sendAdminResetServer === 'function') {
+            this.multiplayer.sendAdminResetServer();
           }
         });
       }
@@ -624,6 +644,35 @@ export class UIManager {
     if (btnSpeedToggle) {
       btnSpeedToggle.addEventListener('click', () => {
         this.cycleSpeed();
+      });
+    }
+
+    const btnToggleWeapons = document.getElementById('btn-toggle-weapons');
+    if (btnToggleWeapons) {
+      btnToggleWeapons.addEventListener('click', () => {
+        sound.playClick();
+        this.weaponsEnabled = !this.weaponsEnabled;
+        btnToggleWeapons.textContent = this.weaponsEnabled ? '🔫 Armas: ON' : '⛏️ Minería: OFF';
+        btnToggleWeapons.classList.toggle('active', this.weaponsEnabled);
+
+        const weaponsToggleBtn = document.getElementById('weapons-mode-toggle');
+        const weaponsStateLabel = document.getElementById('weapons-mode-state');
+        if (weaponsStateLabel) weaponsStateLabel.textContent = this.weaponsEnabled ? 'ON' : 'OFF';
+        if (weaponsToggleBtn) weaponsToggleBtn.classList.toggle('active', this.weaponsEnabled);
+
+        const weaponsHud = document.getElementById('weapons-hud-controls');
+        if (weaponsHud) weaponsHud.classList.toggle('hidden', !this.weaponsEnabled);
+
+        if (this.controls && typeof this.controls.setWeaponsMode === 'function') {
+          this.controls.setWeaponsMode(this.weaponsEnabled);
+        }
+        if (this.multiplayer && typeof this.multiplayer.sendWeaponToggle === 'function') {
+          this.multiplayer.sendWeaponToggle(this.weaponsEnabled);
+        }
+        if (this.animalManager && typeof this.animalManager.setWeaponsMode === 'function') {
+          this.animalManager.setWeaponsMode(this.weaponsEnabled);
+        }
+        this.showNotification(`Modo Armas & TNT ${this.weaponsEnabled ? 'Activado 🔫' : 'Desactivado ⛏️'}`);
       });
     }
 
@@ -1274,6 +1323,11 @@ export class UIManager {
         this.weaponsEnabled = !this.weaponsEnabled;
         if (weaponsStateLabel) weaponsStateLabel.textContent = this.weaponsEnabled ? 'ON' : 'OFF';
         weaponsToggleBtn.classList.toggle('active', this.weaponsEnabled);
+        const quickWeaponsBtn = document.getElementById('btn-toggle-weapons');
+        if (quickWeaponsBtn) {
+          quickWeaponsBtn.textContent = this.weaponsEnabled ? '🔫 Armas: ON' : '⛏️ Minería: OFF';
+          quickWeaponsBtn.classList.toggle('active', this.weaponsEnabled);
+        }
         if (this.controls && typeof this.controls.setWeaponsMode === 'function') {
           this.controls.setWeaponsMode(this.weaponsEnabled);
         }
@@ -1286,7 +1340,7 @@ export class UIManager {
         if (this.animalManager && typeof this.animalManager.setWeaponsMode === 'function') {
           this.animalManager.setWeaponsMode(this.weaponsEnabled);
         }
-        this.showNotification(`Modo Armas & TNT ${this.weaponsEnabled ? 'Activado 🔫' : 'Desactivado'}`);
+        this.showNotification(`Modo Armas & TNT ${this.weaponsEnabled ? 'Activado 🔫' : 'Desactivado ⛏️'}`);
       });
     }
 
@@ -1327,26 +1381,34 @@ export class UIManager {
         if (sound && typeof sound.playClick === 'function') sound.playClick(1.2);
         if (this.controls && typeof this.controls.cycleTntPower === 'function') {
           this.controls.cycleTntPower();
+          const powerLabel = this.controls.getTntPowerLabel ? this.controls.getTntPowerLabel() : '';
+          this.showNotification(`TNT ${powerLabel}`);
         }
       });
     }
 
     const scopeBtnShoot = document.getElementById('scope-btn-shoot');
     if (scopeBtnShoot) {
-      scopeBtnShoot.addEventListener('click', () => {
+      const onScopeShoot = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (this.controls && typeof this.controls.triggerShoot === 'function') {
           this.controls.triggerShoot(true);
         }
-      });
+      };
+      scopeBtnShoot.addEventListener('click', onScopeShoot);
+      scopeBtnShoot.addEventListener('touchstart', onScopeShoot, { passive: false });
     }
 
     const scopeBtnExit = document.getElementById('scope-btn-exit');
     if (scopeBtnExit) {
-      scopeBtnExit.addEventListener('click', () => {
+      const onScopeExit = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (this.controls && typeof this.controls.setAiming === 'function') {
           this.controls.setAiming(false);
         }
-      });
+      };
+      scopeBtnExit.addEventListener('click', onScopeExit);
+      scopeBtnExit.addEventListener('touchstart', onScopeExit, { passive: false });
     }
 
     // Fast action grid inside Pause Menu

@@ -357,7 +357,7 @@ export class MultiplayerClient {
           if (lobby) {
             lobby.classList.remove('hidden');
           }
-          const hud = document.getElementById('hud');
+          const hud = document.getElementById('hud-overlay') || document.getElementById('hud');
           if (hud) {
             hud.classList.add('hidden');
           }
@@ -368,6 +368,15 @@ export class MultiplayerClient {
         }
         if (this.onServerReset) {
           this.onServerReset(resetReason);
+        }
+        break;
+
+      case 'weapon_toggle':
+        if (data && data.id && data.id !== this.myId) {
+          const avatar = this.remoteAvatars.get(data.id);
+          if (avatar && typeof avatar.setWeaponsEnabled === 'function') {
+            avatar.setWeaponsEnabled(data.enabled);
+          }
         }
         break;
 
@@ -588,6 +597,10 @@ export class MultiplayerClient {
     this.lastSentPos = [pos.x, pos.y, pos.z];
     this.lastSentRot = [rot.yaw, rot.pitch];
 
+    const weaponsEnabled = (this.controls && typeof this.controls.weaponsMode === 'boolean')
+      ? this.controls.weaponsMode
+      : true;
+
     this.send('move', {
       pos: [
         Math.round(pos.x * 100) / 100,
@@ -598,7 +611,8 @@ export class MultiplayerClient {
         Math.round(rot.yaw * 100) / 100,
         Math.round(rot.pitch * 100) / 100
       ],
-      action: action || 'idle'
+      action: action || 'idle',
+      weaponsEnabled
     });
   }
 

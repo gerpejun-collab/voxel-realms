@@ -139,7 +139,7 @@ class GameState {
       pos: [0, 25, 0], // Default spawn point at central plaza
       rot: [0, 0],     // [yaw, pitch]
       action: 'idle',
-      weaponsEnabled: false,
+      weaponsEnabled: true,
       isAdmin: false,
       joinedAt: Date.now(),
       lastUpdate: Date.now()

@@ -49,6 +49,7 @@ class VoxelRealmsApp {
       this.particleManager
     );
     this.multiplayer.physics = this.physics;
+    this.multiplayer.controls = this.controls;
 
     // 6. Initialize Ambient Voxel Animals, Rare NPCs & Highway Traffic
     this.animalManager = new AnimalManager(this.sceneManager.scene, this.world);
@@ -159,14 +160,7 @@ class VoxelRealmsApp {
         return; // Block placement would trap player
       }
 
-      // If placing TNT from the hotbar, trigger a single primed TNT on that exact surface instead of placing a static block + second primed mesh
-      if (selectedBlockId === BLOCKS.TNT || selectedBlockId === 19) {
-        if (this.controls && typeof this.controls.triggerTnt === 'function') {
-          this.controls.triggerTnt();
-        }
-        return;
-      }
-
+      // Place authoritative block in the world and replicate via multiplayer
       this.multiplayer.sendBlockModify(placePos.x, placePos.y, placePos.z, selectedBlockId);
     };
 

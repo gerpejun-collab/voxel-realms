@@ -449,7 +449,7 @@ export class Controls {
     this.localAvatar = null;
 
     // Weapons & Reactive TNT Mode state
-    this.weaponsMode = false;
+    this.weaponsMode = true;
     this.isAiming = false;
     this.aimBlend = 0;
     this.recoilProgress = 0;
@@ -528,6 +528,9 @@ export class Controls {
     this.localAvatar = avatar;
     if (this.localAvatar && this.localAvatar.group) {
       this.localAvatar.group.visible = (this.perspective !== 'first');
+    }
+    if (this.localAvatar && typeof this.localAvatar.setWeaponsEnabled === 'function') {
+      this.localAvatar.setWeaponsEnabled(this.weaponsMode);
     }
   }
 
@@ -671,7 +674,7 @@ export class Controls {
       handguard, barrel, muzzle, scopeRail, scopeBody, scopeRings, scopeFront, scopeRear, scopeLens,
       leftArmGroup
     );
-    this.rifleGroup.visible = false;
+    this.rifleGroup.visible = this.weaponsMode;
     this.armPivot.add(this.rifleGroup);
 
     this.firstPersonArm.add(this.armPivot);
@@ -817,7 +820,7 @@ export class Controls {
     const effectiveRange = isSniperShot ? 1000.0 : 85.0;
     const savedReach = this.reachDistance;
     this.reachDistance = effectiveRange;
-    const longVoxelHit = this.raycastVoxel();
+    const longVoxelHit = this.raycastVoxel(origin, dir);
     this.reachDistance = savedReach;
     this.raycastVoxel();
 
@@ -944,7 +947,7 @@ export class Controls {
     // Raycast up to 500 blocks along the exact crosshair line of sight
     const savedReach = this.reachDistance;
     this.reachDistance = 500.0;
-    const exactHit = this.raycastVoxel();
+    const exactHit = this.raycastVoxel(eye, dir);
     this.reachDistance = savedReach;
     this.raycastVoxel();
 
@@ -953,19 +956,10 @@ export class Controls {
     let placedOnSurface = false;
 
     if (exactHit && exactHit.place) {
-      // Exact surface placement where the player is aiming (no distance limit, never floating in mid-air)
-      const px = exactHit.place.x;
-      const pz = exactHit.place.z;
-      let py = exactHit.place.y;
-      // If placed on the side or underside of a block above open air, drop down to the solid floor below so it never floats
-      if (this.world && typeof this.world.getBlock === 'function') {
-        while (py > 1 && this.world.getBlock(px, py - 1, pz) === 0) {
-          py--;
-        }
-      }
-      spawnX = px + 0.5;
-      spawnY = py + 0.47;
-      spawnZ = pz + 0.5;
+      // Exact surface placement where the player is aiming (no distance limit, firmly on targeted block surface)
+      spawnX = exactHit.place.x + 0.5;
+      spawnY = exactHit.place.y + 0.47;
+      spawnZ = exactHit.place.z + 0.5;
       vx = 0;
       vy = 0;
       vz = 0;
@@ -1696,10 +1690,28 @@ export class Controls {
   /**
    * Fast Voxel DDA (Digital Differential Analyzer) raycast
    */
-  raycastVoxel() {
-    const origin = this.physics.getEyePosition();
-    const dir = new THREE.Vector3(0, 0, -1);
-    dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+  raycastVoxel(customOrigin = null, customDir = null) {
+    let origin;
+    let dir;
+
+    if (customOrigin && customDir) {
+      origin = customOrigin;
+      dir = customDir;
+    } else if (this.isAiming && this.camera && this.weaponsMode) {
+      origin = this.camera.position;
+      dir = new THREE.Vector3();
+      if (typeof this.camera.getWorldDirection === 'function') {
+        this.camera.getWorldDirection(dir);
+      } else {
+        dir.set(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+      }
+    } else {
+      origin = (this.physics && typeof this.physics.getEyePosition === 'function')
+        ? this.physics.getEyePosition()
+        : (this.camera ? this.camera.position : new THREE.Vector3());
+      dir = new THREE.Vector3(0, 0, -1);
+      dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    }
 
     let px = origin.x;
     let py = origin.y;
@@ -1910,13 +1922,16 @@ export class Controls {
     if (typeof document !== 'undefined') {
       const scopeOverlay = document.getElementById('rifle-scope-overlay');
       const crosshair = document.getElementById('crosshair');
+      const hotbarWrapper = document.getElementById('hotbar-wrapper');
       if (scopeOverlay) {
         if (this.weaponsMode && this.aimBlend > 0.60) {
           scopeOverlay.classList.remove('hidden');
           if (crosshair) crosshair.classList.add('hidden');
+          if (hotbarWrapper) hotbarWrapper.classList.add('hidden');
         } else {
           scopeOverlay.classList.add('hidden');
           if (crosshair) crosshair.classList.remove('hidden');
+          if (hotbarWrapper) hotbarWrapper.classList.remove('hidden');
         }
       }
     }
@@ -2019,11 +2034,14 @@ export class Controls {
 
     // Camera placement based on perspective mode (1st person, 3rd person back, 3rd person front)
     const eye = this.physics.getEyePosition();
+    const isScopedAiming = Boolean(this.weaponsMode && this.aimBlend > 0.5);
 
-    if (this.perspective === 'first') {
-      this.camera.position.set(eye.x, eye.y + bobY, eye.z);
-      this.camera.rotation.set(this.pitch, this.yaw, bobRoll, 'YXZ');
-      if (this.firstPersonArm) this.firstPersonArm.visible = true;
+    if (isScopedAiming || this.perspective === 'first') {
+      const curBobY = bobY * (1.0 - this.aimBlend);
+      const curBobRoll = bobRoll * (1.0 - this.aimBlend);
+      this.camera.position.set(eye.x, eye.y + curBobY, eye.z);
+      this.camera.rotation.set(this.pitch, this.yaw, curBobRoll, 'YXZ');
+      if (this.firstPersonArm) this.firstPersonArm.visible = !isScopedAiming;
       if (this.localAvatar && this.localAvatar.group) this.localAvatar.group.visible = false;
     } else if (this.perspective === 'third-back') {
       const dist = 3.5;

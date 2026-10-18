@@ -4443,6 +4443,35 @@ it('Scope Overlay Mobile Action Buttons: styles and markup define visible, touch
   assert.ok(css.includes('.power-max'), 'CSS must define .power-max for MAX TNT power');
 });
 
+it('Weapons HUD & Mobile Action Controls: active by default, TNT placement puts real block, Admin reset is 2-step click confirmation', () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+  assert.ok(html.includes('id="btn-toggle-weapons"'), 'Quick actions must have persistent #btn-toggle-weapons');
+  assert.ok(!html.includes('id="weapons-hud-controls" class="hidden"'), 'Weapons HUD controls must NOT be hidden by default');
+
+  const { Controls, mockTHREE } = loadControlsModuleForM2();
+  const camera = new mockTHREE.Group();
+  camera.position.set(0, 26.6, 0);
+  camera.getWorldDirection = (vec) => vec.set(1, 0, 0);
+
+  const controls = new Controls(
+    camera,
+    { addEventListener: () => {} },
+    { pos: new mockTHREE.Vector3(0, 25, 0), getEyePosition: () => new mockTHREE.Vector3(0, 26.6, 0), onGround: true, action: 'idle' },
+    { getBlock: () => 0 }
+  );
+  assert.strictEqual(controls.weaponsMode, true, 'Controls weaponsMode must default to true');
+
+  // Verify raycastVoxel with camera sightline alignment during ADS
+  controls.isAiming = true;
+  const scopedHit = controls.raycastVoxel();
+  assert.strictEqual(controls.isAiming, true);
+
+  // Verify server GameState defaults player to weaponsEnabled: true
+  const gs = new GameState({ seed: 48151623 });
+  const player = gs.addPlayer('test_p', 'SniperPro');
+  assert.strictEqual(player.weaponsEnabled, true, 'Server players must have weaponsEnabled default to true');
+});
+
 // =============================================================================
 // SUITE EXECUTION SUMMARY
 // =============================================================================

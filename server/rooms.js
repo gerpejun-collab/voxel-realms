@@ -303,7 +303,7 @@ class RoomManager {
       console.error('[RoomManager] Error broadcasting SERVER_RESET:', err);
     }
 
-    // Cleanly disconnect clients and reset session metadata
+    // Cleanly remove from game state and room session immediately
     const sockets = Array.from(room.clients.keys());
     for (const clientWs of sockets) {
       const clientMeta = this.socketMeta.get(clientWs);
@@ -313,11 +313,22 @@ class RoomManager {
         clientMeta.isAdmin = false;
       }
       room.clients.delete(clientWs);
-      try {
-        if (typeof clientWs.close === 'function') {
-          clientWs.close();
-        }
-      } catch (_) {}
+    }
+
+    // Give 250ms buffer so that MSG.SERVER_RESET frame is reliably delivered before closing sockets
+    const closeSockets = () => {
+      for (const clientWs of sockets) {
+        try {
+          if (typeof clientWs.close === 'function') {
+            clientWs.close();
+          }
+        } catch (_) {}
+      }
+    };
+    if (typeof setTimeout !== 'undefined') {
+      setTimeout(closeSockets, 250);
+    } else {
+      closeSockets();
     }
   }
 
@@ -336,6 +347,12 @@ class RoomManager {
 
     const enabled = Boolean(data && data.enabled);
     room.gameState.setPlayerWeaponsMode(meta.id, enabled);
+
+    // Broadcast weapon toggle to all players so remote avatars equip/unequip immediately
+    this.broadcast(room, MSG.WEAPON_TOGGLE, {
+      id: meta.id,
+      enabled: enabled
+    });
 
     // Broadcast updated shared animal list to everyone in the room (no duplicates!)
     this.broadcast(room, MSG.ANIMALS_UPDATE, {

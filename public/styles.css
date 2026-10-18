@@ -2252,13 +2252,13 @@ body.mobile-mode .desktop-only {
 
 /* Sniper Scope Overlay */
 #rifle-scope-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
-  z-index: 45;
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2326,13 +2326,13 @@ body.mobile-mode .desktop-only {
 }
 
 .scope-overlay-actions {
-  position: absolute;
-  bottom: 24px;
+  position: fixed;
+  bottom: 36px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 16px;
-  z-index: 999;
+  gap: 20px;
+  z-index: 10005;
   pointer-events: auto !important;
 }
 
@@ -2342,38 +2342,45 @@ body.mobile-mode .desktop-only {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 22px;
+  min-width: 155px;
+  height: 52px;
+  padding: 12px 26px;
   font-family: var(--font-title);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  border-radius: 8px;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.95);
+  transition: transform 0.08s ease, filter 0.08s ease;
 }
 
 .scope-shoot-btn {
-  background: #dc2626 !important;
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
   color: #ffffff !important;
-  border: 2px solid #f87171 !important;
+  border: 3px solid #fca5a5 !important;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.7), inset 0 2px 0 rgba(255, 255, 255, 0.4) !important;
+  text-shadow: 0 2px 4px #000000;
 }
 
 .scope-shoot-btn:active {
-  background: #b91c1c !important;
-  transform: scale(0.96);
+  background: #991b1b !important;
+  transform: scale(0.95);
 }
 
 .scope-exit-btn {
-  background: #374151 !important;
-  color: #ffffff !important;
-  border: 2px solid #9ca3af !important;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+  color: #fef08a !important;
+  border: 3px solid #f59e0b !important;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.6), inset 0 2px 0 rgba(255, 255, 255, 0.3) !important;
+  text-shadow: 0 2px 4px #000000;
 }
 
 .scope-exit-btn:active {
-  background: #1f2937 !important;
-  transform: scale(0.96);
+  background: #020617 !important;
+  transform: scale(0.95);
 }
 
 /* Weapon Hit Toast */

@@ -908,6 +908,26 @@ class RoomManager {
     const rx = Math.round(data.x);
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);
+
+    // Mid-air kinetic interception: broadcast impact to all players without ground crater
+    if (data.isIntercepted) {
+      this.broadcast(room, MSG.MISSILE_IMPACT, {
+        missileId: data.missileId,
+        x: rx,
+        y: ry,
+        z: rz,
+        isIntercepted: true,
+        radius: 0
+      });
+      this.broadcast(room, MSG.CHAT_BROADCAST, {
+        senderId: 'SYSTEM',
+        senderName: 'CÚPULA DE HIERRO',
+        text: '🛡️ [INTERCEPCIÓN CINÉTICA] ¡Misil enemigo neutralizado en pleno vuelo por la Cúpula de Hierro!',
+        timestamp: Date.now()
+      });
+      return;
+    }
+
     const radius = 9; // 4x TNT power
 
     // Base Militar forcefield absorbs hostile missile detonation without terrain damage

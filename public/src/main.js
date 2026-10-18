@@ -80,37 +80,13 @@ class VoxelRealmsApp {
       this.sceneManager.scene,
       this.particleManager,
       this.world,
-      sound,
-      (bombPayload) => {
-        if (this.particleManager && typeof this.particleManager.spawnPrimedTnt === 'function') {
-          this.particleManager.spawnPrimedTnt(
-            { x: bombPayload.x, y: bombPayload.y, z: bombPayload.z },
-            { x: bombPayload.x, y: bombPayload.y, z: bombPayload.z },
-            1800,
-            (bx, by, bz) => {
-              if (this.world && typeof this.world.applyBlockDelta === 'function') {
-                for (let dx = -2; dx <= 2; dx++) {
-                  for (let dy = -2; dy <= 2; dy++) {
-                    for (let dz = -2; dz <= 2; dz++) {
-                      if (dx * dx + dy * dy + dz * dz <= 5 && by + dy > 1) {
-                        this.world.applyBlockDelta(bx + dx, by + dy, bz + dz, 0);
-                      }
-                    }
-                  }
-                }
-              }
-              if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
-                this.particleManager.spawnExplosion(bx, by, bz);
-              }
-              if (sound && typeof sound.playExplosion === 'function') sound.playExplosion();
-            }
-          );
-        }
-        if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
-          this.multiplayer.sendTntTrigger(bombPayload.x, bombPayload.y, bombPayload.z, 1800, 3);
-        }
-      }
+      sound
     );
+    this.bomber.onBombImpact = (bx, by, bz) => {
+      if (this.multiplayer && typeof this.multiplayer.sendTntTrigger === 'function') {
+        this.multiplayer.sendTntTrigger(bx, by, bz, 0, 1);
+      }
+    };
     this.multiplayer.bomberManager = this.bomber;
 
     // 7. Initialize UI Overlay & HUD
@@ -137,6 +113,15 @@ class VoxelRealmsApp {
       };
       this.multiplayer.onVehicleExit = (data) => {
         this.vehicleManager.handleRemoteExit(data, this.multiplayer.remoteAvatars);
+      };
+      this.multiplayer.onMissileImpact = (data) => {
+        if (this.missileManager && data && data.missileId) {
+          const m = this.missileManager.missiles.get(data.missileId);
+          if (m) {
+            m.destroyMidAir();
+            this.missileManager.missiles.delete(data.missileId);
+          }
+        }
       };
     }
 

@@ -140,13 +140,21 @@ export class ParticleManager {
    */
   spawnPrimedTnt(startPos, targetPos, fuseMs = 1500, onDetonate = null) {
     if (!targetPos) return null;
-    const tx = (targetPos.x !== undefined ? targetPos.x : targetPos[0]) + 0.5;
-    const ty = (targetPos.y !== undefined ? targetPos.y : targetPos[1]) + 0.5;
-    const tz = (targetPos.z !== undefined ? targetPos.z : targetPos[2]) + 0.5;
+    let tx = (targetPos.x !== undefined ? targetPos.x : targetPos[0]) + 0.5;
+    let ty = (targetPos.y !== undefined ? targetPos.y : targetPos[1]) + 0.5;
+    let tz = (targetPos.z !== undefined ? targetPos.z : targetPos[2]) + 0.5;
 
-    const sx = startPos && startPos.x !== undefined ? startPos.x : tx;
-    const sy = startPos && startPos.y !== undefined ? startPos.y : ty + 0.8;
-    const sz = startPos && startPos.z !== undefined ? startPos.z : tz;
+    let sx = startPos && startPos.x !== undefined ? startPos.x : tx;
+    let sy = startPos && startPos.y !== undefined ? startPos.y : ty + 0.8;
+    let sz = startPos && startPos.z !== undefined ? startPos.z : tz;
+
+    // If spawned high in the sky, automatically detect ground floor so TNT drops down rather than floating!
+    if (this.world && typeof this.world.getHeightAt === 'function') {
+      const gh = this.world.getHeightAt(Math.floor(tx), Math.floor(tz));
+      if (ty > gh + 2.0 && Math.abs(sy - ty) < 2.0) {
+        ty = gh + 0.5;
+      }
+    }
 
     const group = new THREE.Group();
 
@@ -194,7 +202,7 @@ export class ParticleManager {
 
     const totalFuse = Math.max(0.25, (fuseMs || 1500) / 1000);
     const dist = Math.hypot(tx - sx, ty - sy, tz - sz);
-    const flightDuration = dist > 0.35 ? Math.min(0.32, totalFuse * 0.45) : 0.01;
+    const flightDuration = dist > 0.35 ? Math.min(2.5, totalFuse * 0.85) : 0.01;
 
     const entry = {
       group,

@@ -41,6 +41,10 @@ export class StrategicBomber {
     this.lastTargetId = null;
     this.lastLaunchTimestamp = 0;
 
+    // Physical Falling Bombs Simulation
+    this.activeBombs = [];
+    this.onBombImpact = null;
+
     // Build 3D mesh
     this.mesh = this.buildMesh();
     this.mesh.position.copy(this.pos);
@@ -520,28 +524,260 @@ export class StrategicBomber {
         exh.visible = false;
       }
     }
+    // 7. Update physical falling carpet bombs in flight
+    this.updateActiveBombs(dt);
   }
 
   /**
-   * Drops 1 TNT bomb from bomb bay with realistic gravity trajectory
+   * Drops 1 physical TNT bomb from bomb bay with realistic gravity trajectory
    */
   dropSingleBomb() {
     const bombOrigin = this.pos.clone().add(new THREE.Vector3(0, -1.8, 0));
+    const bomb = this.createFallingBomb(bombOrigin);
+    this.activeBombs.push(bomb);
+
     if (typeof this.onBombDrop === 'function') {
       try {
         this.onBombDrop({
           x: bombOrigin.x,
           y: bombOrigin.y,
           z: bombOrigin.z,
-          vx: this.forward.x * (this.speed * 0.5),
-          vz: this.forward.z * (this.speed * 0.5),
+          vx: this.forward.x * (this.speed * 0.45),
+          vz: this.forward.z * (this.speed * 0.45),
           targetPos: this.targetPos ? [this.targetPos.x, this.targetPos.y, this.targetPos.z] : null
         });
       } catch (_) {}
     }
   }
 
+  /**
+   * Creates 3D aerial bomb entity with Minecraft TNT livery, tail fins, and gravity physics
+   */
+  createFallingBomb(startPos) {
+    const group = new THREE.Group();
+
+    // 1. Aerodynamic Bomb Casing (Minecraft TNT theme: red body + white TNT band + 4 stabilizer fins)
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0xdc2626,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+    // Bomb cylindrical main charge body: radius 0.26, length 1.2
+    const bodyGeom = new THREE.CylinderGeometry(0.26, 0.28, 1.2, 12);
+    if (bodyGeom && typeof bodyGeom.rotateX === 'function') bodyGeom.rotateX(Math.PI / 2);
+    const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
+    if (!bodyGeom || typeof bodyGeom.rotateX !== 'function') bodyMesh.rotation.x = Math.PI / 2;
+    group.add(bodyMesh);
+
+    // Rounded nose cone
+    const SphereCtor = THREE.SphereGeometry || THREE.BoxGeometry;
+    const noseGeom = new SphereCtor(0.26, 10, 8);
+    if (noseGeom && typeof noseGeom.rotateX === 'function') noseGeom.rotateX(-Math.PI / 2);
+    const noseMesh = new THREE.Mesh(noseGeom, bodyMat);
+    noseMesh.position.set(0, 0, 0.6);
+    group.add(noseMesh);
+
+    // Central white TNT band
+    const bandMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 });
+    const bandGeom = new THREE.CylinderGeometry(0.285, 0.285, 0.38, 12);
+    if (bandGeom && typeof bandGeom.rotateX === 'function') bandGeom.rotateX(Math.PI / 2);
+    const bandMesh = new THREE.Mesh(bandGeom, bandMat);
+    if (!bandGeom || typeof bandGeom.rotateX !== 'function') bandMesh.rotation.x = Math.PI / 2;
+    group.add(bandMesh);
+
+    // 4 Tail Stabilizer Fins at the rear
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.6 });
+    for (let i = 0; i < 4; i++) {
+      const angle = (i * Math.PI) / 2;
+      const finGeom = new THREE.BoxGeometry(0.04, 0.34, 0.42);
+      const finMesh = new THREE.Mesh(finGeom, finMat);
+      finMesh.position.set(Math.cos(angle) * 0.22, Math.sin(angle) * 0.22, -0.6);
+      finMesh.rotation.z = angle;
+      group.add(finMesh);
+    }
+
+    // Rear fuse wick & glowing spark tip
+    const wickMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+    const wickMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.16), wickMat);
+    wickMesh.position.set(0, 0, -0.68);
+    group.add(wickMesh);
+
+    group.position.copy(startPos);
+    if (this.scene && typeof this.scene.add === 'function') {
+      this.scene.add(group);
+    }
+
+    // Realistic falling velocity: forward momentum from bomber + initial downward release
+    const forwardSpeed = this.speed * 0.45;
+    return {
+      group,
+      pos: startPos.clone(),
+      vel: new THREE.Vector3(
+        this.forward.x * forwardSpeed,
+        -3.5,
+        this.forward.z * forwardSpeed
+      ),
+      age: 0,
+      trailTimer: 0,
+      isDead: false
+    };
+  }
+
+  /**
+   * Updates physical falling bombs: gravity, terminal velocity, nose dive pitch, contrail, and ground impact
+   */
+  updateActiveBombs(dt) {
+    if (!this.activeBombs || this.activeBombs.length === 0) return;
+
+    for (let i = this.activeBombs.length - 1; i >= 0; i--) {
+      const bomb = this.activeBombs[i];
+      bomb.age += dt;
+      bomb.trailTimer += dt;
+
+      // Gravity: accelerates downward at 24 m/s^2 up to terminal velocity (-65 m/s)
+      bomb.vel.y = Math.max(-65.0, bomb.vel.y - 24.0 * dt);
+      // Horizontal drag
+      bomb.vel.x *= Math.pow(0.985, dt * 60);
+      bomb.vel.z *= Math.pow(0.985, dt * 60);
+
+      // Integrate position
+      bomb.pos.x += bomb.vel.x * dt;
+      bomb.pos.y += bomb.vel.y * dt;
+      bomb.pos.z += bomb.vel.z * dt;
+      if (bomb.group && bomb.group.position && bomb.group.position.copy) {
+        bomb.group.position.copy(bomb.pos);
+      }
+
+      // Dynamically align nose toward velocity vector (starts horizontal, noses down into vertical dive)
+      const spdSq = bomb.vel.x * bomb.vel.x + bomb.vel.y * bomb.vel.y + bomb.vel.z * bomb.vel.z;
+      if (spdSq > 0.01 && bomb.group && typeof bomb.group.lookAt === 'function') {
+        const lookTarget = bomb.pos.clone().add(bomb.vel);
+        bomb.group.lookAt(lookTarget);
+      }
+
+      // Spark / smoke contrail behind the falling bomb
+      if (bomb.trailTimer >= 0.035 && this.particleManager) {
+        bomb.trailTimer = 0;
+        if (this.particleManager.debrisParticles && this.particleManager.debrisParticles.length < this.particleManager.maxDebris) {
+          this.particleManager.debrisParticles.push({
+            x: bomb.pos.x + (Math.random() - 0.5) * 0.2,
+            y: bomb.pos.y + 0.3,
+            z: bomb.pos.z + (Math.random() - 0.5) * 0.2,
+            vx: -bomb.vel.x * 0.15 + (Math.random() - 0.5) * 0.8,
+            vy: -bomb.vel.y * 0.15 + (Math.random() - 0.5) * 0.8,
+            vz: -bomb.vel.z * 0.15 + (Math.random() - 0.5) * 0.8,
+            scale: 0.6 + Math.random() * 0.5,
+            rotX: Math.random() * 3,
+            rotY: Math.random() * 3,
+            life: 0.7,
+            maxLife: 0.7
+          });
+        }
+      }
+
+      // Ground collision detection
+      const bx = Math.floor(bomb.pos.x);
+      const bz = Math.floor(bomb.pos.z);
+      const groundY = (this.world && typeof this.world.getHeightAt === 'function')
+        ? this.world.getHeightAt(bx, bz)
+        : 24;
+
+      let hitGround = (bomb.pos.y <= groundY + 0.5);
+      if (!hitGround && this.world && typeof this.world.getBlock === 'function') {
+        const by = Math.floor(bomb.pos.y);
+        const blk = this.world.getBlock(bx, by, bz);
+        if (blk !== 0 && blk !== 9) { // 9 is water
+          hitGround = true;
+        }
+      }
+
+      // Safety detonation if bomb falls below terrain floor or lives > 10s
+      if (bomb.pos.y <= 10 || bomb.age >= 10.0) {
+        hitGround = true;
+      }
+
+      if (hitGround) {
+        this.detonateBomb(bomb);
+        this.activeBombs.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Detonates falling bomb on ground impact: spawns explosion, plays sound, creates crater, and informs callback
+   */
+  detonateBomb(bomb) {
+    const ix = Math.floor(bomb.pos.x);
+    const iy = Math.floor(bomb.pos.y);
+    const iz = Math.floor(bomb.pos.z);
+
+    // 1. Visual explosion particles & fireball shockwave
+    if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
+      this.particleManager.spawnExplosion(ix, iy, iz);
+    }
+
+    // 2. Audio explosion sound
+    if (this.sound && typeof this.sound.playExplosion === 'function') {
+      this.sound.playExplosion();
+    }
+
+    // 3. Terrain destruction crater (1X TNT power: radius ~2.5 blocks)
+    if (this.world && typeof this.world.applyBlockDelta === 'function') {
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dz = -2; dz <= 2; dz++) {
+            if (dx * dx + dy * dy + dz * dz <= 5 && (iy + dy) > 1) {
+              this.world.applyBlockDelta(ix + dx, iy + dy, iz + dz, 0);
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Trigger onBombImpact callback for network multiplayer synchronization
+    if (typeof this.onBombImpact === 'function') {
+      try {
+        this.onBombImpact(ix, iy, iz);
+      } catch (_) {}
+    }
+
+    // Clean up mesh
+    if (bomb.group && bomb.group.parent) {
+      bomb.group.parent.remove(bomb.group);
+    }
+    this.disposeObject(bomb.group);
+  }
+
+  disposeObject(obj) {
+    if (!obj) return;
+    if (typeof obj.traverse === 'function') {
+      obj.traverse((child) => {
+        if (child.geometry && typeof child.geometry.dispose === 'function') {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            for (const m of child.material) {
+              if (m && typeof m.dispose === 'function') m.dispose();
+            }
+          } else if (typeof child.material.dispose === 'function') {
+            child.material.dispose();
+          }
+        }
+      });
+    }
+  }
+
   dispose() {
+    if (this.activeBombs) {
+      for (const b of this.activeBombs) {
+        if (b.group && b.group.parent) {
+          b.group.parent.remove(b.group);
+        }
+        this.disposeObject(b.group);
+      }
+      this.activeBombs = [];
+    }
     if (this.mesh && this.mesh.parent) {
       this.mesh.parent.remove(this.mesh);
     }
@@ -550,3 +786,4 @@ export class StrategicBomber {
     }
   }
 }
+

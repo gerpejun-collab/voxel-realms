@@ -43,9 +43,9 @@ export class GuidedMissile {
     this.closestDistToTarget = Infinity;
     this.missileManager = options.missileManager || null;
 
-    // Initial forward orientation
+    // Initial forward orientation (pitches upwards into the sky during initial climb)
     const startYaw = typeof options.startYaw === 'number' ? options.startYaw : 0;
-    const initialPitch = (this.launchType === 'air') ? 0.25 : 0.65;
+    const initialPitch = (this.launchType === 'air') ? 0.45 : 0.85;
     this.forward = new THREE.Vector3(
       -Math.sin(startYaw),
       initialPitch,
@@ -333,51 +333,81 @@ export class GuidedMissile {
       }
     }
 
-    // 1. Phased Kinematics & Acceleration Timeline
+    // 1. Phased Kinematics, Acceleration Timeline & Engine Effects
+    let targetFlameScale = 0.8;
+    let targetLightIntensity = 2.5;
+    let smokeRate = 0.024;
+
     if (this.launchType === 'air' && !this.isInterceptor && !this.isRetaliation) {
       // --- AIR LAUNCH PHASES ---
-      // Phase 1 (0 to 2s): slow upward climb (8 m/s), engine warmup
+      // Phase 1 (0 to 2s): slow upward climb (5-8 m/s), pitching up, engine warmup flame & gentle smoke
       if (this.age < 2.0) {
-        this.speed = 8.0 + (this.age / 2.0) * 4.0;
-        this.forward.y += dt * 0.35;
+        this.speed = 5.0 + (this.age / 2.0) * 3.5;
+        this.forward.y += dt * 0.45;
         this.forward.normalize();
-        if (this.flameMesh) this.flameMesh.scale.set(0.4, 0.4, 0.5);
+        targetFlameScale = 0.35 + (this.age / 2.0) * 0.15;
+        targetLightIntensity = 1.0;
+        smokeRate = 0.065;
       }
-      // Phase 2 (2 to 3s): engine medium ignition
+      // Phase 2 (2 to 3s): engine reaches medium ignition ("a las 3 segundos enciende a maximo")
       else if (this.age < 3.0) {
-        this.speed = 12.0 + (this.age - 2.0) * 14.0;
-        if (this.flameMesh) this.flameMesh.scale.set(0.7, 0.7, 0.85);
+        this.speed = 8.5 + (this.age - 2.0) * 12.0;
+        targetFlameScale = 0.65 + (this.age - 2.0) * 0.35;
+        targetLightIntensity = 2.2;
+        smokeRate = 0.035;
       }
-      // Phase 3 (3 to 4s): max engine thrust with full flame and smoke
+      // Phase 3 (3 to 4s): max engine thrust ignition, start of thick fire and dense smoke ("a los 4 empieza ya a echar humo y fuego, ahora si fuego")
       else if (this.age < 4.0) {
-        this.speed = 26.0 + (this.age - 3.0) * 28.0;
-        if (this.flameMesh) this.flameMesh.scale.set(1.2, 1.2, 1.4);
+        this.speed = 20.5 + (this.age - 3.0) * 22.0;
+        targetFlameScale = 1.15 + (this.age - 3.0) * 0.35;
+        targetLightIntensity = 3.4;
+        smokeRate = 0.018;
       }
-      // Phase 4 (>4s): hypersonic cruise acceleration up to maxSpeed
+      // Phase 4 (>4s): full afterburner cruise ("ahora si fuego"), hypersonic acceleration and thick contrail plume
       else {
         if (this.speed < this.maxSpeed) {
           this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
         }
+        targetFlameScale = 1.6;
+        targetLightIntensity = 4.5;
+        smokeRate = 0.010;
       }
     } else if (this.launchType === 'land' && !this.isInterceptor && !this.isRetaliation) {
       // --- LAND LAUNCH PHASES ---
-      // Phase 1 (0 to 4.5s): slow heavy vertical liftoff, dense smoke plume
+      // Phase 1 (0 to 4.5s): slow heavy vertical liftoff, dense plume of liftoff smoke ("en vez de 3 de arranque, 4.5, y van mas lento al principio")
       if (this.age < 4.5) {
-        this.speed = 5.0 + (this.age / 4.5) * 12.0;
-        this.forward.y += dt * 0.5;
+        this.speed = 4.0 + (this.age / 4.5) * 8.0;
+        this.forward.y += dt * 0.7;
         this.forward.normalize();
+        targetFlameScale = 0.6 + 0.4 * (this.age / 4.5);
+        targetLightIntensity = 2.5;
+        smokeRate = 0.014;
       }
-      // Phase 2 (>4.5s): booster stage, aggressive acceleration
+      // Phase 2 (>4.5s): booster stage ignition, aggressive acceleration to maxSpeed with thick contrail trail
       else {
         if (this.speed < this.maxSpeed) {
           this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
         }
+        targetFlameScale = 1.65;
+        targetLightIntensity = 4.5;
+        smokeRate = 0.010;
       }
-    } else {
-      // Interceptor or Retaliation missile: smooth continuous acceleration
+    } else if (this.isInterceptor) {
+      // Agile interceptor: quick thrust & sky blue contrail
       if (this.speed < this.maxSpeed) {
         this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
       }
+      targetFlameScale = 1.1;
+      targetLightIntensity = 3.5;
+      smokeRate = 0.012;
+    } else {
+      // Colossal 3X Retaliation missile: heavy continuous burn
+      if (this.speed < this.maxSpeed) {
+        this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
+      }
+      targetFlameScale = 2.8;
+      targetLightIntensity = 6.0;
+      smokeRate = 0.007;
     }
 
     // 2. Real-Time Homing Guidance & Dynamic Calibration
@@ -469,15 +499,21 @@ export class GuidedMissile {
     this.mesh.lookAt(lookTarget);
     this.mesh.rotateZ(dt * 3.5);
 
-    // 4. Animated Thruster Flame & Light
-    if (this.flameMesh && this.age >= 2.0) {
-      const flk = 0.85 + Math.random() * 0.4;
-      this.flameMesh.scale.set(flk, flk, 1.0 + Math.random() * 0.35);
+    // 4. Animated Thruster Flame & Dynamic Lighting
+    if (this.flameMesh) {
+      const flk = 0.85 + Math.random() * 0.35;
+      const sx = targetFlameScale * flk;
+      const sy = targetFlameScale * flk;
+      const sz = targetFlameScale * (0.95 + Math.random() * 0.3);
+      this.flameMesh.scale.set(sx, sy, sz);
+      this.flameMesh.visible = (targetFlameScale > 0.05);
+    }
+    if (this.light) {
+      this.light.intensity = targetLightIntensity * (0.85 + Math.random() * 0.3);
     }
 
     // 5. Dense Contrail Smoke Particles
     this.smokeTimer += dt;
-    const smokeRate = (this.launchType === 'land' && this.age < 4.5) ? 0.012 : 0.024;
     if (this.smokeTimer >= smokeRate && this.particleManager) {
       this.smokeTimer = 0;
       const tailPos = this.pos.clone().sub(this.forward.clone().multiplyScalar(2.2));
@@ -508,6 +544,21 @@ export class GuidedMissile {
 
     if (this.particleManager && typeof this.particleManager.spawnExplosion === 'function') {
       this.particleManager.spawnExplosion(this.pos.x, this.pos.y, this.pos.z);
+    }
+    if (typeof sound !== 'undefined' && sound && typeof sound.playExplosion === 'function') {
+      sound.playExplosion();
+    }
+    if (typeof this.onDetonate === 'function') {
+      try {
+        this.onDetonate({
+          missileId: this.id,
+          x: this.pos.x,
+          y: this.pos.y,
+          z: this.pos.z,
+          isIntercepted: true,
+          power: 0
+        });
+      } catch (_) {}
     }
     this.dispose();
   }
@@ -654,10 +705,14 @@ export class MissileManager {
       }
     }
 
+    // Proximity trigger distance: kept at 85.0 for baseline radar visual tracking,
+    // with cinematic engagement distance (58.0m) ensuring interception occurs in plain sight ~25-35m overhead
     const PROXIMITY_TRIGGER_DIST = 85.0;
+    const CINEMATIC_ENGAGE_DIST = 58.0;
     const remaining = [];
 
     for (const data of this.pendingDefenses) {
+      data.waitTicks = (data.waitTicks || 0) + 1;
       const { hostileMissileIds, defenderPos } = data;
 
       let targetX = defenderPos ? defenderPos[0] : 0;
@@ -685,7 +740,13 @@ export class MissileManager {
         }
       }
 
-      if (!anyHostileTracked || closestDist <= PROXIMITY_TRIGGER_DIST) {
+      // If missiles are tracked, wait until within cinematic visual engagement distance (<= 58m)
+      // If no missile tracked yet, wait up to 120 ticks (~2 seconds) for network packet to arrive before fallback
+      const shouldTrigger = anyHostileTracked
+        ? (closestDist <= CINEMATIC_ENGAGE_DIST)
+        : (data.waitTicks >= 120);
+
+      if (shouldTrigger) {
         this.executeIronDomeLaunch(data);
       } else {
         remaining.push(data);

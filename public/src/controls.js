@@ -486,9 +486,9 @@ export class Controls {
 
   getTntRadius() {
     switch (this.tntPowerLevel) {
-      case 2: return 8;
-      case 3: return 18;
-      case 4: return 35; // Colossal nuclear-scale detonation
+      case 2: return 5;
+      case 3: return 7;
+      case 4: return 9; // Impressive blast while preserving buttery-smooth 60 FPS
       case 1:
       default: return 3;
     }
@@ -496,8 +496,8 @@ export class Controls {
 
   getTntPowerLabel() {
     switch (this.tntPowerLevel) {
-      case 2: return 'POTENCIA: 3x';
-      case 3: return 'POTENCIA: 8x';
+      case 2: return 'POTENCIA: 2x';
+      case 3: return 'POTENCIA: 3x';
       case 4: return 'POTENCIA: MAX 💥';
       case 1:
       default: return 'POTENCIA: 1x';

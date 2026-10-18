@@ -18,6 +18,7 @@ export class World {
     this.boostMode = false;
     this.maxRemeshPerFrame = 1;
     this.blockDeltas = new Map(); // Local record of server deltas "x,y,z" -> blockType
+    this.chunkDeltas = new Map(); // Spatial index "cx,cz" -> Map<localIndex, {lx,y,lz,blockType}>
     this.blockHooks = [];
     this.onAuthoritativeBlock = null;
   }
@@ -102,13 +103,36 @@ export class World {
   /**
    * Immediately updates voxel memory and synchronously rebuilds the chunk mesh
    * (and boundary neighbors if on border) so excavated blocks disappear visually without lag.
-   * If the chunk is not yet loaded in memory, records the delta in this.blockDeltas so
-   * generateChunkTerrain applies it when the chunk streams in (preventing startup freeze!).
+  /**
+   * Records a block delta in both global map and chunk spatial index
    */
-  applyAuthoritativeBlock(x, y, z, blockType) {
-    if (y < 0 || y >= CHUNK_HEIGHT) return;
+  recordDelta(x, y, z, blockType) {
     const key = `${x},${y},${z}`;
     this.blockDeltas.set(key, blockType);
+
+    const cx = Math.floor(x / CHUNK_WIDTH);
+    const cz = Math.floor(z / CHUNK_DEPTH);
+    const cKey = this.getChunkKey(cx, cz);
+    let cMap = this.chunkDeltas.get(cKey);
+    if (!cMap) {
+      cMap = new Map();
+      this.chunkDeltas.set(cKey, cMap);
+    }
+    const lx = ((x % CHUNK_WIDTH) + CHUNK_WIDTH) % CHUNK_WIDTH;
+    const lz = ((z % CHUNK_DEPTH) + CHUNK_DEPTH) % CHUNK_DEPTH;
+    const localIdx = (lx * CHUNK_DEPTH + lz) * CHUNK_HEIGHT + y;
+    cMap.set(localIdx, { lx, y, lz, blockType });
+  }
+
+  /**
+   * Immediately updates voxel memory and synchronously rebuilds the chunk mesh
+   * (and boundary neighbors if on border) so excavated blocks disappear visually without lag.
+   * If the chunk is not yet loaded in memory, records the delta in this.blockDeltas and this.chunkDeltas so
+   * generateChunkTerrain applies it when the chunk streams in (preventing startup freeze!).
+   */
+  applyAuthoritativeBlock(x, y, z, blockType, shouldRemesh = true) {
+    if (y < 0 || y >= CHUNK_HEIGHT) return;
+    this.recordDelta(x, y, z, blockType);
 
     const cx = Math.floor(x / CHUNK_WIDTH);
     const cz = Math.floor(z / CHUNK_DEPTH);
@@ -127,33 +151,35 @@ export class World {
       if (prev !== blockType) {
         chunk.setBlockLocal(lx, y, lz, blockType);
 
-        if (this.materials && typeof chunk.rebuildMesh === 'function') {
-          try {
-            chunk.rebuildMesh(this.materials);
-          } catch (_) {}
-        }
-        chunk.isDirty = false;
-        const qIdx = this.remeshQueue.indexOf(chunk);
-        if (qIdx !== -1) this.remeshQueue.splice(qIdx, 1);
-
-        const remeshNeighbor = (ncx, ncz) => {
-          const neighbor = this.getChunk(ncx, ncz);
-          if (neighbor) {
-            if (this.materials && typeof neighbor.rebuildMesh === 'function') {
-              try {
-                neighbor.rebuildMesh(this.materials);
-              } catch (_) {}
-            }
-            neighbor.isDirty = false;
-            const nqIdx = this.remeshQueue.indexOf(neighbor);
-            if (nqIdx !== -1) this.remeshQueue.splice(nqIdx, 1);
+        if (shouldRemesh) {
+          if (this.materials && typeof chunk.rebuildMesh === 'function') {
+            try {
+              chunk.rebuildMesh(this.materials);
+            } catch (_) {}
           }
-        };
+          chunk.isDirty = false;
+          const qIdx = this.remeshQueue.indexOf(chunk);
+          if (qIdx !== -1) this.remeshQueue.splice(qIdx, 1);
 
-        if (lx === 0) remeshNeighbor(cx - 1, cz);
-        if (lx === CHUNK_WIDTH - 1) remeshNeighbor(cx + 1, cz);
-        if (lz === 0) remeshNeighbor(cx, cz - 1);
-        if (lz === CHUNK_DEPTH - 1) remeshNeighbor(cx, cz + 1);
+          const remeshNeighbor = (ncx, ncz) => {
+            const neighbor = this.getChunk(ncx, ncz);
+            if (neighbor) {
+              if (this.materials && typeof neighbor.rebuildMesh === 'function') {
+                try {
+                  neighbor.rebuildMesh(this.materials);
+                } catch (_) {}
+              }
+              neighbor.isDirty = false;
+              const nqIdx = this.remeshQueue.indexOf(neighbor);
+              if (nqIdx !== -1) this.remeshQueue.splice(nqIdx, 1);
+            }
+          };
+
+          if (lx === 0) remeshNeighbor(cx - 1, cz);
+          if (lx === CHUNK_WIDTH - 1) remeshNeighbor(cx + 1, cz);
+          if (lz === 0) remeshNeighbor(cx, cz - 1);
+          if (lz === CHUNK_DEPTH - 1) remeshNeighbor(cx, cz + 1);
+        }
       }
     }
 
@@ -172,6 +198,81 @@ export class World {
     }
   }
 
+  /**
+   * Applies an entire list of block modifications in a single high-performance batch.
+   * Modifies voxel data in memory first and rebuilds each unique affected chunk ONCE.
+   */
+  applyBlockDeltasBatch(deltasArray) {
+    if (!Array.isArray(deltasArray) || deltasArray.length === 0) return;
+
+    const affectedChunks = new Set();
+
+    for (const item of deltasArray) {
+      if (!Array.isArray(item) || item.length < 4) continue;
+      const [x, y, z, blockType] = item;
+      if (y < 0 || y >= CHUNK_HEIGHT) continue;
+
+      this.recordDelta(x, y, z, blockType);
+
+      const cx = Math.floor(x / CHUNK_WIDTH);
+      const cz = Math.floor(z / CHUNK_DEPTH);
+      let chunk = this.getChunk(cx, cz);
+      if (!chunk && !this.materials) {
+        chunk = this.getOrCreateChunk(cx, cz);
+      }
+
+      if (chunk) {
+        const lx = ((x % CHUNK_WIDTH) + CHUNK_WIDTH) % CHUNK_WIDTH;
+        const lz = ((z % CHUNK_DEPTH) + CHUNK_DEPTH) % CHUNK_DEPTH;
+        const prev = chunk.voxels[chunk.getIndex(lx, y, lz)];
+
+        if (prev !== blockType) {
+          chunk.setBlockLocal(lx, y, lz, blockType);
+          affectedChunks.add(chunk);
+
+          // Mark boundary neighbors
+          if (lx === 0) {
+            const n = this.getChunk(cx - 1, cz);
+            if (n) affectedChunks.add(n);
+          } else if (lx === CHUNK_WIDTH - 1) {
+            const n = this.getChunk(cx + 1, cz);
+            if (n) affectedChunks.add(n);
+          }
+          if (lz === 0) {
+            const n = this.getChunk(cx, cz - 1);
+            if (n) affectedChunks.add(n);
+          } else if (lz === CHUNK_DEPTH - 1) {
+            const n = this.getChunk(cx, cz + 1);
+            if (n) affectedChunks.add(n);
+          }
+        }
+      }
+
+      if (typeof this.onAuthoritativeBlock === 'function') {
+        try { this.onAuthoritativeBlock(x, y, z, blockType); } catch (_) {}
+      }
+      if (Array.isArray(this.blockHooks)) {
+        for (const hook of this.blockHooks) {
+          try { hook(x, y, z, blockType); } catch (_) {}
+        }
+      }
+    }
+
+    // Single-pass rebuild for all affected chunks
+    if (this.materials) {
+      for (const ch of affectedChunks) {
+        if (typeof ch.rebuildMesh === 'function') {
+          try {
+            ch.rebuildMesh(this.materials);
+          } catch (_) {}
+        }
+        ch.isDirty = false;
+        const qIdx = this.remeshQueue.indexOf(ch);
+        if (qIdx !== -1) this.remeshQueue.splice(qIdx, 1);
+      }
+    }
+  }
+
   applyBlockDelta(x, y, z, blockType) {
     this.applyAuthoritativeBlock(x, y, z, blockType);
   }
@@ -181,6 +282,7 @@ export class World {
    */
   resetToInitialTerrain() {
     this.blockDeltas.clear();
+    this.chunkDeltas.clear();
     this.remeshQueue.length = 0;
     this.pendingChunkGenerations.length = 0;
     for (const chunk of this.chunks.values()) {
@@ -770,13 +872,12 @@ export class World {
       }
     }
 
-    // Apply any previously stored block deltas from server in this chunk
-    for (const [key, type] of this.blockDeltas.entries()) {
-      const [bx, by, bz] = key.split(',').map(Number);
-      if (bx >= ox && bx < ox + CHUNK_WIDTH && bz >= oz && bz < oz + CHUNK_DEPTH) {
-        const clx = bx - ox;
-        const clz = bz - oz;
-        chunk.setBlockLocal(clx, by, clz, type);
+    // Apply previously stored block deltas for this specific chunk (O(1) spatial lookup, zero string parsing!)
+    const cKey = this.getChunkKey(chunk.cx, chunk.cz);
+    const localDeltas = this.chunkDeltas.get(cKey);
+    if (localDeltas) {
+      for (const delta of localDeltas.values()) {
+        chunk.setBlockLocal(delta.lx, delta.y, delta.lz, delta.blockType);
       }
     }
 

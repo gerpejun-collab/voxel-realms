@@ -230,6 +230,7 @@ export class ParticleManager {
         if (tnt.group && tnt.group.parent) {
           tnt.group.parent.remove(tnt.group);
         }
+        this._disposeObject3D(tnt.group);
         this.primedTnts.splice(i, 1);
       }
     }
@@ -531,6 +532,26 @@ export class ParticleManager {
     }
   }
 
+  _disposeObject3D(obj) {
+    if (!obj) return;
+    if (typeof obj.traverse === 'function') {
+      obj.traverse((child) => {
+        if (child.geometry && typeof child.geometry.dispose === 'function') {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            for (const m of child.material) {
+              if (m && typeof m.dispose === 'function') m.dispose();
+            }
+          } else if (typeof child.material.dispose === 'function') {
+            child.material.dispose();
+          }
+        }
+      });
+    }
+  }
+
   update(dt, playerPos) {
     this.time += dt;
 
@@ -575,6 +596,7 @@ export class ParticleManager {
         if (tnt.group && tnt.group.parent) {
           tnt.group.parent.remove(tnt.group);
         }
+        this._disposeObject3D(tnt.group);
         const cb = tnt.onDetonate;
         const bx = tnt.bx, by = tnt.by, bz = tnt.bz;
         this.primedTnts.splice(i, 1);
@@ -643,9 +665,15 @@ export class ParticleManager {
       if (ex.life <= 0) {
         if (ex.coreMesh.parent) ex.coreMesh.parent.remove(ex.coreMesh);
         if (ex.shockMesh.parent) ex.shockMesh.parent.remove(ex.shockMesh);
+        if (ex.coreMesh.geometry && typeof ex.coreMesh.geometry.dispose === 'function') ex.coreMesh.geometry.dispose();
+        if (ex.coreMat && typeof ex.coreMat.dispose === 'function') ex.coreMat.dispose();
+        if (ex.shockMesh.geometry && typeof ex.shockMesh.geometry.dispose === 'function') ex.shockMesh.geometry.dispose();
+        if (ex.shockMat && typeof ex.shockMat.dispose === 'function') ex.shockMat.dispose();
         if (Array.isArray(ex.puffs)) {
           for (const p of ex.puffs) {
             if (p.mesh && p.mesh.parent) p.mesh.parent.remove(p.mesh);
+            if (p.mesh && p.mesh.geometry && typeof p.mesh.geometry.dispose === 'function') p.mesh.geometry.dispose();
+            if (p.mat && typeof p.mat.dispose === 'function') p.mat.dispose();
           }
         }
         this.explosions.splice(i, 1);

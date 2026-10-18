@@ -476,7 +476,7 @@ class RoomManager {
     if (!room || !isValidTntTrigger(data)) return;
 
     const fuseMs = typeof data.fuseMs === 'number' ? Math.max(0, Math.min(4000, data.fuseMs)) : 1800;
-    const radius = typeof data.radius === 'number' ? Math.max(1, Math.min(45, Math.round(data.radius))) : 3;
+    const radius = typeof data.radius === 'number' ? Math.max(1, Math.min(10, Math.round(data.radius))) : 3;
     const rx = Math.round(data.x);
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);

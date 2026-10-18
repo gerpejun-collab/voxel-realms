@@ -167,13 +167,17 @@ export class MultiplayerClient {
           this.world.seed = data.seed;
         }
 
-        // Apply pre-existing block deltas from server (guarded against redundant remeshing)
-        if (Array.isArray(data.deltas)) {
-          for (const [x, y, z, blockType] of data.deltas) {
-            if (this.world.getBlock(x, y, z) !== blockType) {
-              this.world.applyBlockDelta(x, y, z, blockType);
-            } else if (this.world.blockDeltas && typeof this.world.blockDeltas.set === 'function') {
-              this.world.blockDeltas.set(`${x},${y},${z}`, blockType);
+        // Apply pre-existing block deltas from server in a single fast batch
+        if (Array.isArray(data.deltas) && data.deltas.length > 0) {
+          if (typeof this.world.applyBlockDeltasBatch === 'function') {
+            this.world.applyBlockDeltasBatch(data.deltas);
+          } else {
+            for (const [x, y, z, blockType] of data.deltas) {
+              if (this.world.getBlock(x, y, z) !== blockType) {
+                this.world.applyBlockDelta(x, y, z, blockType);
+              } else if (this.world.blockDeltas && typeof this.world.blockDeltas.set === 'function') {
+                this.world.blockDeltas.set(`${x},${y},${z}`, blockType);
+              }
             }
           }
         }
@@ -446,12 +450,17 @@ export class MultiplayerClient {
       case 'tnt_explode':
         if (data) {
           const destroyed = data.destroyedBlocks || data.destroyed;
-          if (Array.isArray(destroyed)) {
-            for (const [bx, by, bz] of destroyed) {
-              if (typeof this.world.applyBlockDelta === 'function') {
-                this.world.applyBlockDelta(bx, by, bz, 0);
-              } else if (typeof this.world.setBlock === 'function') {
-                this.world.setBlock(bx, by, bz, 0, true);
+          if (Array.isArray(destroyed) && destroyed.length > 0) {
+            if (typeof this.world.applyBlockDeltasBatch === 'function') {
+              const batch = destroyed.map(([bx, by, bz]) => [bx, by, bz, 0]);
+              this.world.applyBlockDeltasBatch(batch);
+            } else {
+              for (const [bx, by, bz] of destroyed) {
+                if (typeof this.world.applyBlockDelta === 'function') {
+                  this.world.applyBlockDelta(bx, by, bz, 0);
+                } else if (typeof this.world.setBlock === 'function') {
+                  this.world.setBlock(bx, by, bz, 0, true);
+                }
               }
             }
             if (typeof this.checkAvatarsGroundAfterBlockBreak === 'function') {

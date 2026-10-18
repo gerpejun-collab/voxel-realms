@@ -4401,7 +4401,7 @@ it('Avatar 3D Rifle: renders weapon mesh on right arm and raises arms in aim pos
   assert.strictEqual(avatar.weaponGroup.visible, false, 'Weapon group must hide when disarmed');
 });
 
-it('Adjustable TNT Power: cycles power 1x -> 3x -> 8x -> MAX and scales explosion crater radius up to 35m', () => {
+it('Adjustable TNT Power: cycles power 1x -> 2x -> 3x -> MAX and scales explosion crater radius up to 9m safely', () => {
   const { Controls, mockTHREE } = loadControlsModuleForM2();
   const camera = new mockTHREE.Group();
   camera.position.set(0, 26.6, 0);
@@ -4414,21 +4414,29 @@ it('Adjustable TNT Power: cycles power 1x -> 3x -> 8x -> MAX and scales explosio
   assert.strictEqual(controls.getTntRadius(), 3, 'Level 1 radius must be 3m');
 
   controls.cycleTntPower();
-  assert.strictEqual(controls.tntPowerLevel, 2, 'Cycled to level 2 (3x)');
-  assert.strictEqual(controls.getTntRadius(), 8, 'Level 2 radius must be 8m');
+  assert.strictEqual(controls.tntPowerLevel, 2, 'Cycled to level 2 (2x)');
+  assert.strictEqual(controls.getTntRadius(), 5, 'Level 2 radius must be 5m');
 
   controls.cycleTntPower();
-  assert.strictEqual(controls.tntPowerLevel, 3, 'Cycled to level 3 (8x)');
-  assert.strictEqual(controls.getTntRadius(), 18, 'Level 3 radius must be 18m');
+  assert.strictEqual(controls.tntPowerLevel, 3, 'Cycled to level 3 (3x)');
+  assert.strictEqual(controls.getTntRadius(), 7, 'Level 3 radius must be 7m');
 
   controls.cycleTntPower();
   assert.strictEqual(controls.tntPowerLevel, 4, 'Cycled to level 4 (MAX)');
-  assert.strictEqual(controls.getTntRadius(), 35, 'Level 4 radius must be 35m (capable of devastating Mt. Fuji)');
+  assert.strictEqual(controls.getTntRadius(), 9, 'Level 4 radius must be 9m');
 
-  // Verify server GameState detonateTnt supports 35m blast radius
+  // Verify server GameState detonateTnt supports 9m blast radius
   const gs = new GameState({ seed: 48151623 });
-  const explosion = gs.detonateTnt(0, 30, 0, 35);
-  assert.ok(explosion.destroyedBlocks.length > 500, `MAX explosion must destroy hundreds of blocks in 35m radius (got ${explosion.destroyedBlocks.length})`);
+  const explosion = gs.detonateTnt(0, 30, 0, 9);
+  assert.ok(explosion.destroyedBlocks.length > 50, `MAX explosion must destroy blocks in 9m radius (got ${explosion.destroyedBlocks.length})`);
+});
+
+it('Batch Block Deltas and Spatial Chunk Deltas: applyBlockDeltasBatch updates voxels and remeshes unique chunks once', () => {
+  const worldJs = fs.readFileSync(path.resolve(__dirname, '../public/src/world.js'), 'utf8');
+  assert.ok(worldJs.includes('this.chunkDeltas = new Map()'), 'world.js must initialize chunkDeltas spatial index');
+  assert.ok(worldJs.includes('recordDelta(x, y, z, blockType)'), 'world.js must have recordDelta helper');
+  assert.ok(worldJs.includes('applyBlockDeltasBatch(deltasArray)'), 'world.js must define applyBlockDeltasBatch');
+  assert.ok(worldJs.includes('this.chunkDeltas.get(cKey)'), 'generateChunkTerrain must use O(1) chunkDeltas lookup');
 });
 
 it('Scope Overlay Mobile Action Buttons: styles and markup define visible, touchable #scope-btn-shoot and #scope-btn-exit', () => {

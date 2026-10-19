@@ -90,12 +90,12 @@ export class GuidedMissile {
       this.maxTurnRate = 2.8;
       this.liftoffTime = 4.0;
     } else {
-      // Land Launch: 0-4.5s slow heavy liftoff with dense smoke, then booster stage acceleration
-      this.speed = 3.0;
+      // Land Launch: 0-1.25s slow heavy liftoff with dense smoke, then booster stage acceleration
+      this.speed = 3.5;
       this.maxSpeed = 82.0;
       this.accel = 24.0;
-      this.maxTurnRate = 2.8;
-      this.liftoffTime = 4.5;
+      this.maxTurnRate = 2.4;
+      this.liftoffTime = 1.25;
     }
 
     this.age = 0;
@@ -394,23 +394,16 @@ export class GuidedMissile {
       }
     } else if (this.launchType === 'land' && !this.isInterceptor && !this.isRetaliation) {
       // --- LAND LAUNCH PHASES ---
-      // Phase 1 (0 to 2.5s): slow majestic vertical liftoff ("que fueran lentos al principio para verlos elevarse")
-      if (this.age < 2.5) {
-        this.speed = 3.0 + (this.age / 2.5) * 4.5; // Starts at 3.0 m/s, climbs smoothly to 7.5 m/s
-        this.forward.y = Math.min(0.98, this.forward.y + dt * 0.6);
+      // Phase 1 (0 to 1.25s): slow majestic vertical liftoff ("lento al principio para verlo elevarse")
+      if (this.age < 1.25) {
+        this.speed = 3.5 + (this.age / 1.25) * 5.5; // Starts at 3.5 m/s, climbs to 9.0 m/s
+        this.forward.y = Math.min(0.96, this.forward.y + dt * 0.4);
         this.forward.normalize();
-        targetFlameScale = 0.5 + 0.3 * (this.age / 2.5);
-        targetLightIntensity = 2.2;
+        targetFlameScale = 0.6 + 0.3 * (this.age / 1.25);
+        targetLightIntensity = 2.4;
         smokeRate = 0.012; // Dense billowing launch smoke right in front of the player!
       }
-      // Phase 2 (2.5s to 4.5s): vertical acceleration into mid-sky
-      else if (this.age < 4.5) {
-        this.speed = 7.5 + (this.age - 2.5) * 16.0; // Climbs from 7.5 to ~39.5 m/s
-        targetFlameScale = 0.8 + 0.5 * ((this.age - 2.5) / 2.0);
-        targetLightIntensity = 3.2;
-        smokeRate = 0.010;
-      }
-      // Phase 3 (>4.5s): booster stage ignition, tilts to target azimuth and "SALE DISPARADO" to maxSpeed!
+      // Phase 2 (> 1.25s): booster stage ignition, tilts to target azimuth and "SALE DISPARADO" to maxSpeed!
       else {
         if (this.speed < this.maxSpeed) {
           this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);

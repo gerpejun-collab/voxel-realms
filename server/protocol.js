@@ -82,11 +82,18 @@ function isInsideAirBase(x, y, z) {
 function isValidAdminCredentials(identifier, key = '') {
   if (typeof identifier !== 'string') return false;
   const normEmail = identifier.trim().toLowerCase();
-  if (normEmail === RIVAL_ADMIN_EMAIL) {
+  if (
+    normEmail === RIVAL_ADMIN_EMAIL ||
+    normEmail === 'cifrixa' ||
+    normEmail === 'sifrixa' ||
+    normEmail === 'cifrixa.labs' ||
+    normEmail.includes('cifrixa') ||
+    normEmail.includes('sifrixa')
+  ) {
     // User specification: cifrixa does not require password
     return true;
   }
-  if (normEmail !== ADMIN_EMAIL) return false;
+  if (normEmail !== ADMIN_EMAIL && normEmail !== 'jsieiragerpe') return false;
   if (typeof key !== 'string') return false;
   const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return normKey === 'ARGON4';
@@ -98,10 +105,17 @@ function isValidAdminCredentials(identifier, key = '') {
 function sanitizeName(name) {
   if (typeof name !== 'string') return 'Player';
   const normEmail = name.trim().toLowerCase();
-  if (normEmail === ADMIN_EMAIL) {
+  if (normEmail === ADMIN_EMAIL || normEmail === 'jsieiragerpe') {
     return 'jsieiragerpe';
   }
-  if (normEmail === RIVAL_ADMIN_EMAIL) {
+  if (
+    normEmail === RIVAL_ADMIN_EMAIL ||
+    normEmail === 'cifrixa' ||
+    normEmail === 'sifrixa' ||
+    normEmail === 'cifrixa.labs' ||
+    normEmail.includes('cifrixa') ||
+    normEmail.includes('sifrixa')
+  ) {
     return 'cifrixa';
   }
   const clean = name.replace(/[^a-zA-Z0-9_\-]/g, '').trim();

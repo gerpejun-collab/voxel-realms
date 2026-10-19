@@ -219,58 +219,80 @@ export class UIManager {
         }
 
         const tbody = document.getElementById('admin-players-tbody');
-        if (tbody && Array.isArray(state.players)) {
-          tbody.innerHTML = '';
-          for (const p of state.players) {
-            const tr = document.createElement('tr');
-            const dateStr = p.joinedAt ? new Date(p.joinedAt).toLocaleTimeString() : '--:--:--';
-            const px = p.pos ? Math.floor(p.pos[0]) : 0;
-            const py = p.pos ? Math.floor(p.pos[1]) : 25;
-            const pz = p.pos ? Math.floor(p.pos[2]) : 0;
-            tr.innerHTML = `
-              <td><strong>${p.name || 'Player'}</strong> ${p.id === this.multiplayer.myId ? '(Tú)' : ''}</td>
-              <td>${dateStr}</td>
-              <td style="display:flex;gap:4px;align-items:center;">
-                <button class="mc-btn admin-tp-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;">(${px}, ${py}, ${pz}) 📍</button>
-                ${p.id !== this.multiplayer.myId ? `<button class="mc-btn admin-missile-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;background:#dc2626;color:#ffffff;border-color:#f87171;font-weight:bold;">🚀 Misil</button>` : ''}
-              </td>
-            `;
-            const tpBtn = tr.querySelector('.admin-tp-btn');
-            if (tpBtn) {
-              tpBtn.addEventListener('click', () => {
+        if (tbody) {
+          if (!tbody._hasDelegatedListener) {
+            tbody._hasDelegatedListener = true;
+            tbody.addEventListener('click', (e) => {
+              const tpBtn = e.target.closest('.admin-tp-btn');
+              if (tpBtn) {
+                const pid = tpBtn.dataset.playerId;
+                if (!pid || pid === this.multiplayer.myId) return;
                 sound.playClick();
-                if (p.id === this.multiplayer.myId) return;
-                if (this.physics && typeof this.physics.teleport === 'function') {
-                  this.physics.teleport(px, py + 1, pz);
-                } else if (this.controls?.physics && typeof this.controls.physics.teleport === 'function') {
-                  this.controls.physics.teleport(px, py + 1, pz);
+                const coords = tpBtn.textContent.match(/\((-?\d+),\s*(-?\d+),\s*(-?\d+)\)/);
+                if (coords && this.physics && typeof this.physics.teleport === 'function') {
+                  this.physics.teleport(parseInt(coords[1]), parseInt(coords[2]) + 1, parseInt(coords[3]));
                 }
                 if (typeof sound.playTeleport === 'function') sound.playTeleport();
-                if (this.world && typeof this.world.updateStreaming === 'function') {
-                  this.world.updateStreaming(px, pz);
-                }
-                this.showNotification('Teletransportado hacia ' + (p.name || 'Jugador'));
-                this.multiplayer.requestTeleportToPlayer(p.id);
+                this.multiplayer.requestTeleportToPlayer(pid);
                 this.pauseMenu.classList.add('hidden');
                 if (!this.controls.isMobile) this.controls.lock();
-              });
-            }
-            const missileBtn = tr.querySelector('.admin-missile-btn');
-            if (missileBtn) {
-              missileBtn.addEventListener('click', () => {
+                return;
+              }
+
+              const missileBtn = e.target.closest('.admin-missile-btn');
+              if (missileBtn) {
+                const pid = missileBtn.dataset.playerId;
+                if (!pid || pid === this.multiplayer.myId) return;
                 sound.playClick();
-                if (p.id === this.multiplayer.myId) return;
-                this.multiplayer.sendAdminLaunchMissile(p.id);
-                this.showNotification('🚀 Misil guiado lanzado hacia ' + (p.name || 'Jugador'));
+                this.multiplayer.sendAdminLaunchMissile(pid);
+                this.showNotification('🚀 Misil guiado lanzado hacia jugador');
                 if (this.tacticalRadar) {
                   this.tacticalRadar.toggle(true);
                   this.tacticalRadar.toggleMinimize(false);
                 }
                 this.pauseMenu.classList.add('hidden');
                 if (!this.controls.isMobile) this.controls.lock();
-              });
+              }
+            });
+          }
+
+          if (Array.isArray(state.players)) {
+            const listHash = state.players.map(p => `${p.id}:${p.name || 'Player'}`).join(',');
+            if (tbody._lastListHash !== listHash) {
+              tbody._lastListHash = listHash;
+              tbody.innerHTML = '';
+              for (const p of state.players) {
+                const tr = document.createElement('tr');
+                tr.dataset.playerId = p.id;
+                const dateStr = p.joinedAt ? new Date(p.joinedAt).toLocaleTimeString() : '--:--:--';
+                const px = p.pos ? Math.floor(p.pos[0]) : 0;
+                const py = p.pos ? Math.floor(p.pos[1]) : 25;
+                const pz = p.pos ? Math.floor(p.pos[2]) : 0;
+                tr.innerHTML = `
+                  <td><strong>${p.name || 'Player'}</strong> ${p.id === this.multiplayer.myId ? '(Tú)' : ''}</td>
+                  <td>${dateStr}</td>
+                  <td style="display:flex;gap:4px;align-items:center;">
+                    <button class="mc-btn admin-tp-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;">(${px}, ${py}, ${pz}) 📍</button>
+                    ${p.id !== this.multiplayer.myId ? `<button class="mc-btn admin-missile-btn" data-player-id="${p.id}" style="padding:4px 8px;font-size:11px;background:#dc2626;color:#ffffff;border-color:#f87171;font-weight:bold;">🚀 Misil</button>` : ''}
+                  </td>
+                `;
+                tbody.appendChild(tr);
+              }
+            } else {
+              // Update coordinates in place without destroying rows or buttons!
+              for (const p of state.players) {
+                const tr = tbody.querySelector(`tr[data-player-id="${p.id}"]`);
+                if (tr) {
+                  const tpBtn = tr.querySelector('.admin-tp-btn');
+                  if (tpBtn) {
+                    const px = p.pos ? Math.floor(p.pos[0]) : 0;
+                    const py = p.pos ? Math.floor(p.pos[1]) : 25;
+                    const pz = p.pos ? Math.floor(p.pos[2]) : 0;
+                    tpBtn.textContent = `(${px}, ${py}, ${pz}) 📍`;
+                  }
+                }
+              }
             }
-            tbody.appendChild(tr);
           }
         }
       };
@@ -405,8 +427,8 @@ export class UIManager {
     if (nameInput && accessKeyGroup) {
       const checkAdminEmail = () => {
         const val = (nameInput.value || '').trim().toLowerCase();
-        // Only main admin jsieiragerpe@gmail.com requires the access key input
-        if (val === 'jsieiragerpe@gmail.com') {
+        // Only main admin jsieiragerpe requires the access key input
+        if (val === 'jsieiragerpe@gmail.com' || val === 'jsieiragerpe') {
           accessKeyGroup.classList.remove('hidden');
         } else {
           accessKeyGroup.classList.add('hidden');
@@ -438,12 +460,12 @@ export class UIManager {
       }
 
       const normName = name.trim().toLowerCase();
-      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com');
-      const isCifrixa = (normName === 'cifrixa.labs.contact@gmail.com');
+      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com' || normName === 'jsieiragerpe');
+      const isCifrixa = (normName === 'cifrixa.labs.contact@gmail.com' || normName === 'cifrixa' || normName === 'sifrixa' || normName.includes('cifrixa') || normName.includes('sifrixa'));
       const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
 
       this.multiplayer.connect(name, {
-        email: (isMainAdmin || isCifrixa) ? name.trim() : undefined,
+        email: isMainAdmin ? 'jsieiragerpe@gmail.com' : (isCifrixa ? 'cifrixa.labs.contact@gmail.com' : undefined),
         adminKey: isMainAdmin ? adminKeyVal : undefined
       });
       this.controls.lock();

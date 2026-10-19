@@ -119,6 +119,47 @@ export class TacticalRadar {
       if (e.target !== btnExpand) this.toggleMinimize(false);
     });
 
+    // Delegated Target Card Selection and Direct Missile Launch (immune to DOM re-renders)
+    if (this.targetsListElem) {
+      this.targetsListElem.addEventListener('click', (e) => {
+        const launchBtn = e.target.closest('.radar-launch-btn');
+        if (launchBtn) {
+          e.stopPropagation();
+          const targetId = launchBtn.dataset.targetId;
+          this.selectedTargetId = targetId;
+          if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
+            this.multiplayer.sendAdminLaunchMissile(targetId);
+          }
+          launchBtn.classList.add('launch-flash');
+          setTimeout(() => launchBtn?.classList.remove('launch-flash'), 350);
+          return;
+        }
+
+        const card = e.target.closest('.radar-target-card');
+        if (card) {
+          const pId = card.dataset.playerId;
+          this.selectedTargetId = (this.selectedTargetId === pId) ? null : pId;
+          const allCards = this.targetsListElem.querySelectorAll('.radar-target-card');
+          allCards.forEach(c => {
+            const isSel = (c.dataset.playerId === this.selectedTargetId);
+            c.classList.toggle('active-target', isSel);
+            const badge = c.querySelector('.rt-selected-badge');
+            if (isSel && !badge) {
+              const nameRow = c.querySelector('.rt-name-row');
+              if (nameRow) {
+                const b = document.createElement('span');
+                b.className = 'rt-selected-badge';
+                b.textContent = 'FIJADO 🎯';
+                nameRow.appendChild(b);
+              }
+            } else if (!isSel && badge) {
+              badge.remove();
+            }
+          });
+        }
+      });
+    }
+
     // Bombard All Target Action
     if (this.bombAllBtn) {
       this.bombAllBtn.addEventListener('click', () => {
@@ -458,35 +499,27 @@ export class TacticalRadar {
       `;
     }
 
-    this.targetsListElem.innerHTML = tHtml;
-
-    // Attach card selection and launch handlers
-    const cards = this.targetsListElem.querySelectorAll('.radar-target-card');
-    cards.forEach((card) => {
-      const pId = card.dataset.playerId;
-      card.addEventListener('click', (e) => {
-        if (!e.target.classList.contains('radar-launch-btn')) {
-          this.selectedTargetId = (this.selectedTargetId === pId) ? null : pId;
-          this.updateSidebar(playerPos, activeMissiles);
+    const targetIdsStr = onlineTargets.map(t => `${t.id}:${t.name || 'Player'}:${this.selectedTargetId === t.id ? '1' : '0'}`).join(',');
+    if (this._lastTargetIdsStr !== targetIdsStr) {
+      this._lastTargetIdsStr = targetIdsStr;
+      this.targetsListElem.innerHTML = tHtml;
+    } else {
+      for (const p of onlineTargets) {
+        const card = this.targetsListElem.querySelector(`.radar-target-card[data-player-id="${p.id}"]`);
+        if (card) {
+          const px = p.pos ? Math.floor(p.pos[0]) : 0;
+          const py = p.pos ? Math.floor(p.pos[1]) : 25;
+          const pz = p.pos ? Math.floor(p.pos[2]) : 0;
+          let distFromAdmin = '--';
+          if (playerPos) {
+            distFromAdmin = Math.round(Math.hypot(px - playerPos.x, pz - playerPos.z)) + 'm';
+          }
+          const coordElem = card.querySelector('.rt-coords');
+          if (coordElem) {
+            coordElem.textContent = `(${px}, ${py}, ${pz}) • ${distFromAdmin}`;
+          }
         }
-      });
-    });
-
-    const launchBtns = this.targetsListElem.querySelectorAll('.radar-launch-btn');
-    launchBtns.forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const targetId = btn.dataset.targetId;
-        this.selectedTargetId = targetId; // Keep selected so user can fire repeatedly!
-
-        if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
-          this.multiplayer.sendAdminLaunchMissile(targetId);
-        }
-
-        // Visual flash feedback on button
-        btn.classList.add('launch-flash');
-        setTimeout(() => btn.classList.remove('launch-flash'), 350);
-      });
-    });
+      }
+    }
   }
 }

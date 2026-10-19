@@ -305,13 +305,6 @@ export class MultiplayerClient {
               }
             }
           }
-          if (this.isAdmin && this.onAdminState) {
-            this.onAdminState({
-              isAdmin: true,
-              onlineCount: this.playerDirectory.size || (this.remoteAvatars.size + 1),
-              players: Array.from(this.playerDirectory.values())
-            });
-          }
         }
         break;
 

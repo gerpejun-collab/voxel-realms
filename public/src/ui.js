@@ -442,6 +442,24 @@ export class UIManager {
     const doJoin = () => {
       let name = (nameInput.value || '').trim();
       if (!name) name = 'Explorador_' + Math.floor(Math.random() * 1000);
+
+      const normName = name.trim().toLowerCase();
+      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com' || normName === 'jsieiragerpe');
+      const isCifrixa = (normName === 'cifrixa.labs.contact@gmail.com' || normName === 'cifrixa' || normName === 'sifrixa' || normName.includes('cifrixa') || normName.includes('sifrixa'));
+      const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
+
+      if (isMainAdmin) {
+        const normKey = adminKeyVal.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (normKey !== 'ARGON4') {
+          alert('Acceso Denegado: Contraseña de Administrador requerida para jsieiragerpe (ARGON4).');
+          if (accessKeyInput) {
+            accessKeyInput.focus();
+            accessKeyInput.style.borderColor = '#ef4444';
+          }
+          return;
+        }
+      }
+
       localStorage.setItem('vr_username', name);
 
       if (qualitySelect) {
@@ -458,11 +476,6 @@ export class UIManager {
         this.mobileOverlay.classList.remove('hidden');
         document.body.classList.add('mobile-mode');
       }
-
-      const normName = name.trim().toLowerCase();
-      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com' || normName === 'jsieiragerpe');
-      const isCifrixa = (normName === 'cifrixa.labs.contact@gmail.com' || normName === 'cifrixa' || normName === 'sifrixa' || normName.includes('cifrixa') || normName.includes('sifrixa'));
-      const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
 
       this.multiplayer.connect(name, {
         email: isMainAdmin ? 'jsieiragerpe@gmail.com' : (isCifrixa ? 'cifrixa.labs.contact@gmail.com' : undefined),
@@ -914,6 +927,20 @@ export class UIManager {
         targetYaw = -Math.PI / 2; targetPitch = 0.05;
       } else {
         vx = -458.5; vy = 25.0; vz = 150.5;
+        targetYaw = -Math.PI / 2; targetPitch = 0.05;
+      }
+    } else if ((tx === -500 && tz === 300) || (landmark && (landmark.landmark === 'underground_bunker' || (landmark.name && (landmark.name.includes('Búnker') || landmark.name.includes('Bunker')))))) {
+      // Búnker Subterráneo & 180 Silos:
+      // If admin jsieiragerpe, spawn INSIDE subterranean command center at -500, 12, 296
+      // If non-admin, spawn outside forcefield perimeter at -430, 25, 300
+      const myEmail = this.multiplayer?.myEmail || (this.multiplayer?.myName === 'jsieiragerpe' ? 'jsieiragerpe@gmail.com' : '');
+      const isMainAdmin = (myEmail === 'jsieiragerpe@gmail.com') || (this.multiplayer?.isAdmin && this.multiplayer?.myName === 'jsieiragerpe');
+
+      if (isMainAdmin) {
+        vx = -500.0; vy = 12.0; vz = 296.0;
+        targetYaw = 0; targetPitch = 0.05;
+      } else {
+        vx = -430.0; vy = 25.0; vz = 300.0;
         targetYaw = -Math.PI / 2; targetPitch = 0.05;
       }
     }
@@ -1522,6 +1549,15 @@ export class UIManager {
         sound.playClick();
         this.pauseMenu.classList.add('hidden');
         this.teleportToLandmark({ name: 'Base Militar', x: -420, y: 25, z: 150, landmark: 'military_base' });
+      });
+    }
+
+    const menuBunkerBtn = document.getElementById('menu-btn-bunker');
+    if (menuBunkerBtn) {
+      menuBunkerBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.pauseMenu.classList.add('hidden');
+        this.teleportToLandmark({ name: 'Búnker Subterráneo', x: -500, y: 12, z: 300, landmark: 'underground_bunker' });
       });
     }
 

@@ -411,6 +411,7 @@ export class World {
     if (wx >= 45 && wx <= 215 && wz >= -195 && wz <= -35) return true; // Gran Circuito SE Quadrant
     if (Math.hypot(wx - 350, wz - 350) <= 70 || Math.hypot(wx - 500, wz - 500) <= 88) return true; // Mount Fuji Volcano & Reflection Lakes
     if (wx >= -460 && wx <= -365 && wz >= 115 && wz <= 185) return true; // Base Militar Aérea & Hangar
+    if (Math.hypot(wx - (-500), wz - 300) <= 75) return true; // Mega Búnker Subterráneo & 180 Silos
     if (this.isRoadAt(wx, wz) || this.isTunnelAt(wx, wz)) return true;
     return false;
   }
@@ -427,6 +428,7 @@ export class World {
     if (Math.abs(wx - (-500)) <= 120 && Math.abs(wz - (-500)) <= 120) return true;
     if (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40) return true; // Gran Circuito Plateau
     if (wx >= -460 && wx <= -365 && wz >= 115 && wz <= 185) return true; // Base Militar Plateau
+    if (Math.hypot(wx - (-500), wz - 300) <= 66) return true; // Mega Búnker Silos Plateau
     return false;
   }
 
@@ -630,6 +632,28 @@ export class World {
         return Math.round(24 + rampT * 3);
       }
       return 24; // Leveled airbase plateau
+    }
+
+    // 2.8. Mega Búnker Subterráneo y Complejo de 180 Silos at (-500, 300)
+    // Silo plateau is flush at Y=24 from radius 28 up to 66m.
+    // Central colossal mountain rising to Y=54 above subterranean bunker center (-500, 300) within radius 28m.
+    const distBunker = Math.hypot(wx - (-500), wz - 300);
+    if (distBunker <= 78) {
+      if (distBunker <= 28) {
+        // Colossal mountain above underground command bunker, rising to peak Y=54
+        const t = distBunker / 28;
+        const curve = Math.cos(t * Math.PI * 0.5); // 1 at center, 0 at radius 28
+        return Math.floor(24 + 30 * curve);
+      } else if (distBunker <= 66) {
+        // Flat surface silo field flush at Y=24
+        return 24;
+      } else {
+        // Smooth transition to natural terrain
+        const naturalH = this.getNaturalHeightAt(wx, wz);
+        const t = (distBunker - 66) / 12;
+        const smoothT = t * t * (3 - 2 * t);
+        return Math.floor(24 * (1 - smoothT) + naturalH * smoothT);
+      }
     }
 
     const BASE_HEIGHT = 24;
@@ -867,6 +891,7 @@ export class World {
     if (typeof this.buildMountFujiSector === 'function') this.buildMountFujiSector(chunk);
     if (typeof this.buildMountainCaverns === 'function') this.buildMountainCaverns(chunk);
     if (typeof this.buildMilitaryBaseSector === 'function') this.buildMilitaryBaseSector(chunk);
+    if (typeof this.buildBunkerSector === 'function') this.buildBunkerSector(chunk);
 
     // 4. Procedural Oak Trees in wild outer areas
     for (let lx = 2; lx < CHUNK_WIDTH - 2; lx++) {
@@ -5443,6 +5468,37 @@ export class World {
           if (!(wx === -455 && wz >= 140 && wz <= 160)) {
             this.setVoxelInWorld(chunk, wx, 25, wz, BLOCKS.COBBLESTONE);
             this.setVoxelInWorld(chunk, wx, 26, wz, BLOCKS.IRON_ORE);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Builds and excavates the subterranean chamber for the Mega Underground Bunker at (-500, 300)
+   * Carves interior air space so voxel terrain does not block the bunker command center interior.
+   */
+  buildBunkerSector(chunk) {
+    const ox = chunk.originX;
+    const oz = chunk.originZ;
+
+    // Fast AABB rejection: Bunker interior spans X in [-520, -480], Z in [280, 320]
+    if (ox + CHUNK_WIDTH < -520 || ox > -480 || oz + CHUNK_DEPTH < 280 || oz > 320) {
+      return;
+    }
+
+    for (let lx = 0; lx < CHUNK_WIDTH; lx++) {
+      for (let lz = 0; lz < CHUNK_DEPTH; lz++) {
+        const wx = ox + lx;
+        const wz = oz + lz;
+
+        // Interior chamber bounds: X in [-516, -484], Z in [284, 316]
+        if (wx >= -516 && wx <= -484 && wz >= 284 && wz <= 316) {
+          // Reinforced stone subfloor at Y = 9
+          this.setVoxelInWorld(chunk, wx, 9, wz, BLOCKS.STONE);
+          // Excavate chamber interior headroom at Y = 10..16
+          for (let y = 10; y <= 16; y++) {
+            this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
           }
         }
       }

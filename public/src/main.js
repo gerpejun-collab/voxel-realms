@@ -13,6 +13,7 @@ import { AnimalManager } from './animals.js';
 import { VehicleManager, DrivableCar } from './vehicle.js';
 import { MissileManager } from './missile.js';
 import { StrategicBomber } from './bomber.js';
+import { BunkerManager } from './bunker.js';
 import { TacticalRadar } from './radar.js';
 import { Avatar } from './avatar.js';
 import { BLOCKS } from './blocks.js';
@@ -88,6 +89,20 @@ class VoxelRealmsApp {
       }
     };
     this.multiplayer.bomberManager = this.bomber;
+
+    // 6e. Initialize Mega Underground Bunker & 180 Surface Missile Silos
+    this.bunkerManager = new BunkerManager(
+      this.sceneManager.scene,
+      this.particleManager,
+      this.world,
+      sound,
+      this.multiplayer,
+      this.missileManager
+    );
+    this.missileManager.bunkerManager = this.bunkerManager;
+    if (this.multiplayer) {
+      this.multiplayer.bunkerManager = this.bunkerManager;
+    }
 
     // 7. Initialize UI Overlay & HUD
     this.ui = new UIManager(
@@ -470,6 +485,9 @@ class VoxelRealmsApp {
     }
     if (this.bomber) {
       this.bomber.update(dt, this.multiplayer ? this.multiplayer.playerDirectory : null);
+    }
+    if (this.bunkerManager) {
+      this.bunkerManager.update(dt, this.physics.pos);
     }
 
     // 6. Ambient Voxel Animals, Rare NPCs & Highway Traffic

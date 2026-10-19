@@ -29,7 +29,8 @@ export class TacticalRadar {
       { name: 'Playa', icon: '🏖️', x: 0, z: -500 },
       { name: 'Fuji', icon: '🗻', x: 500, z: 500 },
       { name: 'Circuito', icon: '🏎️', x: -500, z: -500 },
-      { name: 'Base Militar', icon: '🎖️', x: -420, z: 150 }
+      { name: 'Base Militar', icon: '🎖️', x: -420, z: 150 },
+      { name: 'Búnker', icon: '🛡️', x: -500, z: 300 }
     ];
 
     this.createDOM();

@@ -16,9 +16,11 @@ export class GuidedMissile {
     this.launchType = options.launchType || 'land'; // 'air' | 'land'
     this.isRetaliation = Boolean(options.isRetaliation);
     this.isInterceptor = Boolean(options.isInterceptor);
+    this.isSiloMissile = Boolean(options.isSiloMissile);
     this.targetHostileMissile = options.targetHostileMissile || null;
 
-    this.power = options.power || (this.isRetaliation ? 8 : 4);
+    this.power = options.power || (this.isSiloMissile ? 8 : (this.isRetaliation ? 8 : 4));
+    this.flameColor = options.flameColor || options.colorHex || null;
 
     this.scene = scene;
     this.particleManager = particleManager;
@@ -37,9 +39,9 @@ export class GuidedMissile {
     const forwardX = -Math.sin(startYaw);
     const forwardZ = -Math.cos(startYaw);
 
-    // If interceptor or retaliation, spawn right at startPos
+    // If interceptor or retaliation or silo missile, spawn right at startPos
     // If standard player missile, spawn 2.2m ahead of the launcher so the player clearly SEES their rocket ignite and elevate!
-    const spawnDist = (this.isInterceptor || this.isRetaliation) ? 0 : 2.2;
+    const spawnDist = (this.isInterceptor || this.isRetaliation || this.isSiloMissile) ? 0 : 2.2;
     this.pos = new THREE.Vector3(
       sx + forwardX * spawnDist,
       sy + (this.launchType === 'air' ? 0.2 : 0.4),
@@ -54,28 +56,36 @@ export class GuidedMissile {
     this.closestDistToTarget = Infinity;
     this.missileManager = options.missileManager || null;
 
-    // Initial forward orientation: points vertically upwards into the sky during initial climb
-    const initialPitch = (this.launchType === 'air') ? 1.8 : 3.5;
-    this.forward = new THREE.Vector3(
-      forwardX * 0.2,
-      initialPitch,
-      forwardZ * 0.2
-    ).normalize();
-
-    // Flight kinematics: gradual acceleration and realistic turn limits
-    this.speed = 3.0;
-    this.maxSpeed = 82.0;
-    this.accel = 24.0;
-    this.maxTurnRate = 2.4;
-    this.liftoffTime = 1.15;
+    // Initial forward orientation:
+    // If interceptor with target hostile missile: calculate direct 3D vector to threat!
+    if (this.isInterceptor && this.targetHostileMissile) {
+      const dirToHostile = new THREE.Vector3().subVectors(this.targetHostileMissile.pos, this.pos).normalize();
+      this.forward = (dirToHostile.lengthSq() > 0.001) ? dirToHostile : new THREE.Vector3(0, 1, 0);
+    } else {
+      const initialPitch = (this.launchType === 'air') ? 1.8 : 3.5;
+      this.forward = new THREE.Vector3(
+        forwardX * 0.2,
+        initialPitch,
+        forwardZ * 0.2
+      ).normalize();
+    }
 
     // Flight kinematics based on Launch Type
     if (this.isInterceptor) {
-      this.speed = 18.0;
-      this.maxSpeed = 95.0;
-      this.accel = 38.0;
-      this.maxTurnRate = 5.2;
-      this.liftoffTime = 0.4;
+      // 100% Reliable Mathematical Interception Kinematics:
+      // High initial velocity and rapid turn authority regardless of player facing direction
+      this.speed = 28.0;
+      this.maxSpeed = 105.0;
+      this.accel = 48.0;
+      this.maxTurnRate = 18.0;
+      this.liftoffTime = 0.02; // Instantaneous mathematical engagement
+    } else if (this.isSiloMissile) {
+      // Colossal 2X Silo Missiles:
+      this.speed = 4.0;
+      this.maxSpeed = 88.0;
+      this.accel = 28.0;
+      this.maxTurnRate = 3.2;
+      this.liftoffTime = 1.4;
     } else if (this.isRetaliation) {
       this.speed = 4.0;
       this.maxSpeed = 80.0;
@@ -112,6 +122,8 @@ export class GuidedMissile {
     this.mesh.position.copy(this.pos);
     if (this.isRetaliation) {
       this.mesh.scale.set(3.0, 3.0, 3.0);
+    } else if (this.isSiloMissile) {
+      this.mesh.scale.set(2.0, 2.0, 2.0); // Colossal 2X power Silo Missile
     } else if (this.isInterceptor) {
       this.mesh.scale.set(0.75, 0.75, 0.75);
     }
@@ -243,8 +255,9 @@ export class GuidedMissile {
     // Pulsating Rocket Flame Mesh
     const flameGeom = new THREE.ConeGeometry(0.26, 1.6, 10);
     flameGeom.rotateX(-Math.PI / 2);
+    const fColor = this.flameColor || (this.isInterceptor ? 0x38bdf8 : 0xff6600);
     const flameMat = new THREE.MeshBasicMaterial({
-      color: this.isInterceptor ? 0x38bdf8 : 0xff6600,
+      color: fColor,
       transparent: true,
       opacity: 0.92
     });
@@ -253,7 +266,7 @@ export class GuidedMissile {
     group.add(this.flameMesh);
 
     // Dynamic thruster point light
-    this.light = new THREE.PointLight(this.isInterceptor ? 0x38bdf8 : 0xff7700, 2.8, 16);
+    this.light = new THREE.PointLight(fColor, 3.2, 24);
     this.light.position.set(0, 0, -2.4);
     group.add(this.light);
 
@@ -342,12 +355,15 @@ export class GuidedMissile {
       this.launcherName === 'jsieiragerpe' ||
       this.launcherName === 'jsieiragerpe@gmail.com' ||
       this.launcherName === 'Admin' ||
+      this.launcherName === 'Búnker jsieiragerpe' ||
       this.launcherId === 'p_main_admin' ||
       this.launcherId === 'ADMIN_RETALIATION' ||
-      this.launcherId === 'IRON_DOME'
+      this.launcherId === 'IRON_DOME' ||
+      this.launcherId === 'ADMIN_BUNKER'
     );
     if (!this.isInterceptor && !this.isRetaliation && !isMainAdminLauncher) {
-      if (this.pos.x >= -455 && this.pos.x <= -385 && this.pos.z >= 115 && this.pos.z <= 185 && this.pos.y <= 85) {
+      if ((this.pos.x >= -455 && this.pos.x <= -385 && this.pos.z >= 115 && this.pos.z <= 185 && this.pos.y <= 85) ||
+          (this.pos.x >= -565 && this.pos.x <= -435 && this.pos.z >= 235 && this.pos.z <= 365 && this.pos.y <= 85)) {
         this.destroyMidAir();
         return;
       }
@@ -441,8 +457,7 @@ export class GuidedMissile {
       }
 
       // Proximity Fuze & CPA Detonation:
-      // If missile gets within proximity (<= 4.5 - 5.0m) or reaches CPA (distance starts increasing after getting close <= 12m)
-      const proximityThreshold = this.isInterceptor ? 5.0 : 4.5;
+      const proximityThreshold = this.isInterceptor ? 6.5 : (this.isSiloMissile ? 6.0 : 4.5);
       const cpaDetonate = (this.closestDistToTarget <= 12.0 && rawDist > this.closestDistToTarget + 0.35);
 
       // Orbit Breaker: If missile stays within close range (< 32m) for > 1.4s without hitting, detonate immediately!
@@ -725,6 +740,15 @@ export class MissileManager {
       }
     }
 
+    const isInsideBunkerNow = this.bunkerManager && typeof this.bunkerManager.isPlayerInsideBunker === 'function'
+      ? this.bunkerManager.isPlayerInsideBunker(playerPos)
+      : false;
+    if (isInsideBunkerNow) {
+      this.pendingDefenses = [];
+      this.pendingDefense = null;
+      return;
+    }
+
     // Proximity trigger distance: kept at 85.0 for baseline radar visual tracking,
     // with cinematic engagement distance (58.0m) ensuring interception occurs in plain sight ~25-35m overhead
     const PROXIMITY_TRIGGER_DIST = 85.0;
@@ -888,15 +912,23 @@ export class MissileManager {
 
   launchSingleInterceptor(hostileMissile, defPos) {
     const interceptorId = 'icp_dyn_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    const interceptorStart = [defPos[0], defPos[1] + 2.0, defPos[2]];
+    const startVec = new THREE.Vector3(interceptorStart[0], interceptorStart[1], interceptorStart[2]);
+    const targetVec = hostileMissile.pos.clone();
+
+    // Mathematically calculated 3D lead intercept vector directly towards hostile missile
+    const interceptDir = targetVec.clone().sub(startVec).normalize();
+    const startYaw = Math.atan2(interceptDir.x, interceptDir.z);
+
     const interceptor = new GuidedMissile(
       {
         missileId: interceptorId,
         launcherId: 'IRON_DOME',
         launcherName: 'Cúpula de Hierro',
         targetPlayerId: hostileMissile.launcherId || 'hostile',
-        startPos: [defPos[0], defPos[1] + 2.0, defPos[2]],
-        targetPos: [hostileMissile.pos.x, hostileMissile.pos.y, hostileMissile.pos.z],
-        startYaw: Math.random() * Math.PI * 2,
+        startPos: interceptorStart,
+        targetPos: [targetVec.x, targetVec.y, targetVec.z],
+        startYaw,
         isInterceptor: true,
         targetHostileMissile: hostileMissile,
         launchType: hostileMissile.launchType || 'air',
@@ -908,6 +940,9 @@ export class MissileManager {
         this.missiles.delete(payload.missileId);
       }
     );
+    if (interceptDir.lengthSq() > 0.001) {
+      interceptor.forward.copy(interceptDir);
+    }
     this.missiles.set(interceptorId, interceptor);
     if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
       this.sound.playMissileLaunch();
@@ -925,15 +960,50 @@ export class MissileManager {
     }
 
     // Continuous Threat Detection for incoming hostile missiles
-    const isAdmin = (this.multiplayer?.myName === 'jsieiragerpe' || this.multiplayer?.isAdmin);
+    const isAdmin = (this.multiplayer?.myName === 'jsieiragerpe' || this.multiplayer?.myEmail === 'jsieiragerpe@gmail.com' || this.multiplayer?.isAdmin);
     if (isAdmin && playerPos) {
       const defVec = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+      const isInsideBunkerNow = this.bunkerManager && typeof this.bunkerManager.isPlayerInsideBunker === 'function'
+        ? this.bunkerManager.isPlayerInsideBunker(playerPos)
+        : false;
+
       for (const [id, m] of this.missiles.entries()) {
         if (!m.isInterceptor && !m.isRetaliation && !m.isDetonated && !m.isDestroyedMidAir) {
+          // EXCLUDE OWN MISSILES: Admin's own missiles must NEVER be intercepted by own defense!
+          const isMyOwnMissile = (
+            m.launcherId === this.multiplayer?.myId ||
+            m.launcherName === 'jsieiragerpe' ||
+            m.launcherName === 'jsieiragerpe@gmail.com' ||
+            m.launcherName === 'Admin' ||
+            m.launcherName === 'Búnker jsieiragerpe' ||
+            m.launcherId === 'p_main_admin' ||
+            m.launcherId === 'ADMIN_BUNKER'
+          );
+          if (isMyOwnMissile) continue;
+
+          // TARGET CHECK: ONLY intercept missiles that are ACTUALLY targeting me or the military base/bunker!
+          const targetsMe = (
+            m.targetPlayerId === this.multiplayer?.myId ||
+            m.targetName === 'jsieiragerpe' ||
+            m.targetName === 'jsieiragerpe@gmail.com' ||
+            m.targetName === 'Admin'
+          );
+          const targetsAirBase = (m.targetPos && m.targetPos.x >= -455 && m.targetPos.x <= -385 && m.targetPos.z >= 115 && m.targetPos.z <= 185);
+          const targetsBunker = (m.targetPos && m.targetPos.x >= -565 && m.targetPos.x <= -435 && m.targetPos.z >= 235 && m.targetPos.z <= 365);
+
+          // If targeting someone else outside base/bunker, DO NOT INTERCEPT!
+          if (!targetsMe && !targetsAirBase && !targetsBunker) {
+            continue;
+          }
+
+          // If admin is inside the bunker, automatic defense is DISABLED (manual blue button instead)
+          if (isInsideBunkerNow) {
+            continue;
+          }
+
           if (!this.assignedHostileMissileIds.has(id)) {
             const dist = m.pos.distanceTo(defVec);
-            const inBase = (m.pos.x >= -455 && m.pos.x <= -385 && m.pos.z >= 115 && m.pos.z <= 185);
-            if (dist <= 85.0 || inBase) {
+            if (dist <= 110.0 || targetsAirBase || targetsBunker) {
               this.assignedHostileMissileIds.add(id);
               this.launchSingleInterceptor(m, [playerPos.x, playerPos.y, playerPos.z]);
             }

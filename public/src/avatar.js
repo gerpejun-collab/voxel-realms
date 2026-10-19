@@ -2,6 +2,177 @@
 // 3D multiplayer humanoid voxel avatar with animated limbs, head rotation, and floating name tag
 import * as THREE from 'three';
 
+function createTrumpCanvasTexture(w, h, drawFn) {
+  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      drawFn(ctx, w, h);
+      const tex = new THREE.CanvasTexture(c);
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      return tex;
+    }
+  }
+  return null;
+}
+
+function drawTrumpFrontFace(ctx, w, h) {
+  // Warm peach-tan skin
+  ctx.fillStyle = '#f5ad7a';
+  ctx.fillRect(0, 0, w, h);
+
+  // Tanned cheek shading
+  ctx.fillStyle = '#e89f6d';
+  ctx.fillRect(8, 60, 28, 30);
+  ctx.fillRect(w - 36, 60, 28, 30);
+
+  // Signature golden-yellow comb-over swoop on forehead (Y: 0..46)
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect(0, 0, w, 32);
+  ctx.fillStyle = '#fde047';
+  ctx.fillRect(16, 24, w - 24, 14);
+  ctx.fillStyle = '#ca8a04';
+  ctx.fillRect(0, 0, w, 10);
+  ctx.fillStyle = '#facc15';
+  ctx.beginPath();
+  ctx.moveTo(8, 20);
+  ctx.lineTo(w - 12, 16);
+  ctx.lineTo(w - 20, 44);
+  ctx.lineTo(24, 46);
+  ctx.closePath();
+  ctx.fill();
+
+  // Eyebrows: bushy blonde eyebrows
+  ctx.fillStyle = '#fcd34d';
+  ctx.fillRect(20, 50, 32, 8);
+  ctx.fillRect(w - 52, 50, 32, 8);
+  ctx.fillStyle = '#ca8a04';
+  ctx.fillRect(22, 52, 28, 4);
+  ctx.fillRect(w - 50, 52, 28, 4);
+
+  // Squinting intense eyes:
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(24, 60, 26, 10);
+  ctx.fillRect(w - 50, 60, 26, 10);
+  // Sky-blue iris
+  ctx.fillStyle = '#0284c7';
+  ctx.fillRect(32, 60, 12, 10);
+  ctx.fillRect(w - 44, 60, 12, 10);
+  // Dark pupil
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(36, 62, 6, 8);
+  ctx.fillRect(w - 40, 62, 6, 8);
+  // Eyelid / squint wrinkles
+  ctx.fillStyle = '#c27b4b';
+  ctx.fillRect(22, 58, 30, 3);
+  ctx.fillRect(w - 52, 58, 30, 3);
+  ctx.fillRect(24, 71, 26, 3);
+  ctx.fillRect(w - 50, 71, 26, 3);
+
+  // Nose: sculpted bridge and nostrils
+  ctx.fillStyle = '#e5935c';
+  ctx.fillRect(w / 2 - 8, 64, 16, 22);
+  ctx.fillStyle = '#ca753b';
+  ctx.fillRect(w / 2 - 12, 82, 6, 6);
+  ctx.fillRect(w / 2 + 6, 82, 6, 6);
+
+  // Mouth: signature coral-pink expressive lips
+  ctx.fillStyle = '#dc5a46';
+  ctx.fillRect(w / 2 - 20, 94, 40, 8);
+  ctx.fillStyle = '#b93a26';
+  ctx.fillRect(w / 2 - 16, 97, 32, 3);
+
+  // Chin crease
+  ctx.fillStyle = '#d9824c';
+  ctx.fillRect(w / 2 - 12, 108, 24, 4);
+}
+
+function drawTrumpTopHair(ctx, w, h) {
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#eab308';
+  ctx.lineWidth = 4;
+  for (let i = -w; i < w * 2; i += 12) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + 40, h);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#fef08a';
+  ctx.lineWidth = 2;
+  for (let i = -w + 6; i < w * 2; i += 12) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + 35, h);
+    ctx.stroke();
+  }
+}
+
+function drawTrumpSideHair(ctx, w, h, isLeft) {
+  ctx.fillStyle = '#f5ad7a';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect(0, 0, w, 54);
+  ctx.fillStyle = '#eab308';
+  ctx.fillRect(0, 0, w, 24);
+  const sbX = isLeft ? w - 24 : 6;
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect(sbX, 50, 18, 30);
+  const earX = isLeft ? 16 : w - 38;
+  ctx.fillStyle = '#e89f6d';
+  ctx.fillRect(earX, 60, 22, 28);
+  ctx.fillStyle = '#ca753b';
+  ctx.fillRect(earX + 5, 65, 12, 16);
+}
+
+function drawTrumpBackHair(ctx, w, h) {
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect(0, 0, w, h - 20);
+  ctx.fillStyle = '#eab308';
+  ctx.fillRect(0, 0, w, h - 40);
+  ctx.fillStyle = '#ca8a04';
+  ctx.fillRect(0, 0, w, 30);
+  ctx.fillStyle = '#f5ad7a';
+  ctx.fillRect(0, h - 20, w, 20);
+}
+
+function drawTrumpBottom(ctx, w, h) {
+  ctx.fillStyle = '#f5ad7a';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(16, h - 24, 32, 24);
+  ctx.fillRect(w - 48, h - 24, 32, 24);
+}
+
+function drawTrumpSuitFront(ctx, w, h) {
+  ctx.fillStyle = '#1e293b';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#f8fafc';
+  ctx.beginPath();
+  ctx.moveTo(w / 2 - 28, 0);
+  ctx.lineTo(w / 2 + 28, 0);
+  ctx.lineTo(w / 2 + 16, 75);
+  ctx.lineTo(w / 2 - 16, 75);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#dc2626';
+  ctx.beginPath();
+  ctx.moveTo(w / 2 - 9, 8);
+  ctx.lineTo(w / 2 + 9, 8);
+  ctx.lineTo(w / 2 + 12, h - 4);
+  ctx.lineTo(w / 2, h);
+  ctx.lineTo(w / 2 - 12, h - 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#b91c1c';
+  ctx.fillRect(w / 2 - 8, 4, 16, 12);
+}
+
 export class Avatar {
   constructor(id, name, scene, world = null) {
     this.id = id;
@@ -57,9 +228,23 @@ export class Avatar {
     const pantsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.8 });
     const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 });
 
+    const isTrump = (this.name === 'jsieiragerpe' || this.name === 'jsieiragerpe@gmail.com');
+    this.isDonaldTrump = isTrump;
+
     // Torso (Minecraft proportions: 8x12x4 pixels -> 0.5 x 0.75 x 0.25 units, height 0.75 spans 0.75 to 1.50)
     const torsoGeom = new THREE.BoxGeometry(0.5, 0.75, 0.25);
-    this.torso = new THREE.Mesh(torsoGeom, shirtMat);
+    if (isTrump) {
+      // Donald Trump Presidential Suit: Dark Navy with crisp white shirt and vibrant red tie!
+      const suitMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
+      const suitFrontTex = createTrumpCanvasTexture(128, 128, drawTrumpSuitFront);
+      const suitFrontMat = suitFrontTex
+        ? new THREE.MeshStandardMaterial({ map: suitFrontTex, roughness: 0.7 })
+        : new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
+      // BoxGeometry faces: [+X, -X, +Y, -Y, +Z, -Z] (Face 5 is Front -Z)
+      this.torso = new THREE.Mesh(torsoGeom, [suitMat, suitMat, suitMat, suitMat, suitMat, suitFrontMat]);
+    } else {
+      this.torso = new THREE.Mesh(torsoGeom, shirtMat);
+    }
     this.torso.position.y = 1.125;
     this.torso.castShadow = true;
     this.group.add(this.torso);
@@ -69,51 +254,85 @@ export class Avatar {
     this.headGroup.position.set(0, 1.50, 0);
 
     const headGeom = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    this.head = new THREE.Mesh(headGeom, skinMat);
-    this.head.position.y = 0.25;
-    this.head.castShadow = true;
-    this.headGroup.add(this.head);
 
-    // Hair cap layer
-    const hairGeom = new THREE.BoxGeometry(0.52, 0.18, 0.52);
-    const hair = new THREE.Mesh(hairGeom, hairMat);
-    hair.position.y = 0.42;
-    this.headGroup.add(hair);
+    if (isTrump) {
+      // Procedural Donald Trump 3D Cube Head Textures
+      // BoxGeometry material array: 0:+X(Right), 1:-X(Left), 2:+Y(Top), 3:-Y(Bottom), 4:+Z(Back), 5:-Z(Front)
+      const texRight = createTrumpCanvasTexture(128, 128, (ctx, w, h) => drawTrumpSideHair(ctx, w, h, false));
+      const texLeft = createTrumpCanvasTexture(128, 128, (ctx, w, h) => drawTrumpSideHair(ctx, w, h, true));
+      const texTop = createTrumpCanvasTexture(128, 128, drawTrumpTopHair);
+      const texBottom = createTrumpCanvasTexture(128, 128, drawTrumpBottom);
+      const texBack = createTrumpCanvasTexture(128, 128, drawTrumpBackHair);
+      const texFront = createTrumpCanvasTexture(128, 128, drawTrumpFrontFace);
 
-    // Authentic Minecraft Face details on front face (-Z)
-    const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2563eb }); // Classic blue eyes
-    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x7c2d12 });
+      const trumpHeadMats = [
+        texRight ? new THREE.MeshStandardMaterial({ map: texRight, roughness: 0.75 }) : new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.8 }),
+        texLeft ? new THREE.MeshStandardMaterial({ map: texLeft, roughness: 0.75 }) : new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.8 }),
+        texTop ? new THREE.MeshStandardMaterial({ map: texTop, roughness: 0.75 }) : new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.8 }),
+        texBottom ? new THREE.MeshStandardMaterial({ map: texBottom, roughness: 0.8 }) : new THREE.MeshStandardMaterial({ color: 0xf5ad7a, roughness: 0.8 }),
+        texBack ? new THREE.MeshStandardMaterial({ map: texBack, roughness: 0.75 }) : new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.8 }),
+        texFront ? new THREE.MeshStandardMaterial({ map: texFront, roughness: 0.75 }) : new THREE.MeshStandardMaterial({ color: 0xf5ad7a, roughness: 0.8 })
+      ];
 
-    // Eye Whites
-    const scleraGeom = new THREE.BoxGeometry(0.08, 0.06, 0.02);
-    const scleraL = new THREE.Mesh(scleraGeom, whiteMat);
-    scleraL.position.set(-0.13, 0.24, -0.252);
-    const scleraR = new THREE.Mesh(scleraGeom, whiteMat);
-    scleraR.position.set(0.13, 0.24, -0.252);
-    this.headGroup.add(scleraL);
-    this.headGroup.add(scleraR);
+      this.head = new THREE.Mesh(headGeom, trumpHeadMats);
+      this.head.position.y = 0.25;
+      this.head.castShadow = true;
+      this.head.isDonaldTrumpHead = true;
+      this.headGroup.add(this.head);
 
-    // Blue Pupils
-    const pupilGeom = new THREE.BoxGeometry(0.045, 0.06, 0.022);
-    const pupilL = new THREE.Mesh(pupilGeom, eyeMat);
-    pupilL.position.set(-0.15, 0.24, -0.253);
-    const pupilR = new THREE.Mesh(pupilGeom, eyeMat);
-    pupilR.position.set(0.11, 0.24, -0.253);
-    this.headGroup.add(pupilL);
-    this.headGroup.add(pupilR);
+      // Distinctive 3D comb-over hair crest cap over top of cube
+      const trumpHairGeom = new THREE.BoxGeometry(0.53, 0.16, 0.53);
+      const trumpHairMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.75 });
+      const trumpHairMesh = new THREE.Mesh(trumpHairGeom, trumpHairMat);
+      trumpHairMesh.position.set(0.01, 0.44, -0.01);
+      this.headGroup.add(trumpHairMesh);
+    } else {
+      this.head = new THREE.Mesh(headGeom, skinMat);
+      this.head.position.y = 0.25;
+      this.head.castShadow = true;
+      this.headGroup.add(this.head);
 
-    // Mouth
-    const mouthGeom = new THREE.BoxGeometry(0.14, 0.035, 0.02);
-    const mouth = new THREE.Mesh(mouthGeom, mouthMat);
-    mouth.position.set(0, 0.10, -0.252);
-    this.headGroup.add(mouth);
+      // Hair cap layer
+      const hairGeom = new THREE.BoxGeometry(0.52, 0.18, 0.52);
+      const hair = new THREE.Mesh(hairGeom, hairMat);
+      hair.position.y = 0.42;
+      this.headGroup.add(hair);
 
-    // Front Hair Bangs
-    const bangsGeom = new THREE.BoxGeometry(0.50, 0.08, 0.04);
-    const bangs = new THREE.Mesh(bangsGeom, hairMat);
-    bangs.position.set(0, 0.44, -0.245);
-    this.headGroup.add(bangs);
+      // Authentic Minecraft Face details on front face (-Z)
+      const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2563eb }); // Classic blue eyes
+      const mouthMat = new THREE.MeshBasicMaterial({ color: 0x7c2d12 });
+
+      // Eye Whites
+      const scleraGeom = new THREE.BoxGeometry(0.08, 0.06, 0.02);
+      const scleraL = new THREE.Mesh(scleraGeom, whiteMat);
+      scleraL.position.set(-0.13, 0.24, -0.252);
+      const scleraR = new THREE.Mesh(scleraGeom, whiteMat);
+      scleraR.position.set(0.13, 0.24, -0.252);
+      this.headGroup.add(scleraL);
+      this.headGroup.add(scleraR);
+
+      // Blue Pupils
+      const pupilGeom = new THREE.BoxGeometry(0.045, 0.06, 0.022);
+      const pupilL = new THREE.Mesh(pupilGeom, eyeMat);
+      pupilL.position.set(-0.15, 0.24, -0.253);
+      const pupilR = new THREE.Mesh(pupilGeom, eyeMat);
+      pupilR.position.set(0.11, 0.24, -0.253);
+      this.headGroup.add(pupilL);
+      this.headGroup.add(pupilR);
+
+      // Mouth
+      const mouthGeom = new THREE.BoxGeometry(0.14, 0.035, 0.02);
+      const mouth = new THREE.Mesh(mouthGeom, mouthMat);
+      mouth.position.set(0, 0.10, -0.252);
+      this.headGroup.add(mouth);
+
+      // Front Hair Bangs
+      const bangsGeom = new THREE.BoxGeometry(0.50, 0.08, 0.04);
+      const bangs = new THREE.Mesh(bangsGeom, hairMat);
+      bangs.position.set(0, 0.44, -0.245);
+      this.headGroup.add(bangs);
+    }
 
     this.group.add(this.headGroup);
 

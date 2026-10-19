@@ -17,7 +17,11 @@ const {
   ADMIN_EMAILS,
   isValidAdminCredentials,
   AIR_BASE_BOUNDS,
-  isInsideAirBase
+  isInsideAirBase,
+  BUNKER_BOUNDS,
+  BUNKER_INTERIOR_BOUNDS,
+  isInsideBunker,
+  isInsideBunkerInterior
 } = require('./protocol');
 const { GameState } = require('./game-state');
 
@@ -206,6 +210,14 @@ class RoomManager {
         this.handleAdminLaunchMissile(ws, meta, data);
         break;
 
+      case MSG.BUNKER_LAUNCH_SALVO:
+        this.handleAdminLaunchMissile(ws, meta, { ...data, isSiloLaunch: true });
+        break;
+
+      case MSG.BUNKER_MANUAL_INTERCEPT:
+        this.handleBunkerManualIntercept(ws, meta, data);
+        break;
+
       case MSG.MISSILE_DETONATE:
         this.handleMissileDetonate(ws, meta, data);
         break;
@@ -216,9 +228,28 @@ class RoomManager {
     const roomId = 'main';
     const room = this.getOrCreateRoom(roomId);
 
-    const rawIdentifier = typeof data?.email === 'string' ? data.email : (typeof data?.name === 'string' ? data.name : '');
-    const isAdmin = isValidAdminCredentials(rawIdentifier, data?.adminKey || '');
-    const normAdminEmail = isAdmin ? rawIdentifier.trim().toLowerCase() : null;
+    const rawEmail = (typeof data?.email === 'string') ? data.email.trim() : '';
+    const rawName = (typeof data?.name === 'string') ? data.name.trim() : '';
+    const normEmail = rawEmail.toLowerCase();
+    const normName = rawName.toLowerCase();
+
+    // Check admin credentials on non-empty email or name
+    const rawIdentifier = rawEmail || rawName || '';
+    const isAdmin = isValidAdminCredentials(rawEmail || rawName, data?.adminKey || '');
+    const normAdminEmail = isAdmin ? (rawEmail || rawName).toLowerCase() : null;
+
+    // Strict protection: ANY attempt to join using 'jsieiragerpe' or 'jsieiragerpe@gmail.com' in EITHER email or name
+    // MUST validate as admin (with ARGON4 / ARGÓN4), otherwise access is rejected!
+    const isMainAdminTarget = (
+      normEmail === ADMIN_EMAIL ||
+      normEmail === 'jsieiragerpe' ||
+      normName === ADMIN_EMAIL ||
+      normName === 'jsieiragerpe'
+    );
+    if (isMainAdminTarget && !isAdmin) {
+      this.send(ws, MSG.ERROR, { message: 'Contraseña de administrador requerida o incorrecta para jsieiragerpe (ARGON4).' });
+      return;
+    }
 
     if (room.clients.size >= this.maxPlayers && !isAdmin) {
       this.send(ws, MSG.ERROR, { message: 'El servidor está lleno (máximo alcanzado). Intenta más tarde.' });
@@ -389,6 +420,23 @@ class RoomManager {
           });
         }
       }
+
+      // Mega Underground Bunker & Silo Complex Protected Perimeter Shield
+      if (isInsideBunker(px, py, pz)) {
+        data.pos[0] = -430;
+        data.pos[1] = 25;
+        data.pos[2] = 300;
+        const now = Date.now();
+        if (!meta.lastBunkerNotice || now - meta.lastBunkerNotice > 3500) {
+          meta.lastBunkerNotice = now;
+          this.send(ws, MSG.CHAT_BROADCAST, {
+            senderId: 'SYSTEM',
+            senderName: 'CAMPO DE FUERZA',
+            text: '🛡️ Acceso denegado: Búnker Subterráneo exclusivo para jsieiragerpe.',
+            timestamp: now
+          });
+        }
+      }
     }
 
     room.gameState.updatePlayer(meta.id, data);
@@ -441,23 +489,24 @@ class RoomManager {
         const ty = Array.isArray(targetPlayer.pos) ? targetPlayer.pos[1] : (typeof targetPlayer.y === 'number' ? targetPlayer.y : 25);
         const tz = Array.isArray(targetPlayer.pos) ? targetPlayer.pos[2] : (typeof targetPlayer.z === 'number' ? targetPlayer.z : 0);
         const isTargetInBase = isInsideAirBase(tx, ty, tz);
-        const isTargetAdmin = (targetPlayer.adminEmail === ADMIN_EMAIL || targetPlayer.name === 'jsieiragerpe');
+        const isTargetInBunker = isInsideBunker(tx, ty, tz);
+        const isTargetAdmin = (targetPlayer.adminEmail === ADMIN_EMAIL || (targetPlayer.isAdmin && targetPlayer.name === 'jsieiragerpe'));
 
-        if (meta.adminEmail !== ADMIN_EMAIL && (isTargetInBase || isTargetAdmin)) {
+        if (meta.adminEmail !== ADMIN_EMAIL && (isTargetInBase || isTargetInBunker || isTargetAdmin)) {
           this.send(ws, MSG.CHAT_BROADCAST, {
             senderId: 'SYSTEM',
             senderName: 'CAMPO DE FUERZA',
-            text: '🛡️ Ataque anulado: El objetivo está protegido por el escudo de la Base Militar.',
+            text: '🛡️ Ataque anulado: El objetivo está protegido por el escudo del Búnker / Base Militar.',
             timestamp: Date.now()
           });
           return;
         }
 
-        if (meta.adminEmail !== ADMIN_EMAIL && data.hitPos && isInsideAirBase(data.hitPos[0], data.hitPos[1], data.hitPos[2])) {
+        if (meta.adminEmail !== ADMIN_EMAIL && data.hitPos && (isInsideAirBase(data.hitPos[0], data.hitPos[1], data.hitPos[2]) || isInsideBunker(data.hitPos[0], data.hitPos[1], data.hitPos[2]))) {
           this.send(ws, MSG.CHAT_BROADCAST, {
             senderId: 'SYSTEM',
             senderName: 'CAMPO DE FUERZA',
-            text: '🛡️ Ataque anulado: El proyectil colisionó contra el campo de fuerza de la Base Militar.',
+            text: '🛡️ Ataque anulado: El proyectil colisionó contra el campo de fuerza del Búnker / Base Militar.',
             timestamp: Date.now()
           });
           return;
@@ -563,11 +612,11 @@ class RoomManager {
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);
 
-    if (meta.adminEmail !== ADMIN_EMAIL && isInsideAirBase(rx, ry, rz)) {
+    if (meta.adminEmail !== ADMIN_EMAIL && (isInsideAirBase(rx, ry, rz) || isInsideBunker(rx, ry, rz))) {
       this.send(ws, MSG.CHAT_BROADCAST, {
         senderId: 'SYSTEM',
         senderName: 'CAMPO DE FUERZA',
-        text: '🛡️ Detonación anulada: La Base Militar está protegida contra explosivos.',
+        text: '🛡️ Detonación anulada: El Búnker / Base Militar está protegida contra explosivos.',
         timestamp: Date.now()
       });
       return;
@@ -618,15 +667,13 @@ class RoomManager {
 
     const { x, y, z, blockType } = data;
 
-    // Military Base Protected Perimeter Shield: block edits prohibited unless jsieiragerpe@gmail.com
-    if (x >= -455 && x <= -385 && z >= 115 && z <= 185 && y >= 0 && y <= 85) {
-      if (meta.adminEmail !== ADMIN_EMAIL) {
-        this.send(ws, MSG.BLOCK_REJECT, {
-          x, y, z,
-          reason: '🛡️ Base militar protegida por campo de fuerza impenetrable.'
-        });
-        return;
-      }
+    // Military Base & Bunker Protected Perimeter Shield: block edits prohibited unless jsieiragerpe@gmail.com
+    if ((isInsideAirBase(x, y, z) || isInsideBunker(x, y, z)) && meta.adminEmail !== ADMIN_EMAIL) {
+      this.send(ws, MSG.BLOCK_REJECT, {
+        x, y, z,
+        reason: '🛡️ Base militar protegida por campo de fuerza impenetrable.'
+      });
+      return;
     }
 
     const result = room.gameState.modifyBlock(meta.id, x, y, z, blockType);
@@ -688,8 +735,8 @@ class RoomManager {
     const ty = typeof target.y === 'number' ? target.y : (Array.isArray(target.pos) ? target.pos[1] : 25);
     const tz = typeof target.z === 'number' ? target.z : (Array.isArray(target.pos) ? target.pos[2] : 0);
 
-    // Military Base Protected Perimeter: unauthorized players cannot teleport inside base
-    if (meta.adminEmail !== ADMIN_EMAIL && isInsideAirBase(tx, ty, tz)) {
+    // Military Base & Bunker Protected Perimeter: unauthorized players cannot teleport inside base or bunker
+    if (meta.adminEmail !== ADMIN_EMAIL && (isInsideAirBase(tx, ty, tz) || isInsideBunker(tx, ty, tz))) {
       this.send(ws, MSG.ERROR, { message: '🛡️ Acceso denegado: Base Militar protegida por campo de fuerza impenetrable.' });
       return;
     }
@@ -842,14 +889,25 @@ class RoomManager {
     const startPos = Array.isArray(data.origin) ? [...data.origin] : [...launcher.pos];
     const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
 
-    // Exactly 1 missile for all players (user requested: "ponle misiles pero solo 1 a todos, los jugadores en vez de lanzar 2, solo uno")
-    const missileCount = 1;
+    const isSilo = Boolean(data.isSiloLaunch);
+    const missileCount = isSilo && data.count ? Math.min(180, Math.max(1, Math.floor(data.count))) : 1;
     const launchedIds = [];
+    const missilePower = isSilo ? 8 : 4; // 2X power for silo missiles!
 
     for (let i = 0; i < missileCount; i++) {
       const missileId = 'msl_' + Date.now() + '_' + Math.floor(Math.random() * 10000) + '_' + i;
       launchedIds.push(missileId);
-      const yawOffset = (missileCount > 1) ? (i === 0 ? -0.16 : 0.16) : 0;
+      const yawOffset = (missileCount > 1) ? ((i - (missileCount - 1) / 2) * 0.05) : 0;
+
+      let mStart = [startPos[0], startPos[1], startPos[2]];
+      if (isSilo) {
+        // Distribute around surface bunker silo coordinates
+        const angle = (i / Math.max(1, missileCount)) * Math.PI * 2;
+        const rad = 36 + (i % 3) * 12;
+        mStart = [-500 + Math.cos(angle) * rad, 24.5, 300 + Math.sin(angle) * rad];
+      } else if (missileCount > 1) {
+        mStart[0] += (i === 0 ? -0.8 : 0.8);
+      }
 
       const payload = {
         missileId,
@@ -858,20 +916,39 @@ class RoomManager {
         targetPlayerId: data.targetPlayerId,
         targetName,
         targetPos,
-        startPos: [startPos[0] + (missileCount > 1 ? (i === 0 ? -0.8 : 0.8) : 0), startPos[1], startPos[2]],
+        startPos: mStart,
         startYaw: startYaw + yawOffset,
-        power: 4, // 4X TNT equivalent (radius 9m)
-        launchType: isAir ? 'air' : 'land'
+        power: missilePower,
+        launchType: isAir ? 'air' : 'land',
+        isSiloMissile: isSilo,
+        flameColor: data.flameColor || 0xff6600
       };
 
       // Broadcast missile spawn to everyone in the room
       this.broadcast(room, MSG.MISSILE_SPAWN, payload);
     }
 
-    // Check if target is the Main Admin (jsieiragerpe@gmail.com) OR inside the Military Air Base
-    const isTargetMainAdmin = (targetPlayer && (targetPlayer.adminEmail === ADMIN_EMAIL || targetPlayer.name === 'jsieiragerpe' || targetPlayer.name === 'jsieiragerpe@gmail.com' || targetPlayer.id === 'p_main_admin'));
-    const isTargetInBase = targetPos && isInsideAirBase(targetPos[0], targetPos[1], targetPos[2]);
-    if (isTargetMainAdmin || isTargetInBase) {
+    // Target checks:
+    const isTargetMainAdmin = Boolean(targetPlayer && (
+      targetPlayer.adminEmail === ADMIN_EMAIL ||
+      (targetPlayer.isAdmin && (targetPlayer.name === 'jsieiragerpe' || targetPlayer.name === 'jsieiragerpe@gmail.com')) ||
+      targetPlayer.id === 'p_main_admin'
+    ));
+    const isTargetInBase = Boolean(targetPos && isInsideAirBase(targetPos[0], targetPos[1], targetPos[2]));
+    const isTargetInBunker = Boolean(targetPos && isInsideBunker(targetPos[0], targetPos[1], targetPos[2]));
+    const isLauncherMainAdmin = Boolean(meta.adminEmail === ADMIN_EMAIL || (launcher.isAdmin && launcher.name === 'jsieiragerpe') || meta.id === 'p_main_admin');
+
+    // If target is inside Bunker:
+    if (isTargetInBunker) {
+      // Auto defense is DISABLED inside the bunker, and missile cannot reach admin!
+      this.broadcast(room, MSG.CHAT_BROADCAST, {
+        senderId: 'SYSTEM',
+        senderName: 'BÚNKER SUBTERRÁNEO',
+        text: '🛡️ [BÚNKER SUBTERRÁNEO] Blindaje de hangar activo: los misiles no pueden penetrar el búnker. Defensa automática desactivada (utiliza el botón azul manual).',
+        timestamp: Date.now()
+      });
+    } else if ((isTargetMainAdmin || isTargetInBase) && !isLauncherMainAdmin) {
+      // Iron Dome Auto Defense triggers only if actually targeting Main Admin or Base, and NOT launched by Admin!
       this.broadcast(room, MSG.MISSILE_INTERCEPT_DEFENSE, {
         attackerId: meta.id,
         attackerName: launcher.name,
@@ -894,8 +971,38 @@ class RoomManager {
     // Announce to launcher
     this.send(ws, MSG.CHAT_BROADCAST, {
       senderId: 'SYSTEM',
-      senderName: 'RADAR TÁCTICO',
-      text: `🚀 ${missileCount > 1 ? 'Salva de 2 misiles teledirigidos lanzada' : 'Misil teledirigido lanzado'} con éxito hacia ${targetName} (${isAir ? 'Modo Aire' : 'Modo Tierra'}).`,
+      senderName: isSilo ? 'BÚNKER DE SILOS' : 'RADAR TÁCTICO',
+      text: `🚀 ${missileCount > 1 ? `Salva de ${missileCount} misiles lanzada` : 'Misil teledirigido lanzado'} con éxito hacia ${targetName} (${isAir ? 'Modo Aire' : 'Modo Tierra'}).`,
+      timestamp: Date.now()
+    });
+  }
+
+  handleBunkerManualIntercept(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
+    const player = room.gameState.getPlayer(meta.id);
+    if (!player) return;
+    const isMainAdmin = (meta.adminEmail === ADMIN_EMAIL || player.name === 'jsieiragerpe' || meta.id === 'p_main_admin');
+    if (!isMainAdmin) return;
+
+    const interceptorId = 'icp_manual_' + Date.now();
+    this.broadcast(room, MSG.MISSILE_SPAWN, {
+      missileId: interceptorId,
+      launcherId: meta.id,
+      launcherName: 'Búnker jsieiragerpe',
+      targetPlayerId: data?.targetMissileId || 'incoming_hostile',
+      startPos: [-500, 24.5, 300],
+      startYaw: 0,
+      power: 6,
+      isInterceptor: true,
+      launchType: 'air'
+    });
+
+    this.broadcast(room, MSG.CHAT_BROADCAST, {
+      senderId: 'SYSTEM',
+      senderName: 'BÚNKER DE MANDO',
+      text: '🚀 [INTERCEPTOR MANUAL] ¡Misil interceptor cinético lanzado manualmente desde el silo del Búnker!',
       timestamp: Date.now()
     });
   }
@@ -909,8 +1016,8 @@ class RoomManager {
     const ry = Math.round(data.y);
     const rz = Math.round(data.z);
 
-    // Mid-air kinetic interception: broadcast impact to all players without ground crater
-    if (data.isIntercepted) {
+    // Mid-air kinetic interception or inside bunker: broadcast impact without ground crater
+    if (data.isIntercepted || isInsideBunker(rx, ry, rz)) {
       this.broadcast(room, MSG.MISSILE_IMPACT, {
         missileId: data.missileId,
         x: rx,
@@ -921,8 +1028,10 @@ class RoomManager {
       });
       this.broadcast(room, MSG.CHAT_BROADCAST, {
         senderId: 'SYSTEM',
-        senderName: 'CÚPULA DE HIERRO',
-        text: '🛡️ [INTERCEPCIÓN CINÉTICA] ¡Misil enemigo neutralizado en pleno vuelo por la Cúpula de Hierro!',
+        senderName: isInsideBunker(rx, ry, rz) ? 'BÚNKER SUBTERRÁNEO' : 'CÚPULA DE HIERRO',
+        text: isInsideBunker(rx, ry, rz)
+          ? '🛡️ [BÚNKER DE MANDO] Blindaje de hangar absorbió y neutralizó el impacto del misil hostil.'
+          : '🛡️ [INTERCEPCIÓN CINÉTICA] ¡Misil enemigo neutralizado en pleno vuelo por la Cúpula de Hierro!',
         timestamp: Date.now()
       });
       return;

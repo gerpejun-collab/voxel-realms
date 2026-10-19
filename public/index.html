@@ -146,6 +146,12 @@
       <span id="vehicle-prompt-text">Presiona <strong>[E]</strong> o <strong>[F]</strong> para conducir el coche</span>
     </div>
 
+    <!-- Bunker Console Proximity Prompt -->
+    <div id="bunker-console-prompt" class="vehicle-prompt hidden">
+      <span class="prompt-icon">🛡️</span>
+      <span id="bunker-prompt-text">Presiona <strong>[E]</strong> para Consola de Mando de Silos</span>
+    </div>
+
     <!-- In-Game Chat Feed & Input -->
     <div id="chat-container">
       <div id="chat-feed"></div>
@@ -316,6 +322,14 @@
           <div class="dest-info">
             <span class="dest-title">🎖️ Base Militar (-420, +150)</span>
             <span class="dest-coords">XYZ (-420, 25, +150) • Aeródromo Estratégico, Hangar Blindado & Pista B-1</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn highlight-pill" data-x="-500" data-y="12" data-z="300" data-landmark="underground_bunker">
+          <span class="dest-icon">🛡️</span>
+          <div class="dest-info">
+            <span class="dest-title">🛡️ Búnker Subterráneo (-500, +300)</span>
+            <span class="dest-coords">XYZ (-500, 12, +300) • Centro de Mando, 180 Silos & Montaña Blindada</span>
           </div>
         </button>
       </div>
@@ -490,6 +504,7 @@
         <div class="pause-menu-grid">
           <button id="menu-btn-map" class="mc-btn menu-grid-btn">🗺️ Mapa y Viajes</button>
           <button id="menu-btn-base-militar" class="mc-btn menu-grid-btn highlight-pill">🎖️ Base Militar</button>
+          <button id="menu-btn-bunker" class="mc-btn menu-grid-btn highlight-pill">🛡️ Búnker Subterráneo</button>
           <button id="menu-btn-speed" class="mc-btn menu-grid-btn">⚡ Velocidad: 1x</button>
           <button id="menu-btn-cam" class="mc-btn menu-grid-btn">📷 Cámara: 1ª P.</button>
           <button id="menu-btn-share-loc" class="mc-btn menu-grid-btn">📍 Mi Ubicación</button>

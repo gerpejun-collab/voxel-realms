@@ -19,6 +19,8 @@ const MSG = {
   ADMIN_RESET_SERVER: 'admin_reset_server',
   ADMIN_LAUNCH_MISSILE: 'admin_launch_missile',
   MISSILE_DETONATE: 'missile_detonate',
+  BUNKER_LAUNCH_SALVO: 'bunker_launch_salvo',
+  BUNKER_MANUAL_INTERCEPT: 'bunker_manual_intercept',
 
   // Server -> Client
   INIT: 'init',
@@ -73,6 +75,46 @@ function isInsideAirBase(x, y, z) {
   const inY = (typeof y === 'number') ? (y >= AIR_BASE_BOUNDS.minY && y <= AIR_BASE_BOUNDS.maxY) : true;
   return x >= AIR_BASE_BOUNDS.minX && x <= AIR_BASE_BOUNDS.maxX &&
          z >= AIR_BASE_BOUNDS.minZ && z <= AIR_BASE_BOUNDS.maxZ &&
+         inY;
+}
+
+const BUNKER_BOUNDS = {
+  minX: -565,
+  maxX: -435,
+  minZ: 235,
+  maxZ: 365,
+  minY: 0,
+  maxY: 85
+};
+
+const BUNKER_INTERIOR_BOUNDS = {
+  minX: -520,
+  maxX: -480,
+  minZ: 280,
+  maxZ: 320,
+  minY: 8,
+  maxY: 22
+};
+
+/**
+ * Checks whether 3D coordinates fall within the Mega Underground Bunker & Silo Complex perimeter
+ */
+function isInsideBunker(x, y, z) {
+  if (typeof x !== 'number' || typeof z !== 'number') return false;
+  const inY = (typeof y === 'number') ? (y >= BUNKER_BOUNDS.minY && y <= BUNKER_BOUNDS.maxY) : true;
+  return x >= BUNKER_BOUNDS.minX && x <= BUNKER_BOUNDS.maxX &&
+         z >= BUNKER_BOUNDS.minZ && z <= BUNKER_BOUNDS.maxZ &&
+         inY;
+}
+
+/**
+ * Checks whether 3D coordinates fall strictly inside the subterranean bunker command center chamber
+ */
+function isInsideBunkerInterior(x, y, z) {
+  if (typeof x !== 'number' || typeof z !== 'number') return false;
+  const inY = (typeof y === 'number') ? (y >= BUNKER_INTERIOR_BOUNDS.minY && y <= BUNKER_INTERIOR_BOUNDS.maxY) : true;
+  return x >= BUNKER_INTERIOR_BOUNDS.minX && x <= BUNKER_INTERIOR_BOUNDS.maxX &&
+         z >= BUNKER_INTERIOR_BOUNDS.minZ && z <= BUNKER_INTERIOR_BOUNDS.maxZ &&
          inY;
 }
 
@@ -247,7 +289,11 @@ if (typeof module !== 'undefined' && module.exports) {
     ADMIN_EMAILS,
     isValidAdminCredentials,
     AIR_BASE_BOUNDS,
-    isInsideAirBase
+    isInsideAirBase,
+    BUNKER_BOUNDS,
+    BUNKER_INTERIOR_BOUNDS,
+    isInsideBunker,
+    isInsideBunkerInterior
   };
 }
 

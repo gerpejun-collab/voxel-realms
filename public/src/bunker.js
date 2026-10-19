@@ -597,7 +597,8 @@ export class BunkerManager {
         if (e.code === 'KeyE' || e.key === 'e' || e.key === 'E') {
           if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
           if (this.lastPlayerPos && this.isPlayerInsideBunker(this.lastPlayerPos)) {
-            const dist = this.lastPlayerPos.distanceTo(this.center);
+            const lp = this.lastPlayerPos;
+            const dist = Math.hypot(lp.x - this.center.x, lp.y - this.center.y, lp.z - this.center.z);
             if (dist <= 14) {
               this.toggleBunkerHUD();
             }
@@ -860,7 +861,11 @@ export class BunkerManager {
     // 3. Check proximity to command console for prompt
     if (playerPos) {
       this.lastPlayerPos = playerPos;
-      const distToConsole = playerPos.distanceTo(this.center);
+      const distToConsole = Math.hypot(
+        playerPos.x - this.center.x,
+        playerPos.y - this.center.y,
+        playerPos.z - this.center.z
+      );
       const isInside = this.isPlayerInsideBunker(playerPos);
 
       // Biometric rejection for unauthorized intruders

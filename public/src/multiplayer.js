@@ -822,7 +822,6 @@ export class MultiplayerClient {
   }
 
   sendAdminLaunchMissile(targetPlayerId, origin = null, yaw = null, launchType = null) {
-    if (!this.isAdmin) return;
     const lType = launchType || ((this.physics && this.physics.pos && this.physics.pos.y > 28) ? 'air' : 'land');
     this.send('admin_launch_missile', {
       targetPlayerId,
@@ -830,6 +829,10 @@ export class MultiplayerClient {
       yaw: (typeof yaw === 'number') ? yaw : (this.controls ? this.controls.yaw : 0),
       launchType: lType
     });
+  }
+
+  sendLaunchMissile(targetPlayerId, origin = null, yaw = null, launchType = null) {
+    return this.sendAdminLaunchMissile(targetPlayerId, origin, yaw, launchType);
   }
 
   sendMissileDetonate(data) {

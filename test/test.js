@@ -4485,7 +4485,7 @@ it('Weapons HUD & Mobile Action Controls: active by default, TNT placement puts 
 // =============================================================================
 console.log('\n[SECTION 14: GUIDED HOMING MISSILE (ADMIN) & TACTICAL HOLOGRAPHIC RADAR]');
 
-it('Admin Guided Missile: server enforces strict admin authentication for missile launch', () => {
+it('Admin Guided Missile: server enforces valid room connection and broadcasts missile spawn for all players', () => {
   const rm = new RoomManager();
   const room = rm.getOrCreateRoom('main');
   const normalSent = [];
@@ -4494,14 +4494,24 @@ it('Admin Guided Missile: server enforces strict admin authentication for missil
   rm.socketMeta.set(normalWs, normalMeta);
   room.gameState.addPlayer('p_norm', 'NormalPlayer');
   room.gameState.addPlayer('target_1', 'TargetPlayer');
+  room.clients.set(normalWs, 'p_norm');
 
-  // Try to launch without admin rights
-  rm.handleAdminLaunchMissile(normalWs, normalMeta, { targetPlayerId: 'target_1' });
+  // Try to launch without room connection
+  const noRoomWs = { readyState: 1, send: (m) => normalSent.push(JSON.parse(m)), on: () => {} };
+  const noRoomMeta = { id: 'p_noroom', roomId: null, msgCount: 0, lastMsgTime: Date.now() };
+  rm.handleAdminLaunchMissile(noRoomWs, noRoomMeta, { targetPlayerId: 'target_1' });
   const errorMsg = normalSent.find(m => m.type === MSG.ERROR);
-  assert.ok(errorMsg, 'Unauthorized launch must send error');
-  assert.ok(errorMsg.data.message.includes('Administrador'), 'Error message must mention Administrador');
+  assert.ok(errorMsg, 'Launch without room connection must send error');
 
-  // Launch with admin rights
+  // Player launch succeeds (1 missile)
+  normalSent.length = 0;
+  rm.handleAdminLaunchMissile(normalWs, normalMeta, { targetPlayerId: 'target_1' });
+  const playerSpawn = normalSent.find(m => m.type === MSG.MISSILE_SPAWN);
+  assert.ok(playerSpawn, 'Player launch must broadcast missile_spawn');
+  assert.strictEqual(playerSpawn.data.targetPlayerId, 'target_1');
+  assert.strictEqual(playerSpawn.data.power, 4, 'Missile power must be 4X TNT');
+
+  // Launch with admin rights also succeeds (1 missile)
   const adminSent = [];
   const adminWs = { readyState: 1, send: (m) => adminSent.push(JSON.parse(m)), on: () => {} };
   const adminMeta = { id: 'admin_1', roomId: 'main', isAdmin: true, msgCount: 0, lastMsgTime: Date.now() };

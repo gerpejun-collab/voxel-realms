@@ -205,7 +205,6 @@ export class UIManager {
         if (!adminPanel) return;
         if (!state || !state.isAdmin) {
           adminPanel.classList.add('hidden');
-          if (btnAdminMissile) btnAdminMissile.classList.add('hidden');
           return;
         }
 
@@ -817,7 +816,7 @@ export class UIManager {
       } else if (e.code === 'KeyV') {
         sound.playClick();
         this.cycleSpeed();
-      } else if (e.code === 'KeyR' && this.multiplayer && this.multiplayer.isAdmin) {
+      } else if (e.code === 'KeyR' && this.multiplayer) {
         sound.playClick();
         if (this.tacticalRadar) {
           this.tacticalRadar.toggle();
@@ -1825,7 +1824,10 @@ export class UIManager {
       row.innerHTML = `
         <td>${avatar.name}</td>
         <td><span class="location-badge">${remoteSector} (${ax}, ${az})</span></td>
-        <td><button class="tp-friend-btn mc-btn" data-player-id="${id}" title="Teletransportarte a ${avatar.name}">Teletransportar 🚀</button></td>
+        <td style="display:flex;gap:4px;align-items:center;">
+          <button class="tp-friend-btn mc-btn" data-player-id="${id}" title="Teletransportarte a ${avatar.name}">Teletransportar 📍</button>
+          <button class="player-missile-btn mc-btn" data-player-id="${id}" style="padding:4px 8px;font-size:11px;background:#dc2626;color:#ffffff;border-color:#f87171;font-weight:bold;" title="Lanzar misil teledirigido a ${avatar.name}">🚀 Misil</button>
+        </td>
       `;
 
       const tpBtn = row.querySelector('.tp-friend-btn');
@@ -1838,6 +1840,25 @@ export class UIManager {
             this.physics.teleport(ax, ay + 1, az);
             if (typeof sound.playTeleport === 'function') sound.playTeleport();
             this.showNotification('Te has teletransportado hacia ' + avatar.name);
+          }
+          this.updatePlayerListModal(false);
+          if (!this.controls?.isMobile) {
+            this.controls?.lock?.();
+          }
+        });
+      }
+
+      const missileBtn = row.querySelector('.player-missile-btn');
+      if (missileBtn) {
+        missileBtn.addEventListener('click', () => {
+          sound.playClick();
+          if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
+            this.multiplayer.sendAdminLaunchMissile(id);
+            this.showNotification('🚀 Misil guiado lanzado hacia ' + (avatar.name || 'Jugador'));
+          }
+          if (this.tacticalRadar) {
+            this.tacticalRadar.toggle(true);
+            this.tacticalRadar.toggleMinimize(false);
           }
           this.updatePlayerListModal(false);
           if (!this.controls?.isMobile) {

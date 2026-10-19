@@ -33,7 +33,18 @@ export class GuidedMissile {
     const ty = options.targetPos ? options.targetPos[1] : 25;
     const tz = options.targetPos ? options.targetPos[2] : 0;
 
-    this.pos = new THREE.Vector3(sx, sy + 1.2, sz);
+    const startYaw = typeof options.startYaw === 'number' ? options.startYaw : 0;
+    const forwardX = -Math.sin(startYaw);
+    const forwardZ = -Math.cos(startYaw);
+
+    // If interceptor or retaliation, spawn right at startPos
+    // If standard player missile, spawn 2.2m ahead of the launcher so the player clearly SEES their rocket ignite and elevate!
+    const spawnDist = (this.isInterceptor || this.isRetaliation) ? 0 : 2.2;
+    this.pos = new THREE.Vector3(
+      sx + forwardX * spawnDist,
+      sy + (this.launchType === 'air' ? 0.2 : 0.4),
+      sz + forwardZ * spawnDist
+    );
     this.targetPos = new THREE.Vector3(tx, ty + 1.0, tz);
     this.lastKnownTargetPos = this.targetPos.clone();
     this.targetDisconnected = false;
@@ -43,17 +54,16 @@ export class GuidedMissile {
     this.closestDistToTarget = Infinity;
     this.missileManager = options.missileManager || null;
 
-    // Initial forward orientation (pitches upwards into the sky during initial climb)
-    const startYaw = typeof options.startYaw === 'number' ? options.startYaw : 0;
-    const initialPitch = (this.launchType === 'air') ? 0.45 : 0.85;
+    // Initial forward orientation: points vertically upwards into the sky during initial climb
+    const initialPitch = (this.launchType === 'air') ? 1.8 : 3.5;
     this.forward = new THREE.Vector3(
-      -Math.sin(startYaw),
+      forwardX * 0.2,
       initialPitch,
-      -Math.cos(startYaw)
+      forwardZ * 0.2
     ).normalize();
 
     // Flight kinematics: gradual acceleration and realistic turn limits
-    this.speed = 16.0;
+    this.speed = 3.0;
     this.maxSpeed = 82.0;
     this.accel = 24.0;
     this.maxTurnRate = 2.4;
@@ -74,17 +84,17 @@ export class GuidedMissile {
       this.liftoffTime = 3.5;
     } else if (this.launchType === 'air') {
       // Air Launch: 0-2s slow climb, 2-3s pre-ignition, 3-4s max thrust, >4s hypersonic cruise
-      this.speed = 8.0;
+      this.speed = 3.5;
       this.maxSpeed = 85.0;
       this.accel = 26.0;
-      this.maxTurnRate = 2.6;
+      this.maxTurnRate = 2.8;
       this.liftoffTime = 4.0;
     } else {
       // Land Launch: 0-4.5s slow heavy liftoff with dense smoke, then booster stage acceleration
-      this.speed = 5.0;
+      this.speed = 3.0;
       this.maxSpeed = 82.0;
-      this.accel = 22.0;
-      this.maxTurnRate = 2.4;
+      this.accel = 24.0;
+      this.maxTurnRate = 2.8;
       this.liftoffTime = 4.5;
     }
 
@@ -325,8 +335,18 @@ export class GuidedMissile {
     }
 
     // Base Militar Forcefield Anti-Missile Perimeter
-    // If a hostile missile attempts to penetrate base airspace, forcefield neutralizes it mid-air!
-    if (!this.isInterceptor && !this.isRetaliation && this.launcherName !== 'Admin' && this.launcherId !== 'ADMIN_RETALIATION') {
+    // Only intercepts HOSTILE missiles targeting the base or entering the base airspace from unauthorized attackers.
+    // Missiles launched BY the main admin (jsieiragerpe@gmail.com, jsieiragerpe, Admin),
+    // retaliation missiles, or interceptors are strictly EXEMPT!
+    const isMainAdminLauncher = (
+      this.launcherName === 'jsieiragerpe' ||
+      this.launcherName === 'jsieiragerpe@gmail.com' ||
+      this.launcherName === 'Admin' ||
+      this.launcherId === 'p_main_admin' ||
+      this.launcherId === 'ADMIN_RETALIATION' ||
+      this.launcherId === 'IRON_DOME'
+    );
+    if (!this.isInterceptor && !this.isRetaliation && !isMainAdminLauncher) {
       if (this.pos.x >= -455 && this.pos.x <= -385 && this.pos.z >= 115 && this.pos.z <= 185 && this.pos.y <= 85) {
         this.destroyMidAir();
         return;
@@ -340,30 +360,30 @@ export class GuidedMissile {
 
     if (this.launchType === 'air' && !this.isInterceptor && !this.isRetaliation) {
       // --- AIR LAUNCH PHASES ---
-      // Phase 1 (0 to 2s): slow upward climb (5-8 m/s), pitching up, engine warmup flame & gentle smoke
+      // Phase 1 (0 to 2s): slow upward climb (3.5 - 6.5 m/s), engine warmup flame & gentle smoke
       if (this.age < 2.0) {
-        this.speed = 5.0 + (this.age / 2.0) * 3.5;
-        this.forward.y += dt * 0.45;
+        this.speed = 3.5 + (this.age / 2.0) * 3.0;
+        this.forward.y = Math.min(0.96, this.forward.y + dt * 0.4);
         this.forward.normalize();
         targetFlameScale = 0.35 + (this.age / 2.0) * 0.15;
         targetLightIntensity = 1.0;
-        smokeRate = 0.065;
+        smokeRate = 0.050;
       }
       // Phase 2 (2 to 3s): engine reaches medium ignition ("a las 3 segundos enciende a maximo")
       else if (this.age < 3.0) {
-        this.speed = 8.5 + (this.age - 2.0) * 12.0;
+        this.speed = 6.5 + (this.age - 2.0) * 12.0;
         targetFlameScale = 0.65 + (this.age - 2.0) * 0.35;
         targetLightIntensity = 2.2;
-        smokeRate = 0.035;
+        smokeRate = 0.030;
       }
       // Phase 3 (3 to 4s): max engine thrust ignition, start of thick fire and dense smoke ("a los 4 empieza ya a echar humo y fuego, ahora si fuego")
       else if (this.age < 4.0) {
-        this.speed = 20.5 + (this.age - 3.0) * 22.0;
+        this.speed = 18.5 + (this.age - 3.0) * 26.0;
         targetFlameScale = 1.15 + (this.age - 3.0) * 0.35;
         targetLightIntensity = 3.4;
-        smokeRate = 0.018;
+        smokeRate = 0.015;
       }
-      // Phase 4 (>4s): full afterburner cruise ("ahora si fuego"), hypersonic acceleration and thick contrail plume
+      // Phase 4 (>4s): full afterburner cruise ("ahora si fuego, sale disparado"), hypersonic acceleration and thick contrail plume
       else {
         if (this.speed < this.maxSpeed) {
           this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
@@ -374,16 +394,23 @@ export class GuidedMissile {
       }
     } else if (this.launchType === 'land' && !this.isInterceptor && !this.isRetaliation) {
       // --- LAND LAUNCH PHASES ---
-      // Phase 1 (0 to 4.5s): slow heavy vertical liftoff, dense plume of liftoff smoke ("en vez de 3 de arranque, 4.5, y van mas lento al principio")
-      if (this.age < 4.5) {
-        this.speed = 4.0 + (this.age / 4.5) * 8.0;
-        this.forward.y += dt * 0.7;
+      // Phase 1 (0 to 2.5s): slow majestic vertical liftoff ("que fueran lentos al principio para verlos elevarse")
+      if (this.age < 2.5) {
+        this.speed = 3.0 + (this.age / 2.5) * 4.5; // Starts at 3.0 m/s, climbs smoothly to 7.5 m/s
+        this.forward.y = Math.min(0.98, this.forward.y + dt * 0.6);
         this.forward.normalize();
-        targetFlameScale = 0.6 + 0.4 * (this.age / 4.5);
-        targetLightIntensity = 2.5;
-        smokeRate = 0.014;
+        targetFlameScale = 0.5 + 0.3 * (this.age / 2.5);
+        targetLightIntensity = 2.2;
+        smokeRate = 0.012; // Dense billowing launch smoke right in front of the player!
       }
-      // Phase 2 (>4.5s): booster stage ignition, aggressive acceleration to maxSpeed with thick contrail trail
+      // Phase 2 (2.5s to 4.5s): vertical acceleration into mid-sky
+      else if (this.age < 4.5) {
+        this.speed = 7.5 + (this.age - 2.5) * 16.0; // Climbs from 7.5 to ~39.5 m/s
+        targetFlameScale = 0.8 + 0.5 * ((this.age - 2.5) / 2.0);
+        targetLightIntensity = 3.2;
+        smokeRate = 0.010;
+      }
+      // Phase 3 (>4.5s): booster stage ignition, tilts to target azimuth and "SALE DISPARADO" to maxSpeed!
       else {
         if (this.speed < this.maxSpeed) {
           this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);

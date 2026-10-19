@@ -157,14 +157,14 @@ rm.handleAdminLaunchMissile(rivalWs, rivalMeta, { targetPlayerId: 'admin_p' });
 const defense1 = adminWs.sent.find(m => m.type === MSG.MISSILE_INTERCEPT_DEFENSE);
 assert.ok(defense1, 'Defense must trigger for attack 1 against admin');
 assert.strictEqual(defense1.data.defenderId, 'admin_p');
-assert.strictEqual(defense1.data.hostileMissileIds.length, 2);
+assert.strictEqual(defense1.data.hostileMissileIds.length, 1);
 
 // Attack 2 (Repeat attack immediately following Attack 1):
 adminWs.sent.length = 0;
 rm.handleAdminLaunchMissile(rivalWs, rivalMeta, { targetPlayerId: 'admin_p' });
 const defense2 = adminWs.sent.find(m => m.type === MSG.MISSILE_INTERCEPT_DEFENSE);
 assert.ok(defense2, 'Repeat attack must trigger active defense without being suppressed or dropped');
-assert.strictEqual(defense2.data.hostileMissileIds.length, 2);
+assert.strictEqual(defense2.data.hostileMissileIds.length, 1);
 assert.notStrictEqual(defense1.data.hostileMissileIds[0], defense2.data.hostileMissileIds[0], 'Repeat attack missiles must have distinct IDs');
 
 // Attack 3: Targeted directly at air base coordinates

@@ -63,18 +63,18 @@ const targetMeta = { id: 'p_target' };
 rm.socketMeta.set(targetWs, targetMeta);
 rm.handleJoin(targetWs, targetMeta, { name: 'TargetPlayer' });
 
-// Rival launches missile -> launches coordinated 2-missile salvo passwordlessly
+// Rival launches missile -> launches exactly 1 missile
 rivalWs.sent.length = 0;
 targetWs.sent.length = 0;
 rm.handleAdminLaunchMissile(rivalWs, rivalMeta, { targetPlayerId: 'p_target' });
 
 const rivalSpawns = targetWs.sent.filter(m => m.type === MSG.MISSILE_SPAWN);
-assert.strictEqual(rivalSpawns.length, 2, 'Rival admin cifrixa must launch exactly 2 missiles simultaneously');
+assert.strictEqual(rivalSpawns.length, 1, 'Rival admin cifrixa must launch exactly 1 missile');
 assert.strictEqual(rivalSpawns[0].data.launcherId, 'p_rival', 'Launcher ID must match rival');
-console.log('✓ TEST 2 PASSED: Rival admin cifrixa joins passwordlessly and launches coordinated 2-missile salvo.');
+console.log('✓ TEST 2 PASSED: Rival admin cifrixa joins passwordlessly and launches exactly 1 missile.');
 
-// TEST 3: Main Admin Guided Missile Launch & Active Defense Verification
-console.log('\n--- TEST 3: Main Admin Missile Launch & Active Defense ---');
+// TEST 3: Main Admin Guided Missile Launch & Universal Iron Dome Active Defense Verification
+console.log('\n--- TEST 3: Main Admin Missile Launch & Universal Active Defense ---');
 const mainAdminWs = new MockWs();
 const mainAdminMeta = { id: 'p_main_admin' };
 rm.socketMeta.set(mainAdminWs, mainAdminMeta);
@@ -86,7 +86,7 @@ rm.handleJoin(mainAdminWs, mainAdminMeta, {
 
 mainAdminWs.sent.length = 0;
 targetWs.sent.length = 0;
-// Main admin launches missile -> SUCCEEDS
+// Main admin launches missile -> SUCCEEDS (1 missile)
 rm.handleAdminLaunchMissile(mainAdminWs, mainAdminMeta, { targetPlayerId: 'p_target' });
 
 const adminMissile = targetWs.sent.find(m => m.type === MSG.MISSILE_SPAWN);
@@ -99,7 +99,14 @@ rm.handleAdminLaunchMissile(rivalWs, rivalMeta, { targetPlayerId: 'p_main_admin'
 const defensePacket = mainAdminWs.sent.find(m => m.type === MSG.MISSILE_INTERCEPT_DEFENSE);
 assert.ok(defensePacket, 'Hostile missile targeting main admin must trigger active intercept defense');
 assert.strictEqual(defensePacket.data.attackerId, 'p_rival', 'Attacker must be detected as rival');
-console.log('✓ TEST 3 PASSED: Main admin launches missiles and active defense triggers when targeted.');
+
+// Regular non-admin player launches missile against main admin -> Iron Dome ALSO triggers!
+mainAdminWs.sent.length = 0;
+rm.handleAdminLaunchMissile(targetWs, targetMeta, { targetPlayerId: 'p_main_admin' });
+const playerDefensePacket = mainAdminWs.sent.find(m => m.type === MSG.MISSILE_INTERCEPT_DEFENSE);
+assert.ok(playerDefensePacket, 'Missile from regular player targeting main admin must trigger Iron Dome active defense');
+assert.strictEqual(playerDefensePacket.data.attackerId, 'p_target', 'Attacker must be regular player');
+console.log('✓ TEST 3 PASSED: Main admin launches missiles and universal active defense defends against all players.');
 
 // TEST 4: Military Base Shield & Forcefield Protection
 console.log('\n--- TEST 4: Military Base Forcefield Protection ---');

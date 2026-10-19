@@ -807,8 +807,8 @@ class RoomManager {
   }
 
   handleAdminLaunchMissile(ws, meta, data) {
-    if (!meta.roomId || !meta.isAdmin) {
-      this.send(ws, MSG.ERROR, { message: 'Acceso no autorizado: Requiere permisos de Administrador.' });
+    if (!meta.roomId) {
+      this.send(ws, MSG.ERROR, { message: 'No estás conectado a ninguna sala.' });
       return;
     }
     const room = this.rooms.get(meta.roomId);
@@ -842,8 +842,8 @@ class RoomManager {
     const startPos = Array.isArray(data.origin) ? [...data.origin] : [...launcher.pos];
     const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
 
-    const isRivalAdmin = (meta.adminEmail === RIVAL_ADMIN_EMAIL);
-    const missileCount = isRivalAdmin ? 2 : 1;
+    // Exactly 1 missile for all players (user requested: "ponle misiles pero solo 1 a todos, los jugadores en vez de lanzar 2, solo uno")
+    const missileCount = 1;
     const launchedIds = [];
 
     for (let i = 0; i < missileCount; i++) {
@@ -869,7 +869,7 @@ class RoomManager {
     }
 
     // Check if target is the Main Admin (jsieiragerpe@gmail.com) OR inside the Military Air Base
-    const isTargetMainAdmin = (targetPlayer && (targetPlayer.adminEmail === ADMIN_EMAIL || targetPlayer.name === 'jsieiragerpe'));
+    const isTargetMainAdmin = (targetPlayer && (targetPlayer.adminEmail === ADMIN_EMAIL || targetPlayer.name === 'jsieiragerpe' || targetPlayer.name === 'jsieiragerpe@gmail.com' || targetPlayer.id === 'p_main_admin'));
     const isTargetInBase = targetPos && isInsideAirBase(targetPos[0], targetPos[1], targetPos[2]);
     if (isTargetMainAdmin || isTargetInBase) {
       this.broadcast(room, MSG.MISSILE_INTERCEPT_DEFENSE, {
@@ -940,8 +940,6 @@ class RoomManager {
       });
       return;
     }
-
-    if (!meta.isAdmin) return;
 
     const explosion = room.gameState.detonateTnt(rx, ry, rz, radius);
     this.broadcast(room, MSG.TNT_EXPLODE, explosion);

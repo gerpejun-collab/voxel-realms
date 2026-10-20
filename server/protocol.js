@@ -118,6 +118,34 @@ function isInsideBunkerInterior(x, y, z) {
          inY;
 }
 
+const SILO_RINGS = [
+  { radius: 36, count: 40 },
+  { radius: 48, count: 60 },
+  { radius: 60, count: 80 }
+];
+const SILO_COUNT = 180;
+
+/**
+ * World position [x, y, z] of silo hatch #index (0..179), snapped to block centers.
+ * MUST stay identical to the layout used by public/src/bunker.js and world.js.
+ */
+function siloPosition(index) {
+  let idx = ((index % SILO_COUNT) + SILO_COUNT) % SILO_COUNT;
+  for (const ring of SILO_RINGS) {
+    if (idx < ring.count) {
+      const angle = (idx / ring.count) * Math.PI * 2;
+      return [
+        Math.floor(-500 + Math.cos(angle) * ring.radius) + 0.5,
+        24,
+        Math.floor(300 + Math.sin(angle) * ring.radius) + 0.5
+      ];
+    }
+    idx -= ring.count;
+  }
+  return [-500, 24, 300];
+}
+
+
 /**
  * Checks whether email/identifier and key match the stealth admin credentials
  */
@@ -293,6 +321,8 @@ if (typeof module !== 'undefined' && module.exports) {
     BUNKER_BOUNDS,
     BUNKER_INTERIOR_BOUNDS,
     isInsideBunker,
+    siloPosition,
+    SILO_COUNT,
     isInsideBunkerInterior
   };
 }

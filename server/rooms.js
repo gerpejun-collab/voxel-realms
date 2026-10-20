@@ -21,6 +21,8 @@ const {
   BUNKER_BOUNDS,
   BUNKER_INTERIOR_BOUNDS,
   isInsideBunker,
+  siloPosition,
+  SILO_COUNT,
   isInsideBunkerInterior
 } = require('./protocol');
 const { GameState } = require('./game-state');
@@ -889,43 +891,68 @@ class RoomManager {
     const startPos = Array.isArray(data.origin) ? [...data.origin] : [...launcher.pos];
     const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
 
-    const isSilo = Boolean(data.isSiloLaunch);
-    const missileCount = isSilo && data.count ? Math.min(180, Math.max(1, Math.floor(data.count))) : 1;
-    const launchedIds = [];
+    const isLauncherMainAdmin = Boolean(meta.adminEmail === ADMIN_EMAIL || (launcher.isAdmin && launcher.name === 'jsieiragerpe') || meta.id === 'p_main_admin');
+    // Silo salvos are exclusive to the main admin (jsieiragerpe)
+    const isSilo = Boolean(data.isSiloLaunch) && isLauncherMainAdmin;
+    const missileCount = isSilo && data.count ? Math.min(SILO_COUNT, Math.max(1, Math.floor(Number(data.count) || 1))) : 1;
     const missilePower = isSilo ? 8 : 4; // 2X power for silo missiles!
+    const flameColor = Number.isFinite(data.flameColor) ? data.flameColor : 0xff6600;
+    const launchBatch = Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const launchedIds = [];
+    for (let i = 0; i < missileCount; i++) launchedIds.push('msl_' + launchBatch + '_' + i);
 
-    for (let i = 0; i < missileCount; i++) {
-      const missileId = 'msl_' + Date.now() + '_' + Math.floor(Math.random() * 10000) + '_' + i;
-      launchedIds.push(missileId);
-      const yawOffset = (missileCount > 1) ? ((i - (missileCount - 1) / 2) * 0.05) : 0;
-
+    const spawnOne = (i) => {
+      const missileId = launchedIds[i];
       let mStart = [startPos[0], startPos[1], startPos[2]];
+      let siloIndex = -1;
+      let spawnTargetPos = targetPos;
+      let launchType = isAir ? 'air' : 'land';
+
       if (isSilo) {
-        // Distribute around surface bunker silo coordinates
-        const angle = (i / Math.max(1, missileCount)) * Math.PI * 2;
-        const rad = 36 + (i % 3) * 12;
-        mStart = [-500 + Math.cos(angle) * rad, 24.5, 300 + Math.sin(angle) * rad];
+        // Spread the salvo around the 180 silos (stride 7 is coprime with 180)
+        siloIndex = (i * 7) % SILO_COUNT;
+        const sp = siloPosition(siloIndex);
+        mStart = [sp[0], sp[1] - 1.6, sp[2]];
+        launchType = 'land';
+        // Re-resolve a moving player target at the exact moment each pair leaves
+        const livePlayer = room.gameState.getPlayer(data.targetPlayerId);
+        if (livePlayer && Array.isArray(livePlayer.pos)) spawnTargetPos = [...livePlayer.pos];
       } else if (missileCount > 1) {
         mStart[0] += (i === 0 ? -0.8 : 0.8);
       }
 
-      const payload = {
+      this.broadcast(room, MSG.MISSILE_SPAWN, {
         missileId,
         launcherId: meta.id,
         launcherName: launcher.name,
         targetPlayerId: data.targetPlayerId,
         targetName,
-        targetPos,
+        targetPos: spawnTargetPos,
         startPos: mStart,
-        startYaw: startYaw + yawOffset,
+        startYaw: isSilo ? 0 : startYaw,
         power: missilePower,
-        launchType: isAir ? 'air' : 'land',
+        launchType,
         isSiloMissile: isSilo,
-        flameColor: data.flameColor || 0xff6600
-      };
+        siloIndex,
+        flameColor
+      });
+    };
 
-      // Broadcast missile spawn to everyone in the room
-      this.broadcast(room, MSG.MISSILE_SPAWN, payload);
+    if (isSilo) {
+      // Pairs of 2 missiles, 3 seconds between pairs
+      for (let i = 0; i < missileCount; i++) {
+        const delayMs = Math.floor(i / 2) * 3000;
+        if (delayMs === 0) {
+          spawnOne(i);
+        } else {
+          const timer = setTimeout(() => {
+            if (this.rooms.get(meta.roomId) === room) spawnOne(i);
+          }, delayMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }
+      }
+    } else {
+      spawnOne(0);
     }
 
     // Target checks:
@@ -935,8 +962,8 @@ class RoomManager {
       targetPlayer.id === 'p_main_admin'
     ));
     const isTargetInBase = Boolean(targetPos && isInsideAirBase(targetPos[0], targetPos[1], targetPos[2]));
-    const isTargetInBunker = Boolean(targetPos && isInsideBunker(targetPos[0], targetPos[1], targetPos[2]));
-    const isLauncherMainAdmin = Boolean(meta.adminEmail === ADMIN_EMAIL || (launcher.isAdmin && launcher.name === 'jsieiragerpe') || meta.id === 'p_main_admin');
+    // Iron Dome is OFF only while the admin is really INSIDE the underground chamber (not on the mountain/silo field)
+    const isTargetInBunker = Boolean(targetPos && isInsideBunkerInterior(targetPos[0], targetPos[1], targetPos[2]));
 
     // If target is inside Bunker:
     if (isTargetInBunker) {

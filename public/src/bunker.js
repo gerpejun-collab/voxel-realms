@@ -1,14 +1,17 @@
 // public/src/bunker.js
-// Mega Underground Bunker & 180 Surface Missile Silo Complex
+// Mega Underground Bunker & 180 Surface Missile Silo Complex (MOBILE-FIRST)
 // Features:
 // - Subterranean strategic command center carved beneath a colossal mountain at (-500, 300)
 // - Built with airplane hangar materials (dark slate reinforced steel, titanium blast doors, hazard stripes)
 // - Biometric forcefield entrance permitting ONLY main admin jsieiragerpe@gmail.com
-// - 180 surface missile silos flush with terrain at Y=24 with animated sliding/hinged hatch covers
+// - 180 surface missile silos flush with terrain at Y=24; hatches are ALWAYS closed and swing open only on launch
 // - Colossal Silo Missiles (2X power, radius 18m, multi-colored thruster flames, heavy smoke contrails)
-// - Wall-mounted holographic/CCTV surveillance screens displaying live players and surface silos
-// - Interactive control console with salvo count selector (1..180), Big RED launch button, and Big BLUE manual interceptor button
-// - When inside bunker: incoming missiles cannot reach admin, auto counter-attack is disabled, defense is 100% manual via blue button
+// - Command center screens: live player telemetry, tactical radar, 3 REAL camera feeds (silo field, launch cam, missile chase cam)
+// - Touch-first HUD: on-screen buttons to enter/exit the bunker, open the command console and fire the blue interceptor
+// - Console: tap a player OR any point of the world map, choose 1..180 missiles, choose flame color, LAUNCH.
+//   The server fires them in PAIRS of 2 with 3 seconds between pairs; each missile leaves its own silo.
+// - When inside the bunker: incoming missiles cannot reach admin, the automatic Iron Dome is OFF, and defense is
+//   100% manual via the blue interceptor button (1 direct kinetic interceptor per press)
 
 import * as THREE from 'three';
 
@@ -46,19 +49,71 @@ export function isInsideBunkerInterior(x, y, z) {
          inY;
 }
 
+/**
+ * 3 Concentric Rings of silos: 40 + 60 + 80 = 180 silos
+ * (layout MUST match server/protocol.js siloPosition() and world.js shaft carving)
+ */
+export const SILO_RINGS = [
+  { radius: 36, count: 40 },
+  { radius: 48, count: 60 },
+  { radius: 60, count: 80 }
+];
+export const SILO_COUNT = 180;
+
+export function siloPosition(index) {
+  let idx = ((index % SILO_COUNT) + SILO_COUNT) % SILO_COUNT;
+  for (const ring of SILO_RINGS) {
+    if (idx < ring.count) {
+      const angle = (idx / ring.count) * Math.PI * 2;
+      return [
+        Math.floor(-500 + Math.cos(angle) * ring.radius) + 0.5,
+        24,
+        Math.floor(300 + Math.sin(angle) * ring.radius) + 0.5
+      ];
+    }
+    idx -= ring.count;
+  }
+  return [-500, 24, 300];
+}
+
+// Colossal silo missile spec (2X power => radius 18m)
+export const SILO_MISSILE_SPEC = {
+  power: 8,
+  isSiloMissile: true,
+  pairSize: 2,
+  pairIntervalSec: 3
+};
+
+const MAP_RANGE = 650; // world map covers X,Z in [-650, +650]
+
+const MAP_LANDMARKS = [
+  { name: 'Plaza', icon: '🏰', x: 0, z: 0 },
+  { name: 'Japón', icon: '⛩️', x: 250, z: 250 },
+  { name: 'China', icon: '🏮', x: -250, z: 250 },
+  { name: 'París', icon: '🗼', x: 250, z: -250 },
+  { name: 'N. York', icon: '🗽', x: -250, z: -250 },
+  { name: 'Noruega', icon: '🏔️', x: 0, z: 500 },
+  { name: 'Playa', icon: '🏖️', x: 0, z: -500 },
+  { name: 'Fuji', icon: '🗻', x: 500, z: 500 },
+  { name: 'Circuito', icon: '🏎️', x: -500, z: -500 },
+  { name: 'Base Militar', icon: '🎖️', x: -420, z: 150 }
+];
+
 export class BunkerManager {
-  constructor(scene, particleManager, world, sound, multiplayer, missileManager) {
+  constructor(scene, particleManager, world, sound, multiplayer, missileManager, renderer = null) {
     this.scene = scene;
     this.particleManager = particleManager;
     this.world = world;
     this.sound = sound;
     this.multiplayer = multiplayer;
     this.missileManager = missileManager;
+    this.renderer = renderer;
+    this.physics = null; // injected from main.js
+    this.controls = null; // injected from main.js
 
     this.center = new THREE.Vector3(-500, 12, 300);
     this.surfaceCenter = new THREE.Vector3(-500, 24, 300);
     this.silos = [];
-    this.activeSiloLaunches = [];
 
     this.group = new THREE.Group();
     if (this.scene && typeof this.scene.add === 'function') {
@@ -75,221 +130,48 @@ export class BunkerManager {
     ];
     this.selectedFlameColor = 0xff6600;
 
-    // Build the 180 Surface Missile Silos and Subterranean Command Center
+    // Console state
+    this.selectedCount = 2;
+    this.selection = null; // { type: 'player'|'point', playerId, name, x, z }
+    this.salvo = null; // { total, launched, startedAt }
+    this.lastLaunchSilo = -1;
+    this.lastLaunchTime = 0;
+    this.playerInside = false;
+    this.timeAcc = 0;
+    this.cctvTimer = 0;
+    this.cctvIndex = 0;
+    this.screenTimer = 0;
+    this.modalTimer = 0;
+    this.lastInterceptorTime = 0;
+    this.hudState = '';
+
     this.buildSurfaceSilos();
     this.buildCommandCenterInterior();
     this.initCctvRenderer();
+    this.injectStyles();
     this.initBunkerUI();
+    this.initBunkerHUD();
   }
 
-  /**
-   * Builds exactly 180 Surface Missile Silos arranged around the mountain complex flush with Y=24
-   * 3 Concentric Rings:
-   * Ring 1: R = 36m, 40 silos
-   * Ring 2: R = 48m, 60 silos
-   * Ring 3: R = 60m, 80 silos
-   * Total = 40 + 60 + 80 = 180 silos!
-   */
-  buildSurfaceSilos() {
-    this.silos = [];
-    const ringConfigs = [
-      { radius: 36, count: 40 },
-      { radius: 48, count: 60 },
-      { radius: 60, count: 80 }
-    ];
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x334155, // Hangar dark slate steel
-      roughness: 0.65,
-      metalness: 0.8
-    });
-    const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.4,
-      metalness: 0.9
-    });
-    const hatchMat = new THREE.MeshStandardMaterial({
-      color: 0x475569,
-      roughness: 0.5,
-      metalness: 0.85
-    });
-    const stripeMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 }); // Hazard yellow
-
-    let globalIndex = 0;
-
-    for (const ring of ringConfigs) {
-      for (let i = 0; i < ring.count; i++) {
-        const angle = (i / ring.count) * Math.PI * 2;
-        const sx = this.surfaceCenter.x + Math.cos(angle) * ring.radius;
-        const sz = this.surfaceCenter.z + Math.sin(angle) * ring.radius;
-        const sy = 24.0;
-
-        const siloGroup = new THREE.Group();
-        siloGroup.position.set(sx, sy, sz);
-
-        // Cylindrical Silo Collar (outer diameter 2.6m, depth 4.0m)
-        const collarGeom = new THREE.CylinderGeometry(1.3, 1.35, 4.0, 12, 1, true);
-        collarGeom.translate(0, -2.0, 0);
-        const collarMesh = new THREE.Mesh(collarGeom, wallMat);
-        siloGroup.add(collarMesh);
-
-        // Surface Flush Rim Flange
-        const rimGeom = new THREE.RingGeometry(1.05, 1.45, 14);
-        rimGeom.rotateX(-Math.PI / 2);
-        rimGeom.translate(0, 0.04, 0);
-        const rimMesh = new THREE.Mesh(rimGeom, rimMat);
-        siloGroup.add(rimMesh);
-
-        // Animated Silo Hatch Door (pivots upward when launching)
-        const hatchPivot = new THREE.Group();
-        hatchPivot.position.set(0, 0.06, -1.2);
-
-        const hatchGeom = new THREE.CylinderGeometry(1.15, 1.15, 0.12, 14);
-        const hatchMesh = new THREE.Mesh(hatchGeom, hatchMat);
-        hatchMesh.position.set(0, 0.06, 1.2);
-        hatchPivot.add(hatchMesh);
-
-        // Hazard Chevron Stripe across hatch
-        const stripeGeom = new THREE.BoxGeometry(0.32, 0.14, 2.1);
-        const stripeMesh = new THREE.Mesh(stripeGeom, stripeMat);
-        stripeMesh.position.set(0, 0.06, 1.2);
-        hatchPivot.add(stripeMesh);
-
-        siloGroup.add(hatchPivot);
-
-        const siloObj = {
-          index: globalIndex,
-          pos: new THREE.Vector3(sx, sy, sz),
-          group: siloGroup,
-          hatchPivot,
-          isOpen: false,
-          openProgress: 0.0,
-          targetProgress: 0.0,
-          isLaunching: false,
-          cooldown: 0
-        };
-
-        this.silos.push(siloObj);
-        this.group.add(siloGroup);
-        globalIndex++;
-      }
-    }
+  isMainAdminPlayer() {
+    const m = this.multiplayer;
+    if (!m) return false;
+    const em = String(m.myEmail || '').toLowerCase();
+    const nm = String(m.myName || '').toLowerCase();
+    return em === 'jsieiragerpe@gmail.com' || nm === 'jsieiragerpe' || nm === 'jsieiragerpe@gmail.com';
   }
 
-  /**
-   * Builds the Fortified Subterranean Command Center Interior at (-500, 12, 300)
-   * Chamber spans X in [-516, -484], Y in [10, 16], Z in [284, 316]
-   * Constructed from airplane hangar materials (dark slate steel, blast arches, caution chevrons)
-   */
-  buildCommandCenterInterior() {
-    const interiorGroup = new THREE.Group();
-    interiorGroup.position.copy(this.center);
-
-    const hangarWallMat = new THREE.MeshStandardMaterial({
-      color: 0x334155, // Hangar dark slate steel
-      roughness: 0.7,
-      metalness: 0.75
-    });
-    const archMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.35,
-      metalness: 0.9
-    });
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x1f2937,
-      roughness: 0.8
-    });
-    const hazardMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
-
-    // 1. Reinforced Floor (32m x 32m) at local Y = -2.0 (world Y = 10.0)
-    const floorGeom = new THREE.BoxGeometry(32, 0.8, 32);
-    const floorMesh = new THREE.Mesh(floorGeom, floorMat);
-    floorMesh.position.set(0, -2.0, 0);
-    interiorGroup.add(floorMesh);
-
-    // Hazard Yellow Border Ring
-    const borderGeom = new THREE.BoxGeometry(28, 0.1, 28);
-    const borderMesh = new THREE.Mesh(borderGeom, hazardMat);
-    borderMesh.position.set(0, -1.55, 0);
-    interiorGroup.add(borderMesh);
-
-    // 2. Heavy Ceiling Slab at local Y = 4.2 (world Y = 16.2)
-    const ceilGeom = new THREE.BoxGeometry(32, 1.2, 32);
-    const ceilMesh = new THREE.Mesh(ceilGeom, hangarWallMat);
-    ceilMesh.position.set(0, 4.2, 0);
-    interiorGroup.add(ceilMesh);
-
-    // 3. Perimeter Reinforced Walls
-    const wallNorth = new THREE.Mesh(new THREE.BoxGeometry(32, 6, 1.2), hangarWallMat);
-    wallNorth.position.set(0, 1.0, 16);
-    const wallSouth = new THREE.Mesh(new THREE.BoxGeometry(32, 6, 1.2), hangarWallMat);
-    wallSouth.position.set(0, 1.0, -16);
-    const wallEast = new THREE.Mesh(new THREE.BoxGeometry(1.2, 6, 32), hangarWallMat);
-    wallEast.position.set(16, 1.0, 0);
-    const wallWest = new THREE.Mesh(new THREE.BoxGeometry(1.2, 6, 32), hangarWallMat);
-    wallWest.position.set(-16, 1.0, 0);
-    interiorGroup.add(wallNorth, wallSouth, wallEast, wallWest);
-
-    // 4. Structural Hangar Blast Arches
-    for (let z = -12; z <= 12; z += 6) {
-      const archGeom = new THREE.BoxGeometry(31.6, 0.6, 0.8);
-      const arch = new THREE.Mesh(archGeom, archMat);
-      arch.position.set(0, 3.5, z);
-      interiorGroup.add(arch);
+  notify(text) {
+    const m = this.multiplayer;
+    if (m && typeof m.onNotification === 'function') {
+      m.onNotification(text);
+    } else if (m && typeof m.showNotification === 'function') {
+      m.showNotification(text);
     }
-
-    // 5. Central Strategic Command Table & Consoles
-    const tableMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.95 });
-    const tableGeom = new THREE.BoxGeometry(6.4, 0.9, 3.8);
-    const table = new THREE.Mesh(tableGeom, tableMat);
-    table.position.set(0, -1.1, 0);
-    interiorGroup.add(table);
-
-    // Holographic Tactical Holo-Emitter Plate on Table
-    const holoPlateMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true });
-    const holoPlate = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.08, 3.2), holoPlateMat);
-    holoPlate.position.set(0, -0.6, 0);
-    interiorGroup.add(holoPlate);
-
-    // 6. Wall-Mounted Massive Command Center Screens (Facing South wall Z = 15.2)
-    // Screen 1: Connected Players Telemetry Monitor (Left: X = -9.5)
-    this.canvasTelemetry = this.createDynamicCanvas(512, 256);
-    this.textureTelemetry = new THREE.CanvasTexture(this.canvasTelemetry);
-    const screenMat1 = new THREE.MeshBasicMaterial({ map: this.textureTelemetry });
-    const screenMesh1 = new THREE.Mesh(new THREE.BoxGeometry(7.2, 3.8, 0.2), screenMat1);
-    screenMesh1.position.set(-9.5, 1.5, 15.3);
-    interiorGroup.add(screenMesh1);
-
-    // Screen 2: CCTV Silo Surveillance Feed (Center: X = 0)
-    this.canvasCctv = this.createDynamicCanvas(512, 256);
-    this.textureCctv = new THREE.CanvasTexture(this.canvasCctv);
-    const screenMat2 = new THREE.MeshBasicMaterial({ map: this.textureCctv });
-    const screenMesh2 = new THREE.Mesh(new THREE.BoxGeometry(9.6, 4.4, 0.2), screenMat2);
-    screenMesh2.position.set(0, 1.7, 15.3);
-    interiorGroup.add(screenMesh2);
-
-    // Screen 3: Silo Weapons & Readiness Status (Right: X = 9.5)
-    this.canvasStatus = this.createDynamicCanvas(512, 256);
-    this.textureStatus = new THREE.CanvasTexture(this.canvasStatus);
-    const screenMat3 = new THREE.MeshBasicMaterial({ map: this.textureStatus });
-    const screenMesh3 = new THREE.Mesh(new THREE.BoxGeometry(7.2, 3.8, 0.2), screenMat3);
-    screenMesh3.position.set(9.5, 1.5, 15.3);
-    interiorGroup.add(screenMesh3);
-
-    // Biometric Scanner Pedestal at entrance (X = 0, Z = -14)
-    const scanMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
-    const scanner = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 1.2, 12), tableMat);
-    scanner.position.set(0, -0.9, -14);
-    const scanBeacon = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.1, 12), scanMat);
-    scanBeacon.position.set(0, -0.25, -14);
-    interiorGroup.add(scanner, scanBeacon);
-
-    this.group.add(interiorGroup);
-    this.interiorGroup = interiorGroup;
-
-    // Draw initial screen canvases
-    this.renderTelemetryCanvas();
-    this.renderStatusCanvas();
   }
 
   createDynamicCanvas(w, h) {
@@ -302,349 +184,1068 @@ export class BunkerManager {
     return { width: w, height: h, getContext: () => null };
   }
 
-  renderTelemetryCanvas() {
-    if (!this.canvasTelemetry || !this.canvasTelemetry.getContext) return;
-    const ctx = this.canvasTelemetry.getContext('2d');
-    if (!ctx) return;
+  makeCanvasTexture(canvas) {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
 
-    ctx.fillStyle = '#090d16';
-    ctx.fillRect(0, 0, 512, 256);
-
-    // Header
-    ctx.fillStyle = '#06b6d4';
-    ctx.font = 'bold 20px monospace';
-    ctx.fillText('📡 MONITOR DE EXPLORADORES (VIVO)', 20, 32);
-
-    // Divider line
-    ctx.strokeStyle = '#0891b2';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(20, 44);
-    ctx.lineTo(492, 44);
-    ctx.stroke();
-
+  /** Returns list of {id,name,pos} of every OTHER connected player */
+  getPlayersList() {
+    const list = [];
     const dir = this.multiplayer?.playerDirectory;
-    const players = dir ? Array.from(dir.values()) : [];
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '14px monospace';
-    ctx.fillText(`Conectados: ${players.length} | Búnker: PROTEGIDO`, 20, 68);
-
-    let y = 96;
-    for (let i = 0; i < Math.min(6, players.length); i++) {
-      const p = players[i];
-      const isMe = (p.id === this.multiplayer?.myId);
-      ctx.fillStyle = isMe ? '#22c55e' : '#f8fafc';
-      ctx.font = 'bold 15px monospace';
-      const posStr = p.pos ? `(${Math.floor(p.pos[0])}, ${Math.floor(p.pos[1])}, ${Math.floor(p.pos[2])})` : '(---)';
-      ctx.fillText(`[${i + 1}] ${p.name || 'Jugador'} ${isMe ? '(ADMIN)' : ''}`, 24, y);
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = '13px monospace';
-      ctx.fillText(posStr, 340, y);
-      y += 24;
+    const myId = this.multiplayer?.myId;
+    if (dir) {
+      for (const p of dir.values()) {
+        if (!p || p.id === myId || p.isDisconnected) continue;
+        const pos = Array.isArray(p.pos) ? p.pos : [0, 25, 0];
+        list.push({ id: p.id, name: p.name || 'Jugador', pos });
+      }
     }
-
-    if (players.length === 0) {
-      ctx.fillStyle = '#64748b';
-      ctx.font = 'italic 15px monospace';
-      ctx.fillText('Esperando telemetría de jugadores...', 24, 110);
-    }
-
-    if (this.textureTelemetry) this.textureTelemetry.needsUpdate = true;
+    return list;
   }
 
-  renderStatusCanvas() {
-    if (!this.canvasStatus || !this.canvasStatus.getContext) return;
-    const ctx = this.canvasStatus.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = '#090d16';
-    ctx.fillRect(0, 0, 512, 256);
-
-    ctx.fillStyle = '#f59e0b';
-    ctx.font = 'bold 20px monospace';
-    ctx.fillText('🚀 ESTADO DE LOS 180 SILOS', 20, 32);
-
-    ctx.strokeStyle = '#d97706';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(20, 44);
-    ctx.lineTo(492, 44);
-    ctx.stroke();
-
-    ctx.fillStyle = '#22c55e';
-    ctx.font = 'bold 16px monospace';
-    ctx.fillText('SILOS ACTIVOS: 180 / 180 LISTOS [100%]', 20, 72);
-
-    ctx.fillStyle = '#e2e8f0';
-    ctx.font = '14px monospace';
-    ctx.fillText('POTENCIA DE OJIVA: 2X (Radio 18m, 8X TNT)', 20, 98);
-    ctx.fillText('TIPO DE PROPULSIÓN: HIPERSÓNICA MULTICOLOR', 20, 122);
-    ctx.fillText('BLINDAJE SUBTERRÁNEO: HANGAR TITANIO NIVEL 5', 20, 146);
-
-    // Defense status box
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(20, 168, 472, 68);
-    ctx.strokeStyle = '#38bdf8';
-    ctx.strokeRect(20, 168, 472, 68);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 14px monospace';
-    ctx.fillText('🛡️ MODO DEFENSIVO: BÚNKER MANUAL', 34, 192);
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '12px monospace';
-    ctx.fillText('Contraataque auto DESACTIVADO. Pulsa BOTÓN AZUL para interceptar.', 34, 214);
-
-    if (this.textureStatus) this.textureStatus.needsUpdate = true;
+  /** Current world target {x,y,z,name} for the selection (live for players) */
+  resolveSelection() {
+    const s = this.selection;
+    if (!s) return null;
+    if (s.type === 'player') {
+      const p = this.getPlayersList().find(q => q.id === s.playerId);
+      if (p) return { x: p.pos[0], y: p.pos[1], z: p.pos[2], name: p.name };
+      return null;
+    }
+    let y = 25;
+    if (this.world && typeof this.world.getHeightAt === 'function') {
+      try { y = this.world.getHeightAt(Math.floor(s.x), Math.floor(s.z)) + 1; } catch (e) { /* keep default */ }
+    }
+    return { x: s.x, y, z: s.z, name: s.name };
   }
 
-  initCctvRenderer() {
-    // Security Camera perspective looking down at the surface silos
-    this.cctvCamera = new THREE.PerspectiveCamera(55, 2, 1, 500);
-    this.cctvCamera.position.set(-500, 78, 230); // High overlooking perch
-    this.cctvCamera.lookAt(new THREE.Vector3(-500, 24, 300));
+  teleportPlayer(x, y, z, yaw = 0) {
+    if (this.world && typeof this.world.updateStreaming === 'function') {
+      this.world.updateStreaming(x, z);
+    }
+    if (this.physics && typeof this.physics.teleport === 'function') {
+      this.physics.teleport(x, y, z);
+    }
+    if (this.controls) {
+      this.controls.yaw = yaw;
+      this.controls.pitch = 0;
+    }
   }
 
-  renderCctvFeed() {
-    if (!this.canvasCctv || !this.canvasCctv.getContext) return;
-    const ctx = this.canvasCctv.getContext('2d');
-    if (!ctx) return;
+  enterBunker() {
+    if (!this.isMainAdminPlayer()) return;
+    // Enter through the blast door side (+Z), facing the screen wall (-Z)
+    this.teleportPlayer(-500, 11, 316, 0);
+    this.notify('🛡️ Acceso biométrico concedido: bienvenido al Centro de Mando, jsieiragerpe.');
+  }
 
-    // Draw simulated cinematic CCTV feed with animated missile launches and radar sweep
-    ctx.fillStyle = '#041014';
-    ctx.fillRect(0, 0, 512, 256);
+  exitBunker() {
+    this.toggleBunkerHUD(false);
+    // Clear spot between silo rings (R=42, 45deg)
+    this.teleportPlayer(-470.3, 26, 329.7, Math.PI * 0.75);
+    this.notify('🚪 Has salido del búnker. Cúpula de Hierro automática reactivada.');
+  }
 
-    // Surveillance grid lines
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < 512; x += 32) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, 256);
-      ctx.stroke();
+  // ---------------------------------------------------------------------------
+  // Surface silos (always covered; hatch swings open only when launching)
+  // ---------------------------------------------------------------------------
+
+  buildSurfaceSilos() {
+    this.silos = [];
+
+    // Shared hazard-striped hatch material (one texture for all 180 hatches)
+    const hz = this.createDynamicCanvas(128, 128);
+    const hctx = hz.getContext ? hz.getContext('2d') : null;
+    if (hctx) {
+      hctx.fillStyle = '#475569';
+      hctx.fillRect(0, 0, 128, 128);
+      hctx.fillStyle = '#334155';
+      hctx.fillRect(6, 6, 116, 116);
+      hctx.fillStyle = '#facc15';
+      hctx.globalAlpha = 0.9;
+      for (let i = -128; i < 128; i += 32) {
+        hctx.beginPath();
+        hctx.moveTo(i, 128);
+        hctx.lineTo(i + 16, 128);
+        hctx.lineTo(i + 144, 0);
+        hctx.lineTo(i + 128, 0);
+        hctx.closePath();
+        hctx.fill();
+      }
+      hctx.globalAlpha = 1;
+      hctx.strokeStyle = '#0f172a';
+      hctx.lineWidth = 6;
+      hctx.strokeRect(3, 3, 122, 122);
     }
-    for (let y = 0; y < 256; y += 32) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(512, y);
-      ctx.stroke();
-    }
+    const hatchTex = this.makeCanvasTexture(hz);
+    const hatchMat = new THREE.MeshStandardMaterial({ map: hatchTex, roughness: 0.5, metalness: 0.8 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.9 });
+    const hatchGeom = new THREE.BoxGeometry(3.0, 0.16, 3.0);
+    hatchGeom.translate(0, 0.08, 1.5);
 
-    // Concentric silo radar circles
-    const cx = 256;
-    const cy = 128;
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
-    ctx.lineWidth = 1.5;
-    [35, 65, 95].forEach(r => {
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.stroke();
+    // Static frames (4 bars per silo) in ONE instanced draw call
+    const barGeom = new THREE.BoxGeometry(1, 0.1, 1);
+    const frames = new THREE.InstancedMesh(barGeom, frameMat, SILO_COUNT * 4);
+    const dummy = new THREE.Object3D();
+    let fi = 0;
+
+    for (let i = 0; i < SILO_COUNT; i++) {
+      const sp = siloPosition(i);
+
+      // Frame around the 3x3 shaft
+      const bars = [
+        [0, -1.7, 3.8, 0.4],
+        [0, 1.7, 3.8, 0.4],
+        [-1.7, 0, 0.4, 3.0],
+        [1.7, 0, 0.4, 3.0]
+      ];
+      for (const b of bars) {
+        dummy.position.set(sp[0] + b[0], sp[1] + 0.05, sp[2] + b[1]);
+        dummy.scale.set(b[2], 1, b[3]);
+        dummy.updateMatrix();
+        frames.setMatrixAt(fi++, dummy.matrix);
+      }
+
+      // Animated hatch (hinged on its north edge, swings up when launching)
+      const hatchPivot = new THREE.Group();
+      hatchPivot.position.set(sp[0], sp[1] + 0.02, sp[2] - 1.5);
+      const hatchMesh = new THREE.Mesh(hatchGeom, hatchMat);
+      hatchPivot.add(hatchMesh);
+      this.group.add(hatchPivot);
+
+      this.silos.push({
+        index: i,
+        pos: new THREE.Vector3(sp[0], sp[1], sp[2]),
+        hatchPivot,
+        isOpen: false,
+        openProgress: 0.0,
+        targetProgress: 0.0,
+        isLaunching: false,
+        openTimer: 0,
+        smokeTimer: 0
+      });
+    }
+    frames.instanceMatrix.needsUpdate = true;
+    this.group.add(frames);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Command center interior (bright, big, readable screens)
+  // ---------------------------------------------------------------------------
+
+  makeTiledTexture(drawFn, size, repX, repY) {
+    const c = this.createDynamicCanvas(size, size);
+    const ctx = c.getContext ? c.getContext('2d') : null;
+    if (ctx) drawFn(ctx, size);
+    const tex = this.makeCanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repX, repY);
+    return tex;
+  }
+
+  makeLabelMesh(text, w, color = '#38bdf8') {
+    const c = this.createDynamicCanvas(512, 64);
+    const ctx = c.getContext ? c.getContext('2d') : null;
+    if (ctx) {
+      ctx.fillStyle = 'rgba(2,8,14,0.85)';
+      ctx.fillRect(0, 0, 512, 64);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 32px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 256, 34);
+    }
+    const mat = new THREE.MeshBasicMaterial({ map: this.makeCanvasTexture(c), toneMapped: false });
+    return new THREE.Mesh(new THREE.PlaneGeometry(w, w / 8), mat);
+  }
+
+  buildCommandCenterInterior() {
+    const g = new THREE.Group();
+    g.position.copy(this.center);
+
+    const FLOOR = -1.97; // voxel floor top at world Y=10
+    const CEIL = 8.95; // world Y=20.95
+    const HALF = 19.6;
+    const WALL_H = CEIL - FLOOR;
+    const MID_Y = (CEIL + FLOOR) / 2;
+
+    const plateTex = this.makeTiledTexture((ctx, s) => {
+      ctx.fillStyle = '#2b3542';
+      ctx.fillRect(0, 0, s, s);
+      ctx.strokeStyle = '#4b5a6e';
+      ctx.lineWidth = 3;
+      for (let i = 0; i < s; i += 32) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 32, 32); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(i + 32, 0); ctx.lineTo(i, 32); ctx.stroke();
+      }
+      ctx.strokeStyle = '#0b1118';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(0, 0, s, s);
+    }, 128, 16, 16);
+    const floorMat = new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.55, metalness: 0.6 });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = FLOOR;
+    g.add(floor);
+
+    const makePanelMat = (rx, ry) => new THREE.MeshStandardMaterial({
+      map: this.makeTiledTexture((ctx, s) => {
+        ctx.fillStyle = '#3a4757';
+        ctx.fillRect(0, 0, s, s);
+        ctx.fillStyle = '#2c3744';
+        ctx.fillRect(6, 6, s - 12, s - 12);
+        ctx.fillStyle = '#6b7c93';
+        [[14, 14], [s - 14, 14], [14, s - 14], [s - 14, s - 14]].forEach(([x, y]) => {
+          ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+        });
+      }, 128, rx, ry),
+      roughness: 0.6,
+      metalness: 0.7
     });
 
-    // Draw active silos
-    const now = Date.now();
-    ctx.fillStyle = '#22c55e';
-    for (let i = 0; i < this.silos.length; i += 4) {
-      const s = this.silos[i];
-      const rx = cx + (s.pos.x - this.surfaceCenter.x) * 1.5;
-      const ry = cy + (s.pos.z - this.surfaceCenter.z) * 1.5;
-      if (s.isOpen || s.isLaunching) {
-        ctx.fillStyle = '#ef4444';
-        ctx.fillRect(rx - 3, ry - 3, 6, 6);
-      } else {
-        ctx.fillStyle = '#06b6d4';
-        ctx.fillRect(rx - 1.5, ry - 1.5, 3, 3);
+    const addWall = (x, z, rotY) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, WALL_H), makePanelMat(10, 3));
+      m.position.set(x, MID_Y, z);
+      m.rotation.y = rotY;
+      g.add(m);
+    };
+    addWall(0, -HALF, 0); // screens wall (faces +Z)
+    addWall(0, HALF, Math.PI); // blast door wall (faces -Z)
+    addWall(HALF, 0, -Math.PI / 2);
+    addWall(-HALF, 0, Math.PI / 2);
+
+    // Ceiling with ribs and bright light strips
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), makePanelMat(10, 10));
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.y = CEIL;
+    g.add(ceil);
+
+    const ribMat = new THREE.MeshStandardMaterial({ color: 0x172033, roughness: 0.4, metalness: 0.9 });
+    const stripMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe, toneMapped: false });
+    for (let z = -15; z <= 15; z += 7.5) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(HALF * 2, 0.35, 0.5), ribMat);
+      rib.position.set(0, CEIL - 0.18, z);
+      g.add(rib);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(14, 0.06, 0.35), stripMat);
+      strip.position.set(0, CEIL - 0.4, z + 3.7);
+      g.add(strip);
+    }
+
+    // Hazard-yellow floor border
+    const hazardTex = this.makeTiledTexture((ctx, s) => {
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#111827';
+      for (let i = -s; i < s * 2; i += s / 2) {
+        ctx.beginPath();
+        ctx.moveTo(i, s); ctx.lineTo(i + s / 4, s); ctx.lineTo(i + s / 4 + s, 0); ctx.lineTo(i + s, 0);
+        ctx.closePath(); ctx.fill();
+      }
+    }, 64, 20, 1);
+    const hazardMat = new THREE.MeshBasicMaterial({ map: hazardTex, toneMapped: false });
+    [[0, -HALF + 0.35, 0], [0, HALF - 0.35, 0], [-HALF + 0.35, 0, Math.PI / 2], [HALF - 0.35, 0, Math.PI / 2]].forEach(([x, z, r]) => {
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, 0.5), hazardMat);
+      bar.rotation.x = -Math.PI / 2;
+      bar.rotation.z = r;
+      bar.position.set(x, FLOOR + 0.02, z);
+      g.add(bar);
+    });
+
+    // --- Screens wall (south, z = -HALF, faces +Z) ---
+    this.canvasTelemetry = this.createDynamicCanvas(512, 256);
+    this.textureTelemetry = this.makeCanvasTexture(this.canvasTelemetry);
+    this.canvasRadar = this.createDynamicCanvas(640, 320);
+    this.textureRadar = this.makeCanvasTexture(this.canvasRadar);
+    this.canvasStatus = this.createDynamicCanvas(512, 256);
+    this.textureStatus = this.makeCanvasTexture(this.canvasStatus);
+    this.canvasMapTable = this.createDynamicCanvas(512, 320);
+    this.textureMapTable = this.makeCanvasTexture(this.canvasMapTable);
+    // Camera feed textures are bound in initCctvRenderer() once render targets exist
+    this.camScreenMats = [];
+
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0b1118, roughness: 0.4, metalness: 0.9 });
+    const glowFrameMat = new THREE.MeshBasicMaterial({ color: 0x0ea5e9, toneMapped: false });
+    const addScreen = (map, x, y, w, h, label, labelColor) => {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, h + 0.5, 0.2), frameMat);
+      frame.position.set(x, y, -HALF + 0.12);
+      g.add(frame);
+      const glow = new THREE.Mesh(new THREE.BoxGeometry(w + 0.62, h + 0.62, 0.1), glowFrameMat);
+      glow.position.set(x, y, -HALF + 0.06);
+      g.add(glow);
+      const mat = new THREE.MeshBasicMaterial({ map, toneMapped: false });
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+      screen.position.set(x, y, -HALF + 0.25);
+      g.add(screen);
+      const lab = this.makeLabelMesh(label, Math.min(w, 6.5), labelColor);
+      lab.position.set(x, y + h / 2 + 0.55, -HALF + 0.25);
+      g.add(lab);
+      return mat;
+    };
+
+    // Bottom row
+    addScreen(this.textureTelemetry, -11.8, 0.9, 8.0, 4.0, 'JUGADORES CONECTADOS', '#22c55e');
+    addScreen(this.textureRadar, 0, 0.9, 10.4, 5.2, 'RADAR TÁCTICO GLOBAL', '#38bdf8');
+    addScreen(this.textureStatus, 11.8, 0.9, 8.0, 4.0, 'ESTADO DE SILOS Y DEFENSA', '#f59e0b');
+    // Top row: real camera feeds (textures assigned once render targets exist)
+    this.camScreenMats.push(addScreen(null, -9.2, 6.3, 8.0, 4.0, 'CAM-01 · CAMPO DE SILOS', '#22c55e'));
+    this.camScreenMats.push(addScreen(null, 0, 6.3, 8.0, 4.0, 'CAM-02 · LANZAMIENTO', '#ef4444'));
+    this.camScreenMats.push(addScreen(null, 9.2, 6.3, 8.0, 4.0, 'CAM-03 · SEGUIMIENTO MISIL', '#38bdf8'));
+
+    // --- Central war table with live tactical map ---
+    const tableMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.95 });
+    const table = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.95, 5.4), tableMat);
+    table.position.set(0, FLOOR + 0.475, 2);
+    g.add(table);
+    const tableTop = new THREE.Mesh(
+      new THREE.PlaneGeometry(7.8, 4.8),
+      new THREE.MeshBasicMaterial({ map: this.textureMapTable, toneMapped: false })
+    );
+    tableTop.rotation.x = -Math.PI / 2;
+    tableTop.position.set(0, FLOOR + 0.97, 2);
+    g.add(tableTop);
+    const tableEdge = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.06, 5.6), glowFrameMat);
+    tableEdge.position.set(0, FLOOR + 0.94, 2);
+    g.add(tableEdge);
+
+    // Holographic rotating rings above the table
+    this.holoRing = new THREE.Group();
+    const holoMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65, toneMapped: false });
+    const ringA = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.04, 8, 48), holoMat);
+    ringA.rotation.x = Math.PI / 2;
+    const ringB = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.03, 8, 40), holoMat);
+    ringB.rotation.x = Math.PI / 2;
+    ringB.position.y = 0.5;
+    this.holoRing.add(ringA, ringB);
+    this.holoRing.position.set(0, FLOOR + 2.4, 2);
+    g.add(this.holoRing);
+
+    // Physical (decorative) red / blue buttons on the table front edge
+    const redBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.2, 20), new THREE.MeshBasicMaterial({ color: 0xdc2626, toneMapped: false }));
+    redBtn.position.set(-1.6, FLOOR + 1.1, 4.1);
+    const blueBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.2, 20), new THREE.MeshBasicMaterial({ color: 0x2563eb, toneMapped: false }));
+    blueBtn.position.set(1.6, FLOOR + 1.1, 4.1);
+    g.add(redBtn, blueBtn);
+
+    // Side operator desks
+    [-14, 14].forEach(x => {
+      const desk = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.0, 2.2), tableMat);
+      desk.position.set(x, FLOOR + 0.5, 6);
+      g.add(desk);
+      const monitor = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.2, 0.12), new THREE.MeshBasicMaterial({ color: 0x0ea5e9, toneMapped: false }));
+      monitor.position.set(x, FLOOR + 1.7, 5.4);
+      monitor.rotation.x = -0.25;
+      g.add(monitor);
+    });
+
+    // Blast door (decorative) on the entrance wall
+    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(9, 8.2, 0.5), frameMat);
+    doorFrame.position.set(0, FLOOR + 4.1, HALF - 0.25);
+    g.add(doorFrame);
+    const doorTex = hazardTex.clone();
+    doorTex.repeat.set(3, 3);
+    doorTex.needsUpdate = true;
+    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(7.6, 7.4, 0.3), new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.5, metalness: 0.8 }));
+    doorPanel.position.set(0, FLOOR + 3.9, HALF - 0.55);
+    g.add(doorPanel);
+    const doorLight = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.15), new THREE.MeshBasicMaterial({ color: 0x22c55e, toneMapped: false }));
+    doorLight.position.set(0, FLOOR + 8.0, HALF - 0.6);
+    g.add(doorLight);
+
+    // Interior lights (intensity switched on only while the admin is inside: no shader recompiles)
+    this.interiorLights = [];
+    [[0, 6.5, -10], [-12, 6.5, 0], [12, 6.5, 0], [0, 6.5, 10], [0, 6.5, 0]].forEach(([x, y, z]) => {
+      const light = new THREE.PointLight(0xdbeafe, 0, 30, 1);
+      light.position.set(x, y, z);
+      g.add(light);
+      this.interiorLights.push(light);
+    });
+
+    this.group.add(g);
+    this.interiorGroup = g;
+
+    this.drawTelemetry();
+    this.drawRadar();
+    this.drawStatus();
+    this.drawMapTable();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Screen drawing
+  // ---------------------------------------------------------------------------
+
+  hostileMissiles() {
+    const out = [];
+    const mm = this.missileManager;
+    if (!mm || !mm.missiles) return out;
+    for (const m of mm.missiles.values()) {
+      if (m.isInterceptor || m.isRetaliation || m.isDetonated || m.isDestroyedMidAir) continue;
+      if (m.isSiloMissile) continue;
+      if (m.launcherId === this.multiplayer?.myId || m.launcherName === 'jsieiragerpe') continue;
+      out.push(m);
+    }
+    return out;
+  }
+
+  siloMissiles() {
+    const out = [];
+    const mm = this.missileManager;
+    if (!mm || !mm.missiles) return out;
+    for (const m of mm.missiles.values()) {
+      if (m.isSiloMissile && !m.isDetonated && !m.isDestroyedMidAir) out.push(m);
+    }
+    return out;
+  }
+
+  /** Generic world map painter (used by radar screen, table and the touch console) */
+  paintWorldMap(ctx, x0, y0, size, opts = {}) {
+    const R = MAP_RANGE;
+    const toPx = (wx) => x0 + ((wx + R) / (2 * R)) * size;
+    const toPz = (wz) => y0 + ((wz + R) / (2 * R)) * size;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, size, size);
+    ctx.clip();
+    ctx.fillStyle = '#04141c';
+    ctx.fillRect(x0, y0, size, size);
+
+    // Grid every 100m
+    ctx.strokeStyle = 'rgba(14,165,233,0.18)';
+    ctx.lineWidth = 1;
+    for (let w = -R; w <= R; w += 100) {
+      ctx.beginPath(); ctx.moveTo(toPx(w), y0); ctx.lineTo(toPx(w), y0 + size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x0, toPz(w)); ctx.lineTo(x0 + size, toPz(w)); ctx.stroke();
+    }
+
+    const fs = Math.max(9, Math.round(size / 28));
+    ctx.font = `${fs}px monospace`;
+    ctx.textAlign = 'center';
+
+    // Landmarks
+    if (opts.landmarks !== false) {
+      ctx.fillStyle = 'rgba(148,163,184,0.9)';
+      for (const l of MAP_LANDMARKS) {
+        ctx.beginPath(); ctx.arc(toPx(l.x), toPz(l.z), 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillText(l.name, toPx(l.x), toPz(l.z) - 5);
       }
     }
 
-    // Scanning sweep line
-    const sweepAngle = (now / 1200) % (Math.PI * 2);
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(sweepAngle) * 105, cy + Math.sin(sweepAngle) * 105);
-    ctx.stroke();
-
-    // CCTV Timestamp & Cam Stamp
+    // Bunker and silo rings
+    const bx = toPx(-500);
+    const bz = toPz(300);
+    ctx.strokeStyle = 'rgba(34,197,94,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(bx, bz, (60 / (2 * R)) * size, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = '#22c55e';
-    ctx.font = 'bold 13px monospace';
-    ctx.fillText('CAM-01 [VISTA SUPERFICIE SILOS - ELEVADA]', 16, 22);
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = '12px monospace';
-    ctx.fillText(`REC ● ${new Date().toLocaleTimeString()} FPS: 60`, 16, 242);
-    ctx.fillText('ANG: 45° OBS | ZOOM: 1.0X', 330, 242);
+    ctx.fillRect(bx - 3, bz - 3, 6, 6);
+    ctx.fillText('BÚNKER', bx, bz + fs + 6);
 
-    if (this.textureCctv) this.textureCctv.needsUpdate = true;
+    // Players
+    const sel = this.selection;
+    for (const p of this.getPlayersList()) {
+      const px = toPx(p.pos[0]);
+      const pz = toPz(p.pos[2]);
+      const isSel = sel && sel.type === 'player' && sel.playerId === p.id;
+      ctx.fillStyle = isSel ? '#fde047' : '#f8fafc';
+      ctx.beginPath(); ctx.arc(px, pz, isSel ? 5 : 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = isSel ? '#fde047' : '#e2e8f0';
+      ctx.fillText(p.name, px, pz - 8);
+    }
+
+    // Missiles in flight
+    const mm = this.missileManager;
+    if (mm && mm.missiles) {
+      for (const m of mm.missiles.values()) {
+        if (m.isDetonated || m.isDestroyedMidAir) continue;
+        const mx = toPx(m.pos.x);
+        const mz = toPz(m.pos.z);
+        ctx.fillStyle = m.isInterceptor ? '#22d3ee' : (m.isSiloMissile ? '#fb923c' : '#ef4444');
+        ctx.beginPath(); ctx.arc(mx, mz, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // Selected map point
+    if (sel && sel.type === 'point') {
+      const sx = toPx(sel.x);
+      const sz = toPz(sel.z);
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(sx, sz, 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx - 12, sz); ctx.lineTo(sx + 12, sz); ctx.moveTo(sx, sz - 12); ctx.lineTo(sx, sz + 12); ctx.stroke();
+    }
+
+    // Sweep line for the "live radar" feel
+    if (opts.sweep) {
+      const a = (Date.now() / 1500) % (Math.PI * 2);
+      ctx.strokeStyle = 'rgba(56,189,248,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx, bz); ctx.lineTo(bx + Math.cos(a) * size, bz + Math.sin(a) * size); ctx.stroke();
+    }
+
+    ctx.restore();
+    ctx.strokeStyle = '#0ea5e9';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x0 + 1, y0 + 1, size - 2, size - 2);
+  }
+
+  drawTelemetry() {
+    if (!this.canvasTelemetry || !this.canvasTelemetry.getContext) return;
+    const ctx = this.canvasTelemetry.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#04121a';
+    ctx.fillRect(0, 0, 512, 256);
+
+    const players = this.getPlayersList();
+    ctx.fillStyle = '#22c55e';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`TOTAL: ${players.length + 1} EN LÍNEA`, 14, 28);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '15px monospace';
+    ctx.fillText('NOMBRE        POSICIÓN XYZ        DIST', 14, 52);
+
+    ctx.font = 'bold 18px monospace';
+    const rows = players.slice(0, 7);
+    rows.forEach((p, i) => {
+      const y = 78 + i * 25;
+      const d = Math.round(Math.hypot(p.pos[0] + 500, p.pos[2] - 300));
+      const isSel = this.selection && this.selection.type === 'player' && this.selection.playerId === p.id;
+      ctx.fillStyle = isSel ? '#fde047' : '#e2e8f0';
+      ctx.fillText(`${isSel ? '▶' : ' '}${String(p.name).slice(0, 10)}`, 10, y);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`${Math.round(p.pos[0])},${Math.round(p.pos[1])},${Math.round(p.pos[2])}`, 175, y);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(`${d}m`, 410, y);
+    });
+    if (players.length === 0) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '18px monospace';
+      ctx.fillText('Sin otros jugadores conectados', 14, 100);
+    } else if (players.length > 7) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '16px monospace';
+      ctx.fillText(`... y ${players.length - 7} más`, 14, 246);
+    }
+    if (this.textureTelemetry) this.textureTelemetry.needsUpdate = true;
+  }
+
+  drawRadar() {
+    if (!this.canvasRadar || !this.canvasRadar.getContext) return;
+    const ctx = this.canvasRadar.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#020b10';
+    ctx.fillRect(0, 0, 640, 320);
+    this.paintWorldMap(ctx, 0, 0, 320, { sweep: true });
+
+    // Right info panel
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText('SITUACIÓN AÉREA', 336, 28);
+
+    const hostiles = this.hostileMissiles();
+    const mine = this.siloMissiles();
+    ctx.font = '17px monospace';
+    ctx.fillStyle = hostiles.length ? '#ef4444' : '#22c55e';
+    ctx.fillText(hostiles.length ? `⚠ AMENAZAS: ${hostiles.length}` : '✔ ESPACIO AÉREO LIMPIO', 336, 56);
+    ctx.fillStyle = '#fb923c';
+    ctx.fillText(`MISILES DE SILO EN VUELO: ${mine.length}`, 336, 80);
+
+    ctx.font = '15px monospace';
+    hostiles.slice(0, 6).forEach((m, i) => {
+      const d = Math.round(Math.hypot(m.pos.x + 500, m.pos.z - 300));
+      ctx.fillStyle = '#fca5a5';
+      ctx.fillText(`${String(m.launcherName || '?').slice(0, 9)} > ${String(m.targetName || '?').slice(0, 9)} ${d}m`, 336, 112 + i * 22);
+    });
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '14px monospace';
+    ctx.fillText('blanco: jugador  rojo: amenaza', 336, 262);
+    ctx.fillText('naranja: silo  cian: interceptor', 336, 282);
+    ctx.fillText(`Rango: ±${MAP_RANGE} m`, 336, 302);
+    if (this.textureRadar) this.textureRadar.needsUpdate = true;
+  }
+
+  drawStatus() {
+    if (!this.canvasStatus || !this.canvasStatus.getContext) return;
+    const ctx = this.canvasStatus.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#120d04';
+    ctx.fillRect(0, 0, 512, 256);
+
+    const open = this.silos.filter(s => s.openProgress > 0.05).length;
+    const flying = this.siloMissiles().length;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#22c55e';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText('BLINDAJE: ACTIVO (INMUNE)', 14, 30);
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillText('CÚPULA AUTOMÁTICA: APAGADA', 14, 58);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('DEFENSA: MANUAL (BOTÓN AZUL)', 14, 86);
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '18px monospace';
+    ctx.fillText(`SILOS: ${SILO_COUNT} LISTOS · ${open} ABIERTOS`, 14, 122);
+    ctx.fillText(`MISILES EN VUELO: ${flying} (PODER 2X)`, 14, 148);
+
+    const t = this.resolveSelection();
+    ctx.fillStyle = '#fde047';
+    ctx.fillText(`OBJETIVO: ${t ? `${t.name} (${Math.round(t.x)}, ${Math.round(t.z)})` : 'SIN SELECCIONAR'}`.slice(0, 40), 14, 176);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(`SALVA PREPARADA: ${this.selectedCount} MISIL(ES)`, 14, 202);
+
+    // Salvo progress bar
+    const total = this.salvo ? this.salvo.total : 0;
+    const done = this.salvo ? Math.min(this.salvo.launched, total) : 0;
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(14, 218, 484, 22);
+    ctx.fillStyle = '#ef4444';
+    if (total > 0) ctx.fillRect(16, 220, 480 * (done / total), 18);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(total > 0 ? `SALVA EN CURSO: ${done}/${total}` : 'SIN SALVA ACTIVA', 22, 234);
+    if (this.textureStatus) this.textureStatus.needsUpdate = true;
+  }
+
+  drawMapTable() {
+    if (!this.canvasMapTable || !this.canvasMapTable.getContext) return;
+    const ctx = this.canvasMapTable.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#031017';
+    ctx.fillRect(0, 0, 512, 320);
+    this.paintWorldMap(ctx, 96, 0, 320, { sweep: true, landmarks: true });
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('MESA TÁCTICA', 8, 20);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('MAPA EN VIVO', 8, 38);
+    if (this.textureMapTable) this.textureMapTable.needsUpdate = true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // REAL camera feeds rendered into the wall screens
+  // ---------------------------------------------------------------------------
+
+  initCctvRenderer() {
+    this.cctv = [];
+    if (!this.renderer || typeof THREE.WebGLRenderTarget !== 'function') return;
+    for (let i = 0; i < 3; i++) {
+      const rt = new THREE.WebGLRenderTarget(384, 192);
+      const cam = new THREE.PerspectiveCamera(58, 2, 0.5, 450);
+      this.cctv.push({ rt, cam });
+      if (this.camScreenMats[i]) {
+        this.camScreenMats[i].map = rt.texture;
+        this.camScreenMats[i].needsUpdate = true;
+      }
+    }
+  }
+
+  positionCctvCamera(index) {
+    const cam = this.cctv[index].cam;
+    const nowSec = Date.now() / 1000;
+
+    if (index === 0) {
+      // CAM-01: elevated overview of the whole silo field
+      cam.position.set(-500, 84, 214);
+      cam.lookAt(-500, 24, 304);
+    } else if (index === 1) {
+      // CAM-02: launch cam, focused on the silo that fired last (otherwise patrols the silo field)
+      const recent = this.lastLaunchSilo >= 0 && (Date.now() - this.lastLaunchTime) < 9000;
+      const idx = recent ? this.lastLaunchSilo : (Math.floor(nowSec / 4) * 13) % SILO_COUNT;
+      const silo = this.silos[idx];
+      const out = new THREE.Vector3(silo.pos.x - this.surfaceCenter.x, 0, silo.pos.z - this.surfaceCenter.z).normalize();
+      const side = new THREE.Vector3(-out.z, 0, out.x);
+      cam.position.set(
+        silo.pos.x + out.x * 15 + side.x * 7,
+        silo.pos.y + 6.5,
+        silo.pos.z + out.z * 15 + side.z * 7
+      );
+      cam.lookAt(silo.pos.x, silo.pos.y + 5, silo.pos.z);
+    } else {
+      // CAM-03: chase cam behind the newest silo missile; otherwise a wide side angle
+      let target = null;
+      for (const m of this.siloMissiles()) {
+        if (!target || m.age < target.age) target = m;
+      }
+      if (target) {
+        const f = target.forward.clone();
+        cam.position.set(target.pos.x - f.x * 20, target.pos.y - f.y * 20 + 4, target.pos.z - f.z * 20);
+        cam.lookAt(target.pos.x + f.x * 8, target.pos.y + f.y * 8, target.pos.z + f.z * 8);
+      } else {
+        cam.position.set(-425, 42, 345);
+        cam.lookAt(-500, 30, 300);
+      }
+    }
+    cam.updateMatrixWorld();
+  }
+
+  renderCctvFeeds(dt) {
+    if (!this.renderer || !this.cctv || this.cctv.length === 0) return;
+    this.cctvTimer += dt;
+    if (this.cctvTimer < 0.1) return;
+    this.cctvTimer = 0;
+
+    const idx = this.cctvIndex++ % this.cctv.length;
+    this.positionCctvCamera(idx);
+    const feed = this.cctv[idx];
+    const r = this.renderer;
+    const prevAuto = r.shadowMap.autoUpdate;
+    const prevTarget = r.getRenderTarget();
+    // Hide our own interior so the cameras never film the screens themselves
+    if (this.interiorGroup) this.interiorGroup.visible = false;
+    r.shadowMap.autoUpdate = false;
+    try {
+      r.setRenderTarget(feed.rt);
+      r.render(this.scene, feed.cam);
+    } catch (e) {
+      // never let a camera feed error break the main render loop
+    }
+    r.setRenderTarget(prevTarget);
+    r.shadowMap.autoUpdate = prevAuto;
+    if (this.interiorGroup) this.interiorGroup.visible = true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI: styles, touch HUD buttons and command console
+  // ---------------------------------------------------------------------------
+
+  injectStyles() {
+    if (typeof document === 'undefined' || document.getElementById('bunker-style')) return;
+    const style = document.createElement('style');
+    style.id = 'bunker-style';
+    style.textContent = `
+      #bunker-hud { position: fixed; right: 10px; top: 26%; z-index: 9000; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+      #bunker-hud.hidden, #bunker-hud .hidden { display: none !important; }
+      .bhud-btn { min-width: 76px; min-height: 76px; padding: 8px 10px; border-radius: 18px; border: 3px solid #0f172a; color: #fff; font: 800 13px/1.15 system-ui, sans-serif; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.55); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
+      .bhud-btn .ico { display: block; font-size: 28px; line-height: 1.1; }
+      .bhud-enter { background: linear-gradient(#16a34a, #166534); min-width: 110px; }
+      .bhud-console { background: linear-gradient(#f59e0b, #b45309); }
+      .bhud-blue { background: linear-gradient(#3b82f6, #1d4ed8); }
+      .bhud-exit { background: linear-gradient(#64748b, #334155); }
+      .bhud-btn:active { transform: scale(.93); }
+
+      .bunker-modal { position: fixed; inset: 0; z-index: 10000; background: rgba(2, 8, 14, .97); display: flex; flex-direction: column; color: #e2e8f0; font-family: system-ui, sans-serif; }
+      .bunker-modal.hidden { display: none; }
+      .bm-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #0b1622; border-bottom: 2px solid #0ea5e9; flex: 0 0 auto; }
+      .bm-title { font-weight: 800; font-size: 15px; letter-spacing: .5px; color: #38bdf8; }
+      .bm-close { width: 52px; height: 52px; border-radius: 14px; border: 2px solid #475569; background: #1e293b; color: #fff; font-size: 24px; touch-action: manipulation; }
+      .bm-body { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 14px 8px; }
+      .bm-sec { margin-bottom: 14px; }
+      .bm-sec > label { display: block; font-size: 12px; font-weight: 800; color: #94a3b8; margin-bottom: 6px; letter-spacing: .6px; }
+      .bm-tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+      .bm-tab { flex: 1; min-height: 52px; border-radius: 12px; border: 2px solid #334155; background: #111c2b; color: #cbd5e1; font-weight: 800; font-size: 15px; touch-action: manipulation; }
+      .bm-tab.active { border-color: #38bdf8; background: #0c3a57; color: #fff; }
+      .bm-players { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+      .bm-player { min-height: 58px; border-radius: 12px; border: 2px solid #334155; background: #111c2b; color: #fff; text-align: left; padding: 8px 12px; font-size: 16px; font-weight: 700; touch-action: manipulation; }
+      .bm-player small { display: block; color: #94a3b8; font-weight: 500; font-size: 12px; margin-top: 2px; }
+      .bm-player.active { border-color: #fde047; background: #3b3305; }
+      .bm-empty { color: #94a3b8; padding: 14px; text-align: center; border: 2px dashed #334155; border-radius: 12px; }
+      .bm-map-wrap { width: 100%; max-width: 440px; margin: 0 auto; }
+      #bm-map-canvas { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 12px; touch-action: none; background: #04141c; }
+      .bm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+      .bm-chip { min-height: 44px; padding: 6px 12px; border-radius: 22px; border: 2px solid #334155; background: #111c2b; color: #e2e8f0; font-weight: 700; font-size: 13px; touch-action: manipulation; }
+      .bm-chip.active { border-color: #fde047; color: #fde047; }
+      .bm-stepper { display: flex; align-items: center; gap: 10px; }
+      .bm-step-btn { width: 70px; height: 70px; border-radius: 16px; border: 2px solid #475569; background: #1e293b; color: #fff; font-size: 34px; font-weight: 800; touch-action: manipulation; }
+      #bm-count-val { flex: 1; text-align: center; font-size: 44px; font-weight: 900; color: #fde047; }
+      .bm-hint { font-size: 12px; color: #94a3b8; margin-top: 6px; text-align: center; }
+      .bm-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+      .bm-color { min-height: 48px; padding: 6px 12px; border-radius: 12px; border: 3px solid; background: #0b1118; color: #fff; font-weight: 700; font-size: 13px; touch-action: manipulation; opacity: .6; }
+      .bm-color.active { opacity: 1; background: #1b2636; }
+      .bm-foot { flex: 0 0 auto; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); background: #0b1622; border-top: 2px solid #0ea5e9; display: flex; flex-direction: column; gap: 8px; }
+      .bm-summary { font-size: 13px; text-align: center; color: #fde047; min-height: 18px; }
+      .bm-actions { display: flex; gap: 10px; }
+      .bm-btn-red, .bm-btn-blue { flex: 1; min-height: 64px; border-radius: 16px; border: 3px solid #0f172a; color: #fff; font-size: 15px; font-weight: 900; touch-action: manipulation; }
+      .bm-btn-red { background: linear-gradient(#ef4444, #991b1b); }
+      .bm-btn-red[disabled] { filter: grayscale(1) brightness(.6); }
+      .bm-btn-blue { background: linear-gradient(#3b82f6, #1d4ed8); }
+      .bm-btn-red:active, .bm-btn-blue:active { transform: scale(.97); }
+    `;
+    document.head.appendChild(style);
+  }
+
+  stopTouch(el) {
+    ['touchstart', 'touchend', 'pointerdown', 'mousedown'].forEach(ev => {
+      el.addEventListener(ev, (e) => e.stopPropagation(), { passive: true });
+    });
+  }
+
+  initBunkerHUD() {
+    if (typeof document === 'undefined') return;
+    let hud = document.getElementById('bunker-hud');
+    if (hud) return;
+    hud = document.createElement('div');
+    hud.id = 'bunker-hud';
+    hud.className = 'hidden';
+    hud.innerHTML = `
+      <button id="bhud-enter" class="bhud-btn bhud-enter hidden"><span class="ico">🛡️</span>ENTRAR AL BÚNKER</button>
+      <button id="bhud-console" class="bhud-btn bhud-console hidden"><span class="ico">🖥️</span>MANDO</button>
+      <button id="bhud-intercept" class="bhud-btn bhud-blue hidden"><span class="ico">🛡️</span>INTERCEPTOR</button>
+      <button id="bhud-exit" class="bhud-btn bhud-exit hidden"><span class="ico">🚪</span>SALIR</button>
+    `;
+    document.body.appendChild(hud);
+    this.hud = hud;
+    this.stopTouch(hud);
+
+    hud.querySelector('#bhud-enter').addEventListener('click', () => this.enterBunker());
+    hud.querySelector('#bhud-console').addEventListener('click', () => this.toggleBunkerHUD(true));
+    hud.querySelector('#bhud-intercept').addEventListener('click', () => this.launchManualInterceptor());
+    hud.querySelector('#bhud-exit').addEventListener('click', () => this.exitBunker());
+  }
+
+  /** Shows/hides the touch buttons according to where the admin is */
+  updateHud(playerPos) {
+    if (!this.hud) return;
+    let state = 'none';
+    if (playerPos && this.isMainAdminPlayer()) {
+      if (this.playerInside) {
+        state = 'inside';
+      } else if (Math.hypot(playerPos.x + 500, playerPos.z - 300) <= 90 && playerPos.y > 20) {
+        state = 'near';
+      }
+    }
+    if (state === this.hudState) return;
+    this.hudState = state;
+    const show = (id, v) => this.hud.querySelector(id).classList.toggle('hidden', !v);
+    show('#bhud-enter', state === 'near');
+    show('#bhud-console', state === 'inside');
+    show('#bhud-intercept', state === 'inside');
+    show('#bhud-exit', state === 'inside');
+    this.hud.classList.toggle('hidden', state === 'none');
+    if (state !== 'inside') this.toggleBunkerHUD(false);
   }
 
   /**
-   * Initializes the Interactive Tactical Bunker HUD
+   * Initializes the touch-first Command Console (full-screen sheet)
    */
   initBunkerUI() {
     if (typeof document === 'undefined') return;
 
-    // Create Bunker Control Modal if not already present
     let modal = document.getElementById('bunker-command-modal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'bunker-command-modal';
-      modal.className = 'bunker-modal hidden';
-      modal.innerHTML = `
-        <div class="bunker-modal-card">
-          <div class="bunker-modal-header">
-            <div class="bm-title">🎖️ CENTRO DE MANDO SUBTERRÁNEO — BÚNKER SUPREMO</div>
-            <button id="bm-close-btn" class="bm-close">✕</button>
+    if (modal) return;
+    modal = document.createElement('div');
+    modal.id = 'bunker-command-modal';
+    modal.className = 'bunker-modal hidden';
+    modal.innerHTML = `
+      <div class="bm-head">
+        <div class="bm-title">🎖️ CENTRO DE MANDO · 180 SILOS</div>
+        <button id="bm-close-btn" class="bm-close">✕</button>
+      </div>
+      <div class="bm-body">
+        <div class="bm-sec">
+          <label>1 · OBJETIVO</label>
+          <div class="bm-tabs">
+            <button class="bm-tab active" data-tab="players">👤 JUGADORES</button>
+            <button class="bm-tab" data-tab="map">🗺️ PUNTO DEL MAPA</button>
           </div>
-          <div class="bunker-modal-body">
-            <div class="bm-section">
-              <label>SELECCIÓN DE OBJETIVO:</label>
-              <select id="bm-target-select" class="bm-select">
-                <option value="">Cargando exploradores...</option>
-              </select>
-            </div>
-
-            <div class="bm-section">
-              <label>SALVA DE MISILES (SILOS ACTIVOS: 180):</label>
-              <div class="bm-salvo-buttons">
-                <button class="bm-count-btn active" data-count="1">1 Misil</button>
-                <button class="bm-count-btn" data-count="5">5 Misiles</button>
-                <button class="bm-count-btn" data-count="10">10 Misiles</button>
-                <button class="bm-count-btn" data-count="30">30 Misiles</button>
-                <button class="bm-count-btn" data-count="60">60 Misiles</button>
-                <button class="bm-count-btn highlight" data-count="180">🚀 180 TOTAL</button>
-              </div>
-            </div>
-
-            <div class="bm-section">
-              <label>COLOR DE PROPULSIÓN DE OJIVA (HIPERSÓNICA):</label>
-              <div class="bm-color-buttons">
-                ${this.flameColors.map((c, i) => `
-                  <button class="bm-color-btn ${i === 0 ? 'active' : ''}" data-hex="${c.hex}" style="border-color:${'#' + c.hex.toString(16).padStart(6, '0')}">
-                    ${c.label}
-                  </button>
-                `).join('')}
-              </div>
-            </div>
-
-            <div class="bm-actions">
-              <button id="bm-launch-red-btn" class="bm-btn-red">
-                🚀 LANZAR SALVA DE SILOS (PODER 2X)
-              </button>
-              <button id="bm-intercept-blue-btn" class="bm-btn-blue">
-                🛡️ INTERCEPTOR MANUAL DIRECTO
-              </button>
-            </div>
-
-            <div class="bm-status-pill">
-              🛡️ BLINDAJE ACTIVO: INMUNE A MISILES ENEMIGOS | DEFENSA 100% MANUAL
+          <div id="bm-tab-players"><div id="bm-players" class="bm-players"></div></div>
+          <div id="bm-tab-map" style="display:none">
+            <div class="bm-map-wrap"><canvas id="bm-map-canvas" width="440" height="440"></canvas></div>
+            <div class="bm-hint">Toca cualquier punto del mapa · o elige un lugar:</div>
+            <div id="bm-chips" class="bm-chips">
+              ${MAP_LANDMARKS.map((l, i) => `<button class="bm-chip" data-i="${i}">${l.icon} ${l.name}</button>`).join('')}
             </div>
           </div>
         </div>
-      `;
-      document.body.appendChild(modal);
-      this.bunkerModal = modal;
 
-      // Event listeners
-      const closeBtn = modal.querySelector('#bm-close-btn');
-      if (closeBtn) {
-        closeBtn.addEventListener('click', () => this.toggleBunkerHUD(false));
-      }
+        <div class="bm-sec">
+          <label>2 · CANTIDAD DE MISILES (1 – 180)</label>
+          <div class="bm-stepper">
+            <button id="bm-count-minus" class="bm-step-btn">−</button>
+            <div id="bm-count-val">2</div>
+            <button id="bm-count-plus" class="bm-step-btn">+</button>
+          </div>
+          <div class="bm-chips" id="bm-count-chips">
+            ${[1, 2, 4, 10, 30, 60, 180].map(n => `<button class="bm-chip" data-n="${n}">${n === 180 ? '🚀 180 TOTAL' : n}</button>`).join('')}
+          </div>
+          <div class="bm-hint" id="bm-eta">Salen de 2 en 2, con 3 s entre parejas.</div>
+        </div>
 
-      // Count buttons
-      this.selectedCount = 1;
-      const countBtns = modal.querySelectorAll('.bm-count-btn');
-      countBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-          countBtns.forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          this.selectedCount = parseInt(btn.dataset.count, 10) || 1;
-        });
+        <div class="bm-sec">
+          <label>3 · COLOR DE LLAMA</label>
+          <div class="bm-colors">
+            ${this.flameColors.map((c, i) => `<button class="bm-color ${i === 0 ? 'active' : ''}" data-hex="${c.hex}" style="border-color:#${c.hex.toString(16).padStart(6, '0')}">${c.label}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="bm-foot">
+        <div class="bm-summary" id="bm-summary">Elige un objetivo</div>
+        <div class="bm-actions">
+          <button id="bm-launch-red-btn" class="bm-btn-red" disabled>🚀 LANZAR SALVA<br><small>(PODER 2X)</small></button>
+          <button id="bm-intercept-blue-btn" class="bm-btn-blue">🛡️ INTERCEPTOR<br><small>MANUAL DIRECTO</small></button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    this.bunkerModal = modal;
+    this.stopTouch(modal);
+
+    modal.querySelector('#bm-close-btn').addEventListener('click', () => this.toggleBunkerHUD(false));
+
+    // Tabs
+    modal.querySelectorAll('.bm-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        modal.querySelectorAll('.bm-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const isMap = tab.dataset.tab === 'map';
+        modal.querySelector('#bm-tab-players').style.display = isMap ? 'none' : 'block';
+        modal.querySelector('#bm-tab-map').style.display = isMap ? 'block' : 'none';
+        if (isMap) this.drawConsoleMap();
       });
+    });
 
-      // Color buttons
-      const colorBtns = modal.querySelectorAll('.bm-color-btn');
-      colorBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-          colorBtns.forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          this.selectedFlameColor = parseInt(btn.dataset.hex, 10) || 0xff6600;
-        });
+    // Map canvas picking (tap or drag)
+    const mapCanvas = modal.querySelector('#bm-map-canvas');
+    this.consoleMapCanvas = mapCanvas;
+    const pick = (ev) => {
+      const rect = mapCanvas.getBoundingClientRect();
+      const px = ((ev.clientX - rect.left) / rect.width);
+      const pz = ((ev.clientY - rect.top) / rect.height);
+      const x = Math.max(-MAP_RANGE, Math.min(MAP_RANGE, Math.round(px * 2 * MAP_RANGE - MAP_RANGE)));
+      const z = Math.max(-MAP_RANGE, Math.min(MAP_RANGE, Math.round(pz * 2 * MAP_RANGE - MAP_RANGE)));
+      this.selection = { type: 'point', x, z, name: `Punto (${x}, ${z})` };
+      this.refreshConsole();
+    };
+    let dragging = false;
+    mapCanvas.addEventListener('pointerdown', (e) => { dragging = true; pick(e); });
+    mapCanvas.addEventListener('pointermove', (e) => { if (dragging) pick(e); });
+    window.addEventListener('pointerup', () => { dragging = false; });
+
+    // Landmark chips
+    modal.querySelectorAll('#bm-chips .bm-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const l = MAP_LANDMARKS[parseInt(chip.dataset.i, 10)];
+        this.selection = { type: 'point', x: l.x, z: l.z, name: l.name };
+        this.refreshConsole();
       });
+    });
 
-      // Red Launch Button
-      const redBtn = modal.querySelector('#bm-launch-red-btn');
-      if (redBtn) {
-        redBtn.addEventListener('click', () => {
-          const sel = modal.querySelector('#bm-target-select');
-          const targetId = sel ? sel.value : null;
-          this.launchSalvoFromBunker(this.selectedCount, targetId, this.selectedFlameColor);
-          this.toggleBunkerHUD(false);
+    // Count controls
+    const setCount = (n) => {
+      this.selectedCount = Math.max(1, Math.min(SILO_COUNT, n));
+      this.refreshConsole();
+    };
+    modal.querySelector('#bm-count-minus').addEventListener('click', () => setCount(this.selectedCount - 1));
+    modal.querySelector('#bm-count-plus').addEventListener('click', () => setCount(this.selectedCount + 1));
+    modal.querySelectorAll('#bm-count-chips .bm-chip').forEach(chip => {
+      chip.addEventListener('click', () => setCount(parseInt(chip.dataset.n, 10)));
+    });
+
+    // Colors
+    const colorBtns = modal.querySelectorAll('.bm-color');
+    colorBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        colorBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.selectedFlameColor = parseInt(btn.dataset.hex, 10) || 0xff6600;
+      });
+    });
+
+    // Red launch / Blue interceptor
+    modal.querySelector('#bm-launch-red-btn').addEventListener('click', () => {
+      const t = this.resolveSelection();
+      if (!t) {
+        this.notify('⚠️ Selecciona primero un objetivo (jugador o punto del mapa).');
+        return;
+      }
+      this.launchSalvoFromBunker(this.selectedCount, this.selection, this.selectedFlameColor);
+      this.toggleBunkerHUD(false);
+    });
+    modal.querySelector('#bm-intercept-blue-btn').addEventListener('click', () => {
+      this.launchManualInterceptor();
+    });
+
+    this.refreshConsole();
+  }
+
+  /** Refreshes player cards, summary text, count chips and launch button state */
+  refreshConsole() {
+    const modal = this.bunkerModal;
+    if (!modal) return;
+
+    // Player cards
+    const list = modal.querySelector('#bm-players');
+    if (list) {
+      const players = this.getPlayersList();
+      if (players.length === 0) {
+        list.innerHTML = '<div class="bm-empty">No hay otros jugadores conectados.<br>Usa «Punto del mapa» para atacar cualquier lugar.</div>';
+      } else {
+        list.innerHTML = '';
+        players.forEach(p => {
+          const btn = document.createElement('button');
+          const active = this.selection && this.selection.type === 'player' && this.selection.playerId === p.id;
+          btn.className = 'bm-player' + (active ? ' active' : '');
+          const d = Math.round(Math.hypot(p.pos[0] + 500, p.pos[2] - 300));
+          btn.innerHTML = `${active ? '🎯 ' : '👤 '}${p.name}<small>XYZ ${Math.round(p.pos[0])}, ${Math.round(p.pos[1])}, ${Math.round(p.pos[2])} · a ${d} m del búnker</small>`;
+          btn.addEventListener('click', () => {
+            this.selection = { type: 'player', playerId: p.id, name: p.name };
+            this.refreshConsole();
+          });
+          list.appendChild(btn);
         });
       }
-
-      // Blue Intercept Button
-      const blueBtn = modal.querySelector('#bm-intercept-blue-btn');
-      if (blueBtn) {
-        blueBtn.addEventListener('click', () => {
-          this.launchManualInterceptor();
-          this.toggleBunkerHUD(false);
-        });
-      }
-
-      // Hotkey 'E': toggles bunker console when inside bunker near command center
-      window.addEventListener('keydown', (e) => {
-        if (e.code === 'KeyE' || e.key === 'e' || e.key === 'E') {
-          if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-          if (this.lastPlayerPos && this.isPlayerInsideBunker(this.lastPlayerPos)) {
-            const lp = this.lastPlayerPos;
-            const dist = Math.hypot(lp.x - this.center.x, lp.y - this.center.y, lp.z - this.center.z);
-            if (dist <= 14) {
-              this.toggleBunkerHUD();
-            }
-          }
-        }
-      });
     }
+
+    modal.querySelector('#bm-count-val').textContent = String(this.selectedCount);
+    modal.querySelectorAll('#bm-count-chips .bm-chip').forEach(c => {
+      c.classList.toggle('active', parseInt(c.dataset.n, 10) === this.selectedCount);
+    });
+    const pairs = Math.ceil(this.selectedCount / SILO_MISSILE_SPEC.pairSize);
+    const secs = Math.max(0, (pairs - 1) * SILO_MISSILE_SPEC.pairIntervalSec);
+    modal.querySelector('#bm-eta').textContent =
+      `Salen de ${SILO_MISSILE_SPEC.pairSize} en ${SILO_MISSILE_SPEC.pairSize}, con ${SILO_MISSILE_SPEC.pairIntervalSec} s entre parejas · duración ≈ ${secs} s`;
+
+    const t = this.resolveSelection();
+    const sum = modal.querySelector('#bm-summary');
+    const launchBtn = modal.querySelector('#bm-launch-red-btn');
+    if (t) {
+      sum.textContent = `🎯 ${t.name}  ·  ${this.selectedCount} misil(es)`;
+      launchBtn.disabled = false;
+    } else {
+      sum.textContent = this.selection ? '⚠️ El objetivo ya no está conectado' : 'Elige un objetivo';
+      launchBtn.disabled = true;
+    }
+    modal.querySelectorAll('#bm-chips .bm-chip').forEach(chip => {
+      const l = MAP_LANDMARKS[parseInt(chip.dataset.i, 10)];
+      chip.classList.toggle('active', !!(this.selection && this.selection.type === 'point' && this.selection.x === l.x && this.selection.z === l.z));
+    });
+
+    this.drawConsoleMap();
+  }
+
+  drawConsoleMap() {
+    const c = this.consoleMapCanvas;
+    if (!c || !this.bunkerModal || this.bunkerModal.classList.contains('hidden')) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    this.paintWorldMap(ctx, 0, 0, c.width, { landmarks: true, sweep: false });
   }
 
   toggleBunkerHUD(open = null) {
     if (!this.bunkerModal) return;
     const isVis = !this.bunkerModal.classList.contains('hidden');
     const targetState = (open !== null) ? open : !isVis;
+    if (targetState === isVis) return;
 
     if (targetState) {
-      this.populateTargetSelect();
+      if (!this.isMainAdminPlayer()) return;
       this.bunkerModal.classList.remove('hidden');
+      if (this.controls && typeof this.controls.unlock === 'function') {
+        try { this.controls.unlock(); } catch (e) { /* ignore */ }
+      }
+      this.refreshConsole();
     } else {
       this.bunkerModal.classList.add('hidden');
-    }
-  }
-
-  populateTargetSelect() {
-    if (!this.bunkerModal) return;
-    const select = this.bunkerModal.querySelector('#bm-target-select');
-    if (!select) return;
-
-    select.innerHTML = '';
-    const dir = this.multiplayer?.playerDirectory;
-    if (!dir || dir.size === 0) {
-      select.innerHTML = '<option value="">No hay otros jugadores conectados</option>';
-      return;
-    }
-
-    let added = 0;
-    for (const p of dir.values()) {
-      if (p.id === this.multiplayer?.myId) continue;
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = `${p.name || 'Jugador'} - (${Math.floor(p.pos?.[0] || 0)}, ${Math.floor(p.pos?.[1] || 25)}, ${Math.floor(p.pos?.[2] || 0)})`;
-      select.appendChild(opt);
-      added++;
-    }
-
-    if (added === 0) {
-      select.innerHTML = '<option value="">Sin objetivos remotos (prueba solo)</option>';
+      const mobile = this.controls && this.controls.isMobile;
+      if (!mobile && this.controls && typeof this.controls.lock === 'function') {
+        try { this.controls.lock(); } catch (e) { /* ignore */ }
+      }
     }
   }
 
@@ -656,239 +1257,207 @@ export class BunkerManager {
     return isInsideBunkerInterior(pos.x, pos.y, pos.z);
   }
 
+  // ---------------------------------------------------------------------------
+  // Launch logic
+  // ---------------------------------------------------------------------------
+
   /**
-   * Launches a salvo of Silo Missiles (from 1 up to 180) with 2X power and custom colored flames
+   * Requests a salvo of Silo Missiles (1..180) with 2X power and custom colored flames.
+   * The SERVER fires them in pairs of 2 with 3 s between pairs; every client then sees the hatch open
+   * (fireSingleSilo) and the missile rise out of its silo.
    */
-  launchSalvoFromBunker(count = 1, targetPlayerId = null, colorHex = 0xff6600) {
-    const launchCount = Math.max(1, Math.min(180, count));
-
-    // Choose target position
-    let targetPos = [0, 25, 0];
-    let targetName = 'Área Designada';
-    if (targetPlayerId && this.multiplayer?.playerDirectory?.has(targetPlayerId)) {
-      const p = this.multiplayer.playerDirectory.get(targetPlayerId);
-      targetPos = p.pos ? [...p.pos] : [0, 25, 0];
-      targetName = p.name || 'Objetivo';
-    } else {
-      // Find nearest remote player
-      const dir = this.multiplayer?.playerDirectory;
-      if (dir) {
-        for (const p of dir.values()) {
-          if (p.id !== this.multiplayer?.myId) {
-            targetPlayerId = p.id;
-            targetPos = p.pos ? [...p.pos] : [0, 25, 0];
-            targetName = p.name || 'Objetivo';
-            break;
-          }
-        }
-      }
+  launchSalvoFromBunker(count = 1, selection = null, colorHex = 0xff6600) {
+    const launchCount = Math.max(1, Math.min(SILO_COUNT, count));
+    const t = this.resolveSelection();
+    if (!t || !selection) {
+      this.notify('⚠️ Selecciona primero un objetivo.');
+      return;
     }
 
-    // Play launch rumble
-    if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
-      this.sound.playMissileLaunch();
-    }
-
-    // Sequential firing sequence across silos
-    for (let i = 0; i < launchCount; i++) {
-      const siloIndex = i % this.silos.length;
-      const delay = (launchCount > 1) ? (i * 45) : 0; // Rapid cinematic ripple fire!
-
-      setTimeout(() => {
-        this.fireSingleSilo(siloIndex, targetPlayerId, targetPos, targetName, colorHex);
-      }, delay);
-    }
-
-    // Sync to server
     if (this.multiplayer && typeof this.multiplayer.send === 'function') {
       this.multiplayer.send('admin_launch_missile', {
-        targetPlayerId: targetPlayerId || 'area_strike',
-        targetPos,
+        targetPlayerId: selection.type === 'player' ? selection.playerId : 'area_strike',
+        targetPos: [t.x, t.y, t.z],
         count: launchCount,
         isSiloLaunch: true,
         flameColor: colorHex
       });
     }
 
-    // Announce in chat
-    if (this.multiplayer?.addChat) {
-      this.multiplayer.addChat({
-        senderName: 'SISTEMA DE SILOS',
-        text: `🚀 ¡Salva de ${launchCount} misiles de silo (Poder 2X) lanzada hacia ${targetName}!`,
-        system: true
+    this.salvo = { total: launchCount, launched: 0, startedAt: Date.now() };
+    this.notify(`🚀 Salva de ${launchCount} misil(es) hacia ${t.name}: salen de ${SILO_MISSILE_SPEC.pairSize} en ${SILO_MISSILE_SPEC.pairSize}, cada ${SILO_MISSILE_SPEC.pairIntervalSec} s.`);
+  }
+
+  emitSmoke(x, y, z, count, spread = 1.6, rise = 7) {
+    const pm = this.particleManager;
+    if (!pm || !pm.debrisParticles || typeof pm.maxDebris !== 'number') return;
+    for (let i = 0; i < count; i++) {
+      if (pm.debrisParticles.length >= pm.maxDebris) break;
+      const a = Math.random() * Math.PI * 2;
+      const s = Math.random() * spread;
+      pm.debrisParticles.push({
+        x: x + Math.cos(a) * 0.6,
+        y: y + Math.random() * 0.6,
+        z: z + Math.sin(a) * 0.6,
+        vx: Math.cos(a) * s,
+        vy: rise * (0.5 + Math.random() * 0.8),
+        vz: Math.sin(a) * s,
+        scale: 1.4 + Math.random() * 1.6,
+        rotX: Math.random() * 3,
+        rotY: Math.random() * 3,
+        life: 2.2,
+        maxLife: 2.2
       });
     }
   }
 
   /**
-   * Animates a single silo hatch open, spawns a 2X colossal missile, and closes hatch
+   * Visual/audio sequence for ONE silo: rumble + smoke, hatch swings open, then (1 s later, from
+   * missile.js) the rocket rises slowly out of the shaft; the hatch closes again afterwards.
    */
-  fireSingleSilo(siloIndex, targetPlayerId, targetPos, targetName, colorHex) {
+  fireSingleSilo(siloIndex) {
     const silo = this.silos[siloIndex];
     if (!silo) return;
 
     silo.isOpen = true;
     silo.targetProgress = 1.0;
     silo.isLaunching = true;
+    silo.openTimer = 7.0; // stays open while the missile climbs out and clears the shaft
+    silo.smokeTimer = 0;
 
-    // Spawn massive launch smoke and sparks at silo surface
-    if (this.particleManager && typeof this.particleManager.spawnDebris === 'function') {
-      this.particleManager.spawnDebris(silo.pos.x, silo.pos.y + 0.5, silo.pos.z, 28);
-    }
+    this.lastLaunchSilo = siloIndex;
+    this.lastLaunchTime = Date.now();
+    if (this.salvo) this.salvo.launched = Math.min(this.salvo.total, this.salvo.launched + 1);
 
-    // Spawn missile directly out of silo shaft
-    if (this.missileManager && typeof this.missileManager.spawnMissile === 'function') {
-      const missileId = 'silo_msl_' + Date.now() + '_' + siloIndex + '_' + Math.floor(Math.random() * 1000);
-      const payload = {
-        missileId,
-        launcherId: this.multiplayer?.myId || 'ADMIN_BUNKER',
-        launcherName: 'Búnker jsieiragerpe',
-        targetPlayerId,
-        targetName,
-        startPos: [silo.pos.x, silo.pos.y + 1.2, silo.pos.z],
-        targetPos,
-        startYaw: Math.atan2(targetPos[0] - silo.pos.x, targetPos[2] - silo.pos.z),
-        power: 8, // 2X power! (radius 18m)
-        launchType: 'land',
-        colorHex,
-        isSiloMissile: true
-      };
-      this.missileManager.spawnMissile(payload);
-    }
-
-    // Close hatch after missile clears shaft (1.8s)
-    setTimeout(() => {
-      silo.isOpen = false;
-      silo.targetProgress = 0.0;
-      silo.isLaunching = false;
-    }, 1800);
-  }
-
-  /**
-   * Launches a Manual Kinetic Interceptor (Blue Button)
-   * Directly intercepts and obliterates incoming hostile missiles targeting the bunker or admin
-   */
-  launchManualInterceptor() {
-    let closestThreat = null;
-    let closestDist = Infinity;
-
-    if (this.missileManager && this.missileManager.missiles) {
-      for (const m of this.missileManager.missiles.values()) {
-        if (!m.isInterceptor && !m.isRetaliation && !m.isDetonated && !m.isDestroyedMidAir) {
-          // Ignore own missiles
-          if (m.launcherId === this.multiplayer?.myId || m.launcherName === 'jsieiragerpe') continue;
-
-          const dist = m.pos.distanceTo(this.surfaceCenter);
-          if (dist < closestDist) {
-            closestDist = dist;
-            closestThreat = m;
-          }
-        }
-      }
-    }
-
-    if (!closestThreat) {
-      if (this.multiplayer?.showNotification) {
-        this.multiplayer.showNotification('🛡️ [INTERCEPTOR MANUAL] Escaneando espacio aéreo... No hay misiles hostiles entrantes.');
-      }
-      return;
-    }
-
-    // Fire direct interceptor from Silo 0
-    const silo = this.silos[0];
-    const sx = silo ? silo.pos.x : this.surfaceCenter.x;
-    const sy = silo ? silo.pos.y + 1.5 : this.surfaceCenter.y + 1.5;
-    const sz = silo ? silo.pos.z : this.surfaceCenter.z;
-
-    if (silo) {
-      silo.isOpen = true;
-      silo.targetProgress = 1.0;
-      setTimeout(() => {
-        silo.isOpen = false;
-        silo.targetProgress = 0.0;
-      }, 1500);
-    }
-
-    if (this.missileManager && typeof this.missileManager.launchSingleInterceptor === 'function') {
-      this.missileManager.launchSingleInterceptor(closestThreat, [sx, sy, sz]);
-    }
-
+    // Initial burst of launch smoke from the shaft
+    this.emitSmoke(silo.pos.x, silo.pos.y, silo.pos.z, 26, 2.2, 6);
     if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
       this.sound.playMissileLaunch();
     }
-
-    if (this.multiplayer?.showNotification) {
-      this.multiplayer.showNotification('🚀 [INTERCEPTOR MANUAL] ¡Misil cinético directo lanzado! Neutralizando amenaza...');
-    }
-
-    if (this.multiplayer?.addChat) {
-      this.multiplayer.addChat({
-        senderName: 'DEFENSA BÚNKER',
-        text: '🛡️ [INTERCEPCIÓN MANUAL] Misil interceptor lanzado desde silo subterráneo.',
-        system: true
-      });
-    }
   }
 
   /**
-   * Per-frame animation update for silo hatches, screens, and CCTV surveillance
+   * Launches a Manual Kinetic Interceptor (Blue Button): 1 direct interceptor at the most dangerous
+   * incoming missile (the one aimed at the bunker/admin; otherwise the nearest hostile one).
    */
+  launchManualInterceptor() {
+    const now = Date.now();
+    if (now - this.lastInterceptorTime < 900) return;
+    this.lastInterceptorTime = now;
+
+    const hostiles = this.hostileMissiles();
+    let threat = null;
+    let best = Infinity;
+    for (const m of hostiles) {
+      const aimedAtMe = (m.targetPlayerId === this.multiplayer?.myId) || m.targetName === 'jsieiragerpe' ||
+        (m.targetPos && isInsideBunker(m.targetPos.x, m.targetPos.y, m.targetPos.z));
+      const d = Math.hypot(m.pos.x + 500, m.pos.y - 24, m.pos.z - 300) - (aimedAtMe ? 1000 : 0);
+      if (d < best) {
+        best = d;
+        threat = m;
+      }
+    }
+
+    if (!threat) {
+      this.notify('🛡️ [INTERCEPTOR MANUAL] Escaneando espacio aéreo... No hay misiles hostiles entrantes.');
+      return;
+    }
+
+    // Fire from the silo closest to the threat
+    let siloIdx = 0;
+    let bestD = Infinity;
+    for (const s of this.silos) {
+      const d = Math.hypot(s.pos.x - threat.pos.x, s.pos.z - threat.pos.z);
+      if (d < bestD) { bestD = d; siloIdx = s.index; }
+    }
+    const silo = this.silos[siloIdx];
+    this.fireSingleSilo(siloIdx);
+    if (this.salvo) this.salvo.launched = Math.max(0, this.salvo.launched - 1); // interceptor is not part of a salvo
+
+    setTimeout(() => {
+      if (threat.isDetonated || threat.isDestroyedMidAir) return;
+      if (this.missileManager && typeof this.missileManager.launchSingleInterceptor === 'function') {
+        this.missileManager.launchSingleInterceptor(threat, [silo.pos.x, silo.pos.y + 1.5, silo.pos.z]);
+      }
+    }, 700);
+
+    this.notify('🚀 [INTERCEPTOR MANUAL] ¡Misil cinético directo lanzado! Neutralizando amenaza...');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-frame update
+  // ---------------------------------------------------------------------------
+
   update(dt, playerPos) {
-    // 1. Animate Silo Hatch Doors (swing upward to 85 degrees when opening)
+    this.timeAcc += dt;
+
+    // 1. Animate silo hatch doors (swing upward to ~85 degrees when launching) and exhaust smoke
     for (const silo of this.silos) {
+      if (silo.openTimer > 0) {
+        silo.openTimer -= dt;
+        silo.smokeTimer += dt;
+        if (silo.smokeTimer > 0.12 && silo.openTimer > 3.5) {
+          silo.smokeTimer = 0;
+          this.emitSmoke(silo.pos.x, silo.pos.y, silo.pos.z, 3, 1.2, 5);
+        }
+        if (silo.openTimer <= 0) {
+          silo.isOpen = false;
+          silo.isLaunching = false;
+          silo.targetProgress = 0.0;
+        }
+      }
       if (Math.abs(silo.openProgress - silo.targetProgress) > 0.01) {
-        const step = dt * 3.5;
+        const step = dt * 2.2;
         if (silo.openProgress < silo.targetProgress) {
           silo.openProgress = Math.min(silo.targetProgress, silo.openProgress + step);
         } else {
           silo.openProgress = Math.max(silo.targetProgress, silo.openProgress - step);
         }
-        if (silo.hatchPivot) {
-          silo.hatchPivot.rotation.x = -silo.openProgress * 1.48; // Swing up to ~85 degrees
-        }
+        silo.hatchPivot.rotation.x = -silo.openProgress * 1.48; // Swing up to ~85 degrees
       }
     }
 
-    // 2. Throttled Screen Updates (every 0.5s)
-    this.screenTimer = (this.screenTimer || 0) + dt;
-    if (this.screenTimer >= 0.5) {
-      this.screenTimer = 0;
-      this.renderTelemetryCanvas();
-      this.renderStatusCanvas();
-      this.renderCctvFeed();
+    if (this.holoRing) this.holoRing.rotation.y += dt * 0.9;
+
+    // 2. Player location state
+    this.playerInside = !!playerPos && this.isPlayerInsideBunker(playerPos);
+    const adminInside = this.playerInside && this.isMainAdminPlayer();
+
+    // Interior lights only burn while the admin is inside (no shader recompiles)
+    if (this.interiorLights) {
+      const target = adminInside ? 55 : 0;
+      for (const l of this.interiorLights) l.intensity = target;
     }
 
-    // 3. Check proximity to command console for prompt
-    if (playerPos) {
-      this.lastPlayerPos = playerPos;
-      const distToConsole = Math.hypot(
-        playerPos.x - this.center.x,
-        playerPos.y - this.center.y,
-        playerPos.z - this.center.z
-      );
-      const isInside = this.isPlayerInsideBunker(playerPos);
+    // 3. Touch HUD buttons
+    this.updateHud(playerPos);
 
-      // Biometric rejection for unauthorized intruders
-      const isAdmin = (this.multiplayer?.myEmail === 'jsieiragerpe@gmail.com' || this.multiplayer?.myName === 'jsieiragerpe');
-      if (isInside && !isAdmin) {
-        // Repel outside
-        if (this.multiplayer?.physics?.teleport) {
-          this.multiplayer.physics.teleport(-430, 25, 300);
-        }
-        if (this.multiplayer?.showNotification) {
-          this.multiplayer.showNotification('🛡️ Acceso denegado: Búnker Subterráneo exclusivo para jsieiragerpe.');
-        }
+    // 4. Live screens + real camera feeds (only while the admin is inside)
+    if (adminInside) {
+      this.screenTimer += dt;
+      if (this.screenTimer >= 0.4) {
+        this.screenTimer = 0;
+        this.drawTelemetry();
+        this.drawRadar();
+        this.drawStatus();
+        this.drawMapTable();
       }
+      this.renderCctvFeeds(dt);
+    }
 
-      // Proximity prompt for command console HUD
-      const promptElem = document.getElementById('bunker-console-prompt');
-      if (promptElem) {
-        if (isInside && isAdmin && distToConsole <= 12) {
-          promptElem.classList.remove('hidden');
-        } else {
-          promptElem.classList.add('hidden');
-        }
+    // 5. Keep the open console fresh (players move, salvo progresses)
+    if (this.bunkerModal && !this.bunkerModal.classList.contains('hidden')) {
+      this.modalTimer += dt;
+      if (this.modalTimer >= 0.7) {
+        this.modalTimer = 0;
+        this.refreshConsole();
       }
+    }
+
+    // 6. Biometric rejection for unauthorized intruders (server forcefield is authoritative too)
+    if (playerPos && this.playerInside && !this.isMainAdminPlayer()) {
+      this.teleportPlayer(-430, 25, 300, -Math.PI / 2);
+      this.notify('🛡️ Acceso denegado: Búnker Subterráneo exclusivo para jsieiragerpe.');
     }
   }
 }

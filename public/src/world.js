@@ -5482,23 +5482,47 @@ export class World {
     const ox = chunk.originX;
     const oz = chunk.originZ;
 
-    // Fast AABB rejection: Bunker interior spans X in [-520, -480], Z in [280, 320]
-    if (ox + CHUNK_WIDTH < -520 || ox > -480 || oz + CHUNK_DEPTH < 280 || oz > 320) {
+    // Fast AABB rejection: whole compound (silo field + chamber) spans X in [-566, -434], Z in [234, 366]
+    if (ox + CHUNK_WIDTH < -566 || ox > -434 || oz + CHUNK_DEPTH < 234 || oz > 366) {
       return;
     }
 
+    // 1. Command chamber: X in [-520, -481], Z in [280, 319] (blocks), headroom Y = 10..20
     for (let lx = 0; lx < CHUNK_WIDTH; lx++) {
       for (let lz = 0; lz < CHUNK_DEPTH; lz++) {
         const wx = ox + lx;
         const wz = oz + lz;
 
-        // Interior chamber bounds: X in [-516, -484], Z in [284, 316]
-        if (wx >= -516 && wx <= -484 && wz >= 284 && wz <= 316) {
-          // Reinforced stone subfloor at Y = 9
-          this.setVoxelInWorld(chunk, wx, 9, wz, BLOCKS.STONE);
-          // Excavate chamber interior headroom at Y = 10..16
-          for (let y = 10; y <= 16; y++) {
+        if (wx >= -520 && wx <= -481 && wz >= 280 && wz <= 319) {
+          // Dark reinforced subfloor at Y = 9
+          this.setVoxelInWorld(chunk, wx, 9, wz, BLOCKS.ASPHALT);
+          // Excavate chamber interior headroom at Y = 10..20
+          for (let y = 10; y <= 20; y++) {
             this.setVoxelInWorld(chunk, wx, y, wz, BLOCKS.AIR);
+          }
+        }
+      }
+    }
+
+    // 2. 180 silo shafts (3x3 holes, 2 deep) under every hatch; layout identical to bunker.js / server siloPosition()
+    const rings = [
+      { radius: 36, count: 40 },
+      { radius: 48, count: 60 },
+      { radius: 60, count: 80 }
+    ];
+    for (const ring of rings) {
+      for (let i = 0; i < ring.count; i++) {
+        const angle = (i / ring.count) * Math.PI * 2;
+        const ix = Math.floor(-500 + Math.cos(angle) * ring.radius);
+        const iz = Math.floor(300 + Math.sin(angle) * ring.radius);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const wx = ix + dx;
+            const wz = iz + dz;
+            if (wx < ox || wx >= ox + CHUNK_WIDTH || wz < oz || wz >= oz + CHUNK_DEPTH) continue;
+            this.setVoxelInWorld(chunk, wx, 21, wz, BLOCKS.ASPHALT);
+            this.setVoxelInWorld(chunk, wx, 22, wz, BLOCKS.AIR);
+            this.setVoxelInWorld(chunk, wx, 23, wz, BLOCKS.AIR);
           }
         }
       }

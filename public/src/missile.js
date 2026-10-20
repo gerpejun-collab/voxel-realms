@@ -80,12 +80,12 @@ export class GuidedMissile {
       this.maxTurnRate = 18.0;
       this.liftoffTime = 0.02; // Instantaneous mathematical engagement
     } else if (this.isSiloMissile) {
-      // Colossal 2X Silo Missiles:
-      this.speed = 4.0;
-      this.maxSpeed = 88.0;
-      this.accel = 28.0;
+      // Colossal 2X Silo Missiles: slow majestic rise out of the hatch (~2.6s), then violent acceleration
+      this.speed = 3.0;
+      this.maxSpeed = 95.0;
+      this.accel = 34.0;
       this.maxTurnRate = 3.2;
-      this.liftoffTime = 1.4;
+      this.liftoffTime = 2.6;
     } else if (this.isRetaliation) {
       this.speed = 4.0;
       this.maxSpeed = 80.0;
@@ -410,23 +410,24 @@ export class GuidedMissile {
       }
     } else if (this.launchType === 'land' && !this.isInterceptor && !this.isRetaliation) {
       // --- LAND LAUNCH PHASES ---
-      // Phase 1 (0 to 1.25s): slow majestic vertical liftoff ("lento al principio para verlo elevarse")
-      if (this.age < 1.25) {
-        this.speed = 3.5 + (this.age / 1.25) * 5.5; // Starts at 3.5 m/s, climbs to 9.0 m/s
+      const liftT = this.isSiloMissile ? 2.6 : 1.25;
+      // Phase 1: slow majestic vertical liftoff ("lento al principio para verlo elevarse")
+      if (this.age < liftT) {
+        this.speed = 3.5 + (this.age / liftT) * 5.5; // Starts at 3.5 m/s, climbs to 9.0 m/s
         this.forward.y = Math.min(0.96, this.forward.y + dt * 0.4);
         this.forward.normalize();
-        targetFlameScale = 0.6 + 0.3 * (this.age / 1.25);
+        targetFlameScale = (this.isSiloMissile ? 1.2 : 0.6) + 0.3 * (this.age / liftT);
         targetLightIntensity = 2.4;
-        smokeRate = 0.012; // Dense billowing launch smoke right in front of the player!
+        smokeRate = this.isSiloMissile ? 0.004 : 0.012; // Dense billowing launch smoke
       }
-      // Phase 2 (> 1.25s): booster stage ignition, tilts to target azimuth and "SALE DISPARADO" to maxSpeed!
+      // Phase 2: booster stage ignition, tilts to target azimuth and "SALE DISPARADO" to maxSpeed!
       else {
         if (this.speed < this.maxSpeed) {
           this.speed = Math.min(this.maxSpeed, this.speed + this.accel * dt);
         }
-        targetFlameScale = 1.65;
+        targetFlameScale = this.isSiloMissile ? 2.4 : 1.65;
         targetLightIntensity = 4.5;
-        smokeRate = 0.010;
+        smokeRate = this.isSiloMissile ? 0.003 : 0.010;
       }
     } else if (this.isInterceptor) {
       // Agile interceptor: quick thrust & sky blue contrail
@@ -693,6 +694,14 @@ export class MissileManager {
     if (!data || !data.missileId) return null;
     if (this.missiles.has(data.missileId)) return this.missiles.get(data.missileId);
 
+    // Silo missile: first the hatch opens (with rumble + smoke), then the rocket rises out of the shaft
+    if (data.isSiloMissile && !data._hatchOpened && this.bunkerManager &&
+        typeof this.bunkerManager.fireSingleSilo === 'function') {
+      this.bunkerManager.fireSingleSilo(data.siloIndex);
+      setTimeout(() => this.spawnMissile({ ...data, _hatchOpened: true }), 1000);
+      return null;
+    }
+
     const colorHex = this.getColorForPlayer(data.targetPlayerId);
     const missile = new GuidedMissile(
       { ...data, colorHex, missileManager: this },
@@ -740,15 +749,16 @@ export class MissileManager {
       }
     }
 
+    const probePos = playerPos || this.lastPlayerPos || (this.multiplayer?.physics?.pos) || null;
     const isInsideBunkerNow = this.bunkerManager && typeof this.bunkerManager.isPlayerInsideBunker === 'function'
-      ? this.bunkerManager.isPlayerInsideBunker(playerPos)
+      ? this.bunkerManager.isPlayerInsideBunker(probePos)
       : false;
     if (isInsideBunkerNow) {
+      // Inside the bunker the dome is OFF: only the manual blue interceptor button works
       this.pendingDefenses = [];
       this.pendingDefense = null;
       return;
     }
-
     // Proximity trigger distance: kept at 85.0 for baseline radar visual tracking,
     // with cinematic engagement distance (58.0m) ensuring interception occurs in plain sight ~25-35m overhead
     const PROXIMITY_TRIGGER_DIST = 85.0;
@@ -953,6 +963,7 @@ export class MissileManager {
    * Frame update for all active missiles
    */
   update(dt, playerPos) {
+    if (playerPos) this.lastPlayerPos = playerPos;
     if (this.pendingDefenses && this.pendingDefenses.length > 0) {
       this.checkProximityDefense(playerPos);
     } else if (this.pendingDefense) {

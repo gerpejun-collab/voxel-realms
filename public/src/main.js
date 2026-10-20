@@ -97,8 +97,11 @@ class VoxelRealmsApp {
       this.world,
       sound,
       this.multiplayer,
-      this.missileManager
+      this.missileManager,
+      this.sceneManager.renderer
     );
+    this.bunkerManager.physics = this.physics;
+    this.bunkerManager.controls = this.controls;
     this.missileManager.bunkerManager = this.bunkerManager;
     if (this.multiplayer) {
       this.multiplayer.bunkerManager = this.bunkerManager;

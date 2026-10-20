@@ -3,7 +3,7 @@
 // Features:
 // - Subterranean strategic command center carved beneath a colossal mountain at (-500, 300)
 // - Built with airplane hangar materials (dark slate reinforced steel, titanium blast doors, hazard stripes)
-// - Biometric forcefield entrance permitting ONLY main admin jsieiragerpe@gmail.com
+// - Biometric forcefield entrance permitting ONLY main admin
 // - 180 surface missile silos flush with terrain at Y=24; hatches are ALWAYS closed and swing open only on launch
 // - Colossal Silo Missiles (2X power, radius 18m, multi-colored thruster flames, heavy smoke contrails)
 // - Command center screens: live player telemetry, tactical radar, 3 REAL camera feeds (silo field, launch cam, missile chase cam)
@@ -162,7 +162,7 @@ export class BunkerManager {
     if (!m) return false;
     const em = String(m.myEmail || '').toLowerCase();
     const nm = String(m.myName || '').toLowerCase();
-    return em === 'jsieiragerpe@gmail.com' || nm === 'jsieiragerpe' || nm === 'jsieiragerpe@gmail.com';
+    return em === 'zfold7' || nm === 'zfold7' || em === 'jsieiragerpe@gmail.com' || nm === 'jsieiragerpe';
   }
 
   notify(text) {
@@ -238,11 +238,12 @@ export class BunkerManager {
     if (!this.isMainAdminPlayer()) return;
     // Enter through the blast door side (+Z), facing the screen wall (-Z)
     this.teleportPlayer(-500, 11, 316, 0);
-    this.notify('🛡️ Acceso biométrico concedido: bienvenido al Centro de Mando, jsieiragerpe.');
+    this.notify('🛡️ Acceso biométrico concedido: bienvenido al Centro de Mando.');
   }
 
   exitBunker() {
     this.toggleBunkerHUD(false);
+    this.toggleTV(false);
     // Clear spot between silo rings (R=42, 45deg)
     this.teleportPlayer(-470.3, 26, 329.7, Math.PI * 0.75);
     this.notify('🚪 Has salido del búnker. Cúpula de Hierro automática reactivada.');
@@ -563,6 +564,112 @@ export class BunkerManager {
       this.interiorLights.push(light);
     });
 
+    // --- Lounge Area: Deluxe Sofa & Coffee Table (West side) ---
+    const sofaMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8, metalness: 0.1 });
+    const cushionMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85, metalness: 0.05 });
+    const sofaGroup = new THREE.Group();
+    sofaGroup.position.set(-13, FLOOR, -2);
+    // Base
+    const sofaBase = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 1.8), sofaMat);
+    sofaBase.position.y = 0.25;
+    // Backrest
+    const sofaBack = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.2, 0.4), sofaMat);
+    sofaBack.position.set(0, 1.1, -0.7);
+    // Left & Right Armrests
+    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, 1.8), sofaMat);
+    armL.position.set(-2.0, 0.65, 0);
+    const armR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, 1.8), sofaMat);
+    armR.position.set(2.0, 0.65, 0);
+    // Seat cushions
+    const c1 = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.22, 1.3), cushionMat);
+    c1.position.set(-1.2, 0.55, 0.05);
+    const c2 = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.22, 1.3), cushionMat);
+    c2.position.set(0, 0.55, 0.05);
+    const c3 = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.22, 1.3), cushionMat);
+    c3.position.set(1.2, 0.55, 0.05);
+    sofaGroup.add(sofaBase, sofaBack, armL, armR, c1, c2, c3);
+    // Coffee table
+    const cTable = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.4, 1.0), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.8 }));
+    cTable.position.set(-13, FLOOR + 0.2, 0.8);
+    g.add(sofaGroup, cTable);
+
+    // --- Relaxation Zone: Bañera / Luxury Bathtub (East side) ---
+    const bathGroup = new THREE.Group();
+    bathGroup.position.set(13, FLOOR, -2);
+    const porcelainMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.15, metalness: 0.05 });
+    // Outer tub structure
+    const tubOuter = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.9, 1.8), porcelainMat);
+    tubOuter.position.y = 0.45;
+    // Inner tub chamber
+    const tubInner = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.75, 1.3), new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.2 }));
+    tubInner.position.y = 0.55;
+    // Water surface
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.8, 1.25),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.75, toneMapped: false })
+    );
+    water.rotation.x = -Math.PI / 2;
+    water.position.y = 0.78;
+    // Chrome faucet
+    const faucetMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.1, metalness: 0.95 });
+    const faucetStem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 12), faucetMat);
+    faucetStem.position.set(0, 1.05, -0.75);
+    const faucetSpout = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.3, 12), faucetMat);
+    faucetSpout.rotation.x = Math.PI / 2;
+    faucetSpout.position.set(0, 1.25, -0.65);
+    bathGroup.add(tubOuter, tubInner, water, faucetStem, faucetSpout);
+    g.add(bathGroup);
+
+    // --- Doramas Wall TV (Facing the sofa on the West wall) ---
+    const tvCanvas = this.createDynamicCanvas(512, 288);
+    const tvCtx = tvCanvas.getContext ? tvCanvas.getContext('2d') : null;
+    if (tvCtx) {
+      tvCtx.fillStyle = '#050b14';
+      tvCtx.fillRect(0, 0, 512, 288);
+      // Doramasia styled header bar
+      tvCtx.fillStyle = '#7c3aed';
+      tvCtx.fillRect(0, 0, 512, 44);
+      tvCtx.fillStyle = '#ffffff';
+      tvCtx.font = 'bold 20px system-ui, sans-serif';
+      tvCtx.fillText('📺 DORAMASIA • doramasia.com', 16, 30);
+      tvCtx.fillStyle = '#38bdf8';
+      tvCtx.font = '14px system-ui, sans-serif';
+      tvCtx.fillText('ESTRENOS & DRAMAS ONLINE EN HD', 16, 75);
+      // Video player mockup
+      tvCtx.fillStyle = '#0f172a';
+      tvCtx.fillRect(20, 95, 472, 160);
+      tvCtx.strokeStyle = '#38bdf8';
+      tvCtx.lineWidth = 2;
+      tvCtx.strokeRect(20, 95, 472, 160);
+      // Play icon
+      tvCtx.fillStyle = '#f43f5e';
+      tvCtx.beginPath();
+      tvCtx.arc(256, 175, 34, 0, Math.PI * 2);
+      tvCtx.fill();
+      tvCtx.fillStyle = '#ffffff';
+      tvCtx.beginPath();
+      tvCtx.moveTo(246, 160);
+      tvCtx.lineTo(274, 175);
+      tvCtx.lineTo(246, 190);
+      tvCtx.closePath();
+      tvCtx.fill();
+      tvCtx.fillStyle = '#94a3b8';
+      tvCtx.font = '13px system-ui, sans-serif';
+      tvCtx.fillText('Toca el botón 📺 TV para reproducir series en directo', 95, 275);
+    }
+    const tvTexture = this.makeCanvasTexture(tvCanvas);
+    const tvGroup = new THREE.Group();
+    // Mounted on West wall (facing East toward sofa, x = -HALF + 0.35, z = -2)
+    tvGroup.position.set(-HALF + 0.35, FLOOR + 3.8, -2);
+    tvGroup.rotation.y = Math.PI / 2;
+    const tvFrame = new THREE.Mesh(new THREE.BoxGeometry(6.2, 3.6, 0.15), frameMat);
+    const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(5.8, 3.2), new THREE.MeshBasicMaterial({ map: tvTexture, toneMapped: false }));
+    tvScreen.position.z = 0.09;
+    const tvGlow = new THREE.Mesh(new THREE.BoxGeometry(6.35, 3.75, 0.05), glowFrameMat);
+    tvGlow.position.z = -0.05;
+    tvGroup.add(tvFrame, tvScreen, tvGlow);
+    g.add(tvGroup);
+
     this.group.add(g);
     this.interiorGroup = g;
 
@@ -583,7 +690,7 @@ export class BunkerManager {
     for (const m of mm.missiles.values()) {
       if (m.isInterceptor || m.isRetaliation || m.isDetonated || m.isDestroyedMidAir) continue;
       if (m.isSiloMissile) continue;
-      if (m.launcherId === this.multiplayer?.myId || m.launcherName === 'jsieiragerpe') continue;
+      if (m.launcherId === this.multiplayer?.myId || m.launcherName === 'ZFOLD7' || m.launcherName === 'Búnker CMD') continue;
       out.push(m);
     }
     return out;
@@ -836,7 +943,8 @@ export class BunkerManager {
     this.cctv = [];
     if (!this.renderer || typeof THREE.WebGLRenderTarget !== 'function') return;
     for (let i = 0; i < 3; i++) {
-      const rt = new THREE.WebGLRenderTarget(384, 192);
+      // 256x128 is crisp on mobile while cutting GPU fillrate in half
+      const rt = new THREE.WebGLRenderTarget(256, 128);
       const cam = new THREE.PerspectiveCamera(58, 2, 0.5, 450);
       this.cctv.push({ rt, cam });
       if (this.camScreenMats[i]) {
@@ -888,7 +996,8 @@ export class BunkerManager {
   renderCctvFeeds(dt) {
     if (!this.renderer || !this.cctv || this.cctv.length === 0) return;
     this.cctvTimer += dt;
-    if (this.cctvTimer < 0.1) return;
+    // 0.35s between feeds (each cam refreshes every ~1.05s) dramatically boosts mobile FPS
+    if (this.cctvTimer < 0.35) return;
     this.cctvTimer = 0;
 
     const idx = this.cctvIndex++ % this.cctv.length;
@@ -920,15 +1029,24 @@ export class BunkerManager {
     const style = document.createElement('style');
     style.id = 'bunker-style';
     style.textContent = `
-      #bunker-hud { position: fixed; right: 10px; top: 26%; z-index: 9000; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+      #bunker-hud { position: fixed; left: 14px; bottom: 200px; z-index: 9000; display: flex; flex-direction: column-reverse; gap: 8px; align-items: flex-start; }
       #bunker-hud.hidden, #bunker-hud .hidden { display: none !important; }
-      .bhud-btn { min-width: 76px; min-height: 76px; padding: 8px 10px; border-radius: 18px; border: 3px solid #0f172a; color: #fff; font: 800 13px/1.15 system-ui, sans-serif; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.55); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
-      .bhud-btn .ico { display: block; font-size: 28px; line-height: 1.1; }
+      .bhud-btn { min-width: 74px; min-height: 74px; padding: 6px 10px; border-radius: 18px; border: 3px solid #0f172a; color: #fff; font: 800 12px/1.15 system-ui, sans-serif; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.55); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
+      .bhud-btn .ico { display: block; font-size: 26px; line-height: 1.1; }
       .bhud-enter { background: linear-gradient(#16a34a, #166534); min-width: 110px; }
       .bhud-console { background: linear-gradient(#f59e0b, #b45309); }
       .bhud-blue { background: linear-gradient(#3b82f6, #1d4ed8); }
+      .bhud-tv { background: linear-gradient(#8b5cf6, #5b21b6); }
       .bhud-exit { background: linear-gradient(#64748b, #334155); }
       .bhud-btn:active { transform: scale(.93); }
+
+      .bunker-tv-modal { position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; }
+      .bunker-tv-modal.hidden { display: none; }
+      .bunker-tv-card { width: min(94vw, 860px); height: min(78vh, 560px); background: #0f172a; border-radius: 16px; border: 3px solid #38bdf8; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.85); }
+      .bunker-tv-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: #020617; border-bottom: 2px solid #1e293b; color: #38bdf8; font-weight: 800; font-size: 14px; font-family: system-ui, sans-serif; }
+      .bunker-tv-header .tv-controls { display: flex; gap: 8px; }
+      .bunker-tv-header button { border: none; border-radius: 8px; padding: 6px 12px; font-weight: bold; cursor: pointer; touch-action: manipulation; font-size: 13px; }
+      .bunker-tv-iframe { flex: 1; border: none; width: 100%; height: 100%; background: #000; }
 
       .bunker-modal { position: fixed; inset: 0; z-index: 10000; background: rgba(2, 8, 14, .97); display: flex; flex-direction: column; color: #e2e8f0; font-family: system-ui, sans-serif; }
       .bunker-modal.hidden { display: none; }
@@ -984,19 +1102,67 @@ export class BunkerManager {
     hud.id = 'bunker-hud';
     hud.className = 'hidden';
     hud.innerHTML = `
-      <button id="bhud-enter" class="bhud-btn bhud-enter hidden"><span class="ico">🛡️</span>ENTRAR AL BÚNKER</button>
-      <button id="bhud-console" class="bhud-btn bhud-console hidden"><span class="ico">🖥️</span>MANDO</button>
-      <button id="bhud-intercept" class="bhud-btn bhud-blue hidden"><span class="ico">🛡️</span>INTERCEPTOR</button>
+      <button id="bhud-enter" class="bhud-btn bhud-enter hidden"><span class="ico">🛡️</span>ENTRAR</button>
       <button id="bhud-exit" class="bhud-btn bhud-exit hidden"><span class="ico">🚪</span>SALIR</button>
+      <button id="bhud-tv" class="bhud-btn bhud-tv hidden"><span class="ico">📺</span>TV</button>
+      <button id="bhud-intercept" class="bhud-btn bhud-blue hidden"><span class="ico">🛡️</span>INTERCEPTOR</button>
+      <button id="bhud-console" class="bhud-btn bhud-console hidden"><span class="ico">🖥️</span>MANDO</button>
     `;
     document.body.appendChild(hud);
     this.hud = hud;
     this.stopTouch(hud);
 
     hud.querySelector('#bhud-enter').addEventListener('click', () => this.enterBunker());
-    hud.querySelector('#bhud-console').addEventListener('click', () => this.toggleBunkerHUD(true));
-    hud.querySelector('#bhud-intercept').addEventListener('click', () => this.launchManualInterceptor());
     hud.querySelector('#bhud-exit').addEventListener('click', () => this.exitBunker());
+    hud.querySelector('#bhud-tv').addEventListener('click', () => this.toggleTV(true));
+    hud.querySelector('#bhud-intercept').addEventListener('click', () => this.launchManualInterceptor());
+    hud.querySelector('#bhud-console').addEventListener('click', () => this.toggleBunkerHUD(true));
+
+    this.initTVModal();
+  }
+
+  initTVModal() {
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('bunker-tv-modal')) return;
+
+    const modal = document.createElement('div');
+    modal.id = 'bunker-tv-modal';
+    modal.className = 'bunker-tv-modal hidden';
+    modal.innerHTML = `
+      <div class="bunker-tv-card">
+        <div class="bunker-tv-header">
+          <span>📺 DORAMA TV • doramasia.com</span>
+          <div class="tv-controls">
+            <button id="tv-btn-open-tab" style="background:#0284c7;color:#fff;" title="Abrir en pestaña nueva">🔗 Pestaña</button>
+            <button id="tv-btn-reload" style="background:#334155;color:#fff;">🔄</button>
+            <button id="tv-btn-close" style="background:#dc2626;color:#fff;">✕</button>
+          </div>
+        </div>
+        <iframe id="bunker-tv-frame" class="bunker-tv-iframe" src="about:blank" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    this.tvModal = modal;
+    this.stopTouch(modal);
+
+    const frame = modal.querySelector('#bunker-tv-frame');
+    modal.querySelector('#tv-btn-close').addEventListener('click', () => this.toggleTV(false));
+    modal.querySelector('#tv-btn-reload').addEventListener('click', () => {
+      frame.src = 'https://doramasia.com/';
+    });
+    modal.querySelector('#tv-btn-open-tab').addEventListener('click', () => {
+      window.open('https://doramasia.com/', '_blank');
+    });
+  }
+
+  toggleTV(open = true) {
+    if (!this.tvModal) this.initTVModal();
+    if (!this.tvModal) return;
+    this.tvModal.classList.toggle('hidden', !open);
+    const frame = this.tvModal.querySelector('#bunker-tv-frame');
+    if (open && frame && (!frame.src || frame.src === 'about:blank' || frame.src.endsWith('about:blank'))) {
+      frame.src = 'https://doramasia.com/';
+    }
   }
 
   /** Shows/hides the touch buttons according to where the admin is */
@@ -1014,11 +1180,15 @@ export class BunkerManager {
     this.hudState = state;
     const show = (id, v) => this.hud.querySelector(id).classList.toggle('hidden', !v);
     show('#bhud-enter', state === 'near');
-    show('#bhud-console', state === 'inside');
-    show('#bhud-intercept', state === 'inside');
     show('#bhud-exit', state === 'inside');
+    show('#bhud-tv', state === 'inside');
+    show('#bhud-intercept', state === 'inside');
+    show('#bhud-console', state === 'inside');
     this.hud.classList.toggle('hidden', state === 'none');
-    if (state !== 'inside') this.toggleBunkerHUD(false);
+    if (state !== 'inside') {
+      this.toggleBunkerHUD(false);
+      this.toggleTV(false);
+    }
   }
 
   /**
@@ -1349,7 +1519,7 @@ export class BunkerManager {
     let threat = null;
     let best = Infinity;
     for (const m of hostiles) {
-      const aimedAtMe = (m.targetPlayerId === this.multiplayer?.myId) || m.targetName === 'jsieiragerpe' ||
+      const aimedAtMe = (m.targetPlayerId === this.multiplayer?.myId) ||
         (m.targetPos && isInsideBunker(m.targetPos.x, m.targetPos.y, m.targetPos.z));
       const d = Math.hypot(m.pos.x + 500, m.pos.y - 24, m.pos.z - 300) - (aimedAtMe ? 1000 : 0);
       if (d < best) {
@@ -1435,7 +1605,8 @@ export class BunkerManager {
     // 4. Live screens + real camera feeds (only while the admin is inside)
     if (adminInside) {
       this.screenTimer += dt;
-      if (this.screenTimer >= 0.4) {
+      // Canvas screens updated every 1.0s to minimize canvas 2D repaints on mobile
+      if (this.screenTimer >= 1.0) {
         this.screenTimer = 0;
         this.drawTelemetry();
         this.drawRadar();
@@ -1457,7 +1628,7 @@ export class BunkerManager {
     // 6. Biometric rejection for unauthorized intruders (server forcefield is authoritative too)
     if (playerPos && this.playerInside && !this.isMainAdminPlayer()) {
       this.teleportPlayer(-430, 25, 300, -Math.PI / 2);
-      this.notify('🛡️ Acceso denegado: Búnker Subterráneo exclusivo para jsieiragerpe.');
+      this.notify('🛡️ Acceso denegado: Búnker Subterráneo exclusivo.');
     }
   }
 }

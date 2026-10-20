@@ -56,7 +56,7 @@ const MAX_PLAYER_ID_LENGTH = 64;
 
 const ADMIN_EMAIL = 'jsieiragerpe@gmail.com';
 const RIVAL_ADMIN_EMAIL = 'cifrixa.labs.contact@gmail.com';
-const ADMIN_EMAILS = [ADMIN_EMAIL, RIVAL_ADMIN_EMAIL];
+const ADMIN_EMAILS = [ADMIN_EMAIL, RIVAL_ADMIN_EMAIL, 'ZFOLD7'];
 
 const AIR_BASE_BOUNDS = {
   minX: -455,
@@ -163,10 +163,15 @@ function isValidAdminCredentials(identifier, key = '') {
     // User specification: cifrixa does not require password
     return true;
   }
-  if (normEmail !== ADMIN_EMAIL && normEmail !== 'jsieiragerpe') return false;
+  const isMainAdmin = (
+    normEmail === ADMIN_EMAIL.toLowerCase() ||
+    normEmail === 'jsieiragerpe' ||
+    normEmail === 'zfold7'
+  );
+  if (!isMainAdmin) return false;
   if (typeof key !== 'string') return false;
   const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return normKey === 'ARGON4';
+  return normKey === 'ARGON4' || normKey === 'ZFOLD7';
 }
 
 /**
@@ -175,6 +180,9 @@ function isValidAdminCredentials(identifier, key = '') {
 function sanitizeName(name) {
   if (typeof name !== 'string') return 'Player';
   const normEmail = name.trim().toLowerCase();
+  if (normEmail === 'zfold7') {
+    return 'ZFOLD7';
+  }
   if (normEmail === ADMIN_EMAIL || normEmail === 'jsieiragerpe') {
     return 'jsieiragerpe';
   }
@@ -292,8 +300,9 @@ function isValidVehicleDrive(data) {
 
 function isValidMissileLaunch(data) {
   if (!data || typeof data !== 'object') return false;
-  if (typeof data.targetPlayerId !== 'string' || data.targetPlayerId.length === 0 || data.targetPlayerId.length > MAX_PLAYER_ID_LENGTH) return false;
-  return true;
+  const hasTargetId = typeof data.targetPlayerId === 'string' && data.targetPlayerId.length > 0 && data.targetPlayerId.length <= MAX_PLAYER_ID_LENGTH;
+  const hasTargetPos = Array.isArray(data.targetPos) && data.targetPos.length >= 3 && typeof data.targetPos[0] === 'number';
+  return hasTargetId || hasTargetPos;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

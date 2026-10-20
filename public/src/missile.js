@@ -47,7 +47,7 @@ export class GuidedMissile {
       sy + (this.launchType === 'air' ? 0.2 : 0.4),
       sz + forwardZ * spawnDist
     );
-    this.targetPos = new THREE.Vector3(tx, ty + 1.0, tz);
+    this.targetPos = new THREE.Vector3(tx, ty + 0.85, tz);
     this.lastKnownTargetPos = this.targetPos.clone();
     this.targetDisconnected = false;
     this.targetVelocity = new THREE.Vector3(0, 0, 0);
@@ -314,7 +314,7 @@ export class GuidedMissile {
     }
 
     if (targetData && Array.isArray(targetData.pos)) {
-      const newPos = new THREE.Vector3(targetData.pos[0], targetData.pos[1] + 1.0, targetData.pos[2]);
+      const newPos = new THREE.Vector3(targetData.pos[0], targetData.pos[1] + 0.85, targetData.pos[2]);
       if (this.hasPrevTargetPos) {
         const velSample = new THREE.Vector3().subVectors(newPos, this.prevTargetPos).multiplyScalar(10.0);
         if (velSample.length() < 60.0) {
@@ -349,12 +349,13 @@ export class GuidedMissile {
 
     // Base Militar Forcefield Anti-Missile Perimeter
     // Only intercepts HOSTILE missiles targeting the base or entering the base airspace from unauthorized attackers.
-    // Missiles launched BY the main admin (jsieiragerpe@gmail.com, jsieiragerpe, Admin),
-    // retaliation missiles, or interceptors are strictly EXEMPT!
+    // Missiles launched BY the main admin, retaliation missiles, or interceptors are strictly EXEMPT!
     const isMainAdminLauncher = (
+      this.launcherName === 'ZFOLD7' ||
       this.launcherName === 'jsieiragerpe' ||
       this.launcherName === 'jsieiragerpe@gmail.com' ||
       this.launcherName === 'Admin' ||
+      this.launcherName === 'Búnker CMD' ||
       this.launcherName === 'Búnker jsieiragerpe' ||
       this.launcherId === 'p_main_admin' ||
       this.launcherId === 'ADMIN_RETALIATION' ||
@@ -362,8 +363,8 @@ export class GuidedMissile {
       this.launcherId === 'ADMIN_BUNKER'
     );
     if (!this.isInterceptor && !this.isRetaliation && !isMainAdminLauncher) {
-      if ((this.pos.x >= -455 && this.pos.x <= -385 && this.pos.z >= 115 && this.pos.z <= 185 && this.pos.y <= 85) ||
-          (this.pos.x >= -565 && this.pos.x <= -435 && this.pos.z >= 235 && this.pos.z <= 365 && this.pos.y <= 85)) {
+      // Only air base perimeter has auto forcefield; bunker mountain missiles impact directly unless intercepted manually
+      if (this.pos.x >= -455 && this.pos.x <= -385 && this.pos.z >= 115 && this.pos.z <= 185 && this.pos.y <= 85) {
         this.destroyMidAir();
         return;
       }
@@ -458,8 +459,9 @@ export class GuidedMissile {
       }
 
       // Proximity Fuze & CPA Detonation:
-      const proximityThreshold = this.isInterceptor ? 6.5 : (this.isSiloMissile ? 6.0 : 4.5);
-      const cpaDetonate = (this.closestDistToTarget <= 12.0 && rawDist > this.closestDistToTarget + 0.35);
+      // Calibrated dead-on so standard missiles impact right into the player character body
+      const proximityThreshold = this.isInterceptor ? 4.5 : (this.isSiloMissile ? 2.6 : 1.6);
+      const cpaDetonate = (this.closestDistToTarget <= 2.8 && rawDist > this.closestDistToTarget + 0.25);
 
       // Orbit Breaker: If missile stays within close range (< 32m) for > 1.4s without hitting, detonate immediately!
       if (rawDist < 32.0) {
@@ -486,8 +488,8 @@ export class GuidedMissile {
 
       // Lead Pursuit / Proportional Intercept:
       // Steer towards target position plus velocity projection
-      const closingSpeed = Math.max(this.speed, 20.0);
-      const leadTime = Math.min(1.2, rawDist / closingSpeed);
+      const closingSpeed = Math.max(this.speed, 25.0);
+      const leadTime = Math.min(0.85, rawDist / closingSpeed);
       const aimTarget = this.targetPos.clone();
       if (this.targetVelocity.lengthSq() > 0.01) {
         aimTarget.addScaledVector(this.targetVelocity, leadTime);
@@ -499,15 +501,15 @@ export class GuidedMissile {
       }
 
       // Adaptive Turning Rate:
-      // As distance to target decreases (< 50m), dynamically scale up maxTurnRate (from base up to 10.5 - 13.0 rad/s)
+      // As distance to target decreases (< 45m), dynamically scale up maxTurnRate (from base up to 12.0 - 16.0 rad/s)
       let currentTurnRate = this.maxTurnRate;
-      if (rawDist < 50.0) {
-        const t = 1.0 - Math.max(0, Math.min(1.0, (rawDist - 4.0) / 46.0));
-        const maxCloseTurn = this.isInterceptor ? 13.0 : 10.5;
+      if (rawDist < 45.0) {
+        const t = 1.0 - Math.max(0, Math.min(1.0, (rawDist - 2.0) / 43.0));
+        const maxCloseTurn = this.isInterceptor ? 16.0 : 12.0;
         currentTurnRate = THREE.MathUtils.lerp(this.maxTurnRate, maxCloseTurn, t);
-        // Moderate terminal speed inside close range (< 25m) so turning circle radius shrinks to < 3.5m
-        if (rawDist < 25.0 && this.speed > 45.0) {
-          this.speed = Math.max(45.0, this.speed - 35.0 * dt);
+        // Moderate terminal speed inside close range (< 18m) so turning circle radius shrinks
+        if (rawDist < 18.0 && this.speed > 38.0) {
+          this.speed = Math.max(38.0, this.speed - 30.0 * dt);
         }
       }
 
@@ -773,7 +775,7 @@ export class MissileManager {
       let targetY = defenderPos ? defenderPos[1] : 25;
       let targetZ = defenderPos ? defenderPos[2] : 0;
 
-      if (playerPos && (this.multiplayer?.myId === data.defenderId || this.multiplayer?.myName === 'jsieiragerpe')) {
+      if (playerPos && (this.multiplayer?.myId === data.defenderId)) {
         targetX = playerPos.x;
         targetY = playerPos.y;
         targetZ = playerPos.z;
@@ -971,7 +973,7 @@ export class MissileManager {
     }
 
     // Continuous Threat Detection for incoming hostile missiles
-    const isAdmin = (this.multiplayer?.myName === 'jsieiragerpe' || this.multiplayer?.myEmail === 'jsieiragerpe@gmail.com' || this.multiplayer?.isAdmin);
+    const isAdmin = (this.multiplayer?.myName === 'ZFOLD7' || this.multiplayer?.myEmail === 'ZFOLD7' || this.multiplayer?.isAdmin);
     if (isAdmin && playerPos) {
       const defVec = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
       const isInsideBunkerNow = this.bunkerManager && typeof this.bunkerManager.isPlayerInsideBunker === 'function'
@@ -983,6 +985,8 @@ export class MissileManager {
           // EXCLUDE OWN MISSILES: Admin's own missiles must NEVER be intercepted by own defense!
           const isMyOwnMissile = (
             m.launcherId === this.multiplayer?.myId ||
+            m.launcherName === 'ZFOLD7' ||
+            m.launcherName === 'Búnker CMD' ||
             m.launcherName === 'jsieiragerpe' ||
             m.launcherName === 'jsieiragerpe@gmail.com' ||
             m.launcherName === 'Admin' ||
@@ -992,9 +996,11 @@ export class MissileManager {
           );
           if (isMyOwnMissile) continue;
 
-          // TARGET CHECK: ONLY intercept missiles that are ACTUALLY targeting me or the military base/bunker!
+          // TARGET CHECK: ONLY intercept missiles that are ACTUALLY targeting me or the military base!
           const targetsMe = (
             m.targetPlayerId === this.multiplayer?.myId ||
+            m.targetName === 'ZFOLD7' ||
+            m.targetName === 'zfold7' ||
             m.targetName === 'jsieiragerpe' ||
             m.targetName === 'jsieiragerpe@gmail.com' ||
             m.targetName === 'Admin'

@@ -369,8 +369,8 @@ export class StrategicBomber {
         this.pos.x += this.forward.x * this.speed * dt;
         this.pos.z += this.forward.z * this.speed * dt;
 
-        // Begin bomb run when within 45m horizontal distance
-        if (distToTarget <= 45.0) {
+        // Begin bomb run when within 85m horizontal distance for pinpoint carpet bombing
+        if (distToTarget <= 85.0) {
           this.state = 'BOMB_RUN';
           this.stateTimer = 0;
           this.bombDropTimer = 0;
@@ -534,6 +534,21 @@ export class StrategicBomber {
   dropSingleBomb() {
     const bombOrigin = this.pos.clone().add(new THREE.Vector3(0, -1.8, 0));
     const bomb = this.createFallingBomb(bombOrigin);
+
+    // Ballistic calibration: calculate required horizontal velocity vector to land directly on target
+    if (this.targetPos) {
+      const targetY = (typeof this.targetPos.y === 'number') ? this.targetPos.y : 25;
+      const dropH = Math.max(8.0, bombOrigin.y - targetY);
+      // t_fall from h = 3.5*t + 0.5*24*t^2 -> 12*t^2 + 3.5*t - dropH = 0
+      const tof = Math.max(0.4, (-3.5 + Math.sqrt(12.25 + 48.0 * dropH)) / 24.0);
+      // Tight carpet spread centered directly on the target player
+      const spread = (this.bombsDropped - 5) * 1.8;
+      const targetX = this.targetPos.x + this.forward.x * spread;
+      const targetZ = this.targetPos.z + this.forward.z * spread;
+      bomb.vel.x = (targetX - bombOrigin.x) / tof;
+      bomb.vel.z = (targetZ - bombOrigin.z) / tof;
+    }
+
     this.activeBombs.push(bomb);
 
     if (typeof this.onBombDrop === 'function') {
@@ -542,8 +557,8 @@ export class StrategicBomber {
           x: bombOrigin.x,
           y: bombOrigin.y,
           z: bombOrigin.z,
-          vx: this.forward.x * (this.speed * 0.45),
-          vz: this.forward.z * (this.speed * 0.45),
+          vx: bomb.vel.x,
+          vz: bomb.vel.z,
           targetPos: this.targetPos ? [this.targetPos.x, this.targetPos.y, this.targetPos.z] : null
         });
       } catch (_) {}
@@ -636,9 +651,9 @@ export class StrategicBomber {
 
       // Gravity: accelerates downward at 24 m/s^2 up to terminal velocity (-65 m/s)
       bomb.vel.y = Math.max(-65.0, bomb.vel.y - 24.0 * dt);
-      // Horizontal drag
-      bomb.vel.x *= Math.pow(0.985, dt * 60);
-      bomb.vel.z *= Math.pow(0.985, dt * 60);
+      // Realistic low drag for heavy aerodynamic bombs
+      bomb.vel.x *= Math.pow(0.998, dt * 60);
+      bomb.vel.z *= Math.pow(0.998, dt * 60);
 
       // Integrate position
       bomb.pos.x += bomb.vel.x * dt;

@@ -483,7 +483,12 @@ export class MultiplayerClient {
           this.missileManager.spawnMissile(data);
         }
         if (this.onNotification && data) {
-          this.onNotification(`🚀 Alerta: Misil guiado lanzado hacia ${data.targetName || 'un objetivo'}.`);
+          const isTargetMe = (data.targetPlayerId === this.myId || data.targetName === this.myName);
+          if (isTargetMe) {
+            this.onNotification(`⚠️ ¡ALERTA! ¡Misil guiado hostil aproximándose hacia ti!`);
+          } else if (data.launcherId === this.myId) {
+            this.onNotification(`🚀 Misil lanzado hacia ${data.targetName || 'objetivo'}.`);
+          }
         }
         break;
 
@@ -494,7 +499,7 @@ export class MultiplayerClient {
         if (data && this.bomberManager && typeof this.bomberManager.launchMission === 'function') {
           this.bomberManager.launchMission(data.attackerId, data.attackerPos, data.attackerName);
         }
-        if (this.onNotification) {
+        if (this.onNotification && (data?.defenderId === this.myId || data?.defenderName === this.myName)) {
           this.onNotification('🛡️ [DEFENSA ACTIVA] Cúpula de Hierro desplegando 5 interceptores...');
         }
         break;

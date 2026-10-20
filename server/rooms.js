@@ -240,16 +240,18 @@ class RoomManager {
     const isAdmin = isValidAdminCredentials(rawEmail || rawName, data?.adminKey || '');
     const normAdminEmail = isAdmin ? (rawEmail || rawName).toLowerCase() : null;
 
-    // Strict protection: ANY attempt to join using 'jsieiragerpe' or 'jsieiragerpe@gmail.com' in EITHER email or name
+    // Strict protection: ANY attempt to join using the main admin identifier in EITHER email or name
     // MUST validate as admin (with ARGON4 / ARGÓN4), otherwise access is rejected!
     const isMainAdminTarget = (
-      normEmail === ADMIN_EMAIL ||
+      normEmail === ADMIN_EMAIL.toLowerCase() ||
       normEmail === 'jsieiragerpe' ||
-      normName === ADMIN_EMAIL ||
-      normName === 'jsieiragerpe'
+      normEmail === 'zfold7' ||
+      normName === ADMIN_EMAIL.toLowerCase() ||
+      normName === 'jsieiragerpe' ||
+      normName === 'zfold7'
     );
     if (isMainAdminTarget && !isAdmin) {
-      this.send(ws, MSG.ERROR, { message: 'Contraseña de administrador requerida o incorrecta para jsieiragerpe (ARGON4).' });
+      this.send(ws, MSG.ERROR, { message: 'Contraseña de administrador requerida.' });
       return;
     }
 
@@ -434,7 +436,7 @@ class RoomManager {
           this.send(ws, MSG.CHAT_BROADCAST, {
             senderId: 'SYSTEM',
             senderName: 'CAMPO DE FUERZA',
-            text: '🛡️ Acceso denegado: Búnker Subterráneo exclusivo para jsieiragerpe.',
+            text: '🛡️ Acceso denegado: Búnker Subterráneo exclusivo.',
             timestamp: now
           });
         }
@@ -492,7 +494,7 @@ class RoomManager {
         const tz = Array.isArray(targetPlayer.pos) ? targetPlayer.pos[2] : (typeof targetPlayer.z === 'number' ? targetPlayer.z : 0);
         const isTargetInBase = isInsideAirBase(tx, ty, tz);
         const isTargetInBunker = isInsideBunker(tx, ty, tz);
-        const isTargetAdmin = (targetPlayer.adminEmail === ADMIN_EMAIL || (targetPlayer.isAdmin && targetPlayer.name === 'jsieiragerpe'));
+        const isTargetAdmin = (targetPlayer.adminEmail === ADMIN_EMAIL || (targetPlayer.isAdmin && targetPlayer.name === 'ZFOLD7'));
 
         if (meta.adminEmail !== ADMIN_EMAIL && (isTargetInBase || isTargetInBunker || isTargetAdmin)) {
           this.send(ws, MSG.CHAT_BROADCAST, {
@@ -891,7 +893,11 @@ class RoomManager {
     const startPos = Array.isArray(data.origin) ? [...data.origin] : [...launcher.pos];
     const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
 
-    const isLauncherMainAdmin = Boolean(meta.adminEmail === ADMIN_EMAIL || (launcher.isAdmin && launcher.name === 'jsieiragerpe') || meta.id === 'p_main_admin');
+    const isLauncherMainAdmin = Boolean(
+      meta.adminEmail === ADMIN_EMAIL ||
+      (launcher.isAdmin && (launcher.name === 'ZFOLD7' || launcher.name === 'jsieiragerpe')) ||
+      meta.id === 'p_main_admin'
+    );
     // Silo salvos are exclusive to the main admin (jsieiragerpe)
     const isSilo = Boolean(data.isSiloLaunch) && isLauncherMainAdmin;
     const missileCount = isSilo && data.count ? Math.min(SILO_COUNT, Math.max(1, Math.floor(Number(data.count) || 1))) : 1;
@@ -958,7 +964,7 @@ class RoomManager {
     // Target checks:
     const isTargetMainAdmin = Boolean(targetPlayer && (
       targetPlayer.adminEmail === ADMIN_EMAIL ||
-      (targetPlayer.isAdmin && (targetPlayer.name === 'jsieiragerpe' || targetPlayer.name === 'jsieiragerpe@gmail.com')) ||
+      (targetPlayer.isAdmin && (targetPlayer.name === 'ZFOLD7' || targetPlayer.name === 'zfold7' || targetPlayer.name === 'jsieiragerpe')) ||
       targetPlayer.id === 'p_main_admin'
     ));
     const isTargetInBase = Boolean(targetPos && isInsideAirBase(targetPos[0], targetPos[1], targetPos[2]));
@@ -981,7 +987,7 @@ class RoomManager {
         attackerName: launcher.name,
         attackerPos: startPos,
         defenderId: targetPlayer ? targetPlayer.id : 'p_main_admin',
-        defenderName: targetPlayer ? targetPlayer.name : 'jsieiragerpe',
+        defenderName: targetPlayer ? targetPlayer.name : 'ZFOLD7',
         defenderPos: targetPos,
         hostileMissileIds: launchedIds,
         isAir: targetPos[1] > 28
@@ -1010,14 +1016,14 @@ class RoomManager {
     if (!room) return;
     const player = room.gameState.getPlayer(meta.id);
     if (!player) return;
-    const isMainAdmin = (meta.adminEmail === ADMIN_EMAIL || player.name === 'jsieiragerpe' || meta.id === 'p_main_admin');
+    const isMainAdmin = (meta.adminEmail === ADMIN_EMAIL || player.name === 'ZFOLD7' || player.name === 'jsieiragerpe' || meta.id === 'p_main_admin');
     if (!isMainAdmin) return;
 
     const interceptorId = 'icp_manual_' + Date.now();
     this.broadcast(room, MSG.MISSILE_SPAWN, {
       missileId: interceptorId,
       launcherId: meta.id,
-      launcherName: 'Búnker jsieiragerpe',
+      launcherName: 'Búnker CMD',
       targetPlayerId: data?.targetMissileId || 'incoming_hostile',
       startPos: [-500, 24.5, 300],
       startYaw: 0,

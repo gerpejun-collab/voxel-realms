@@ -1159,6 +1159,7 @@ export class BunkerManager {
         id: 'queen_of_tears',
         title: 'La Reina de las Lágrimas',
         sub: 'Queen of Tears (Episodio 1)',
+        category: 'Romance · Drama',
         icon: '👑',
         videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4'
       },
@@ -1166,6 +1167,7 @@ export class BunkerManager {
         id: 'crash_landing',
         title: 'Aterrizaje en tu Corazón',
         sub: 'Crash Landing on You (Episodio 1)',
+        category: 'Romance · Acción',
         icon: '🪂',
         videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
       },
@@ -1173,6 +1175,7 @@ export class BunkerManager {
         id: 'squid_game',
         title: 'El Juego del Calamar',
         sub: 'Squid Game (Temporada 2)',
+        category: 'Suspense · Thriller',
         icon: '🦑',
         videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4'
       },
@@ -1180,6 +1183,7 @@ export class BunkerManager {
         id: 'true_beauty',
         title: 'Belleza Verdadera',
         sub: 'True Beauty (Episodio 1)',
+        category: 'Comedia · Romance',
         icon: '💄',
         videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'
       },
@@ -1187,6 +1191,7 @@ export class BunkerManager {
         id: 'business_proposal',
         title: 'Propuesta Laboral',
         sub: 'A Business Proposal (Episodio 1)',
+        category: 'Comedia · Romance',
         icon: '💼',
         videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackSeeTheWorld.mp4'
       },
@@ -1194,8 +1199,41 @@ export class BunkerManager {
         id: 'vincenzo',
         title: 'Vincenzo Cassano',
         sub: 'Vincenzo (Episodio 1)',
+        category: 'Acción · Mafia',
         icon: '⚖️',
         videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4'
+      },
+      {
+        id: 'all_of_us_are_dead',
+        title: 'Estamos Muertos',
+        sub: 'All of Us Are Dead (Episodio 1)',
+        category: 'Terror · Acción',
+        icon: '🧟',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
+      },
+      {
+        id: 'my_demon',
+        title: 'Mi Demonio',
+        sub: 'My Demon (Episodio 1)',
+        category: 'Fantasía · Romance',
+        icon: '👹',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4'
+      },
+      {
+        id: 'itaewon_class',
+        title: 'Clase Itaewon',
+        sub: 'Itaewon Class (Episodio 1)',
+        category: 'Drama · Emprendimiento',
+        icon: '🏮',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4'
+      },
+      {
+        id: 'goblin',
+        title: 'Goblin: El Guardián Solitario',
+        sub: 'Guardian: The Lonely God (Ep 1)',
+        category: 'Fantasía · Clásico',
+        icon: '🗡️',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4'
       }
     ];
 
@@ -1219,14 +1257,16 @@ export class BunkerManager {
         <div class="bunker-tv-body">
           <!-- Tab 1: Catalog -->
           <div id="tv-tab-catalog" class="tv-tab-content">
-            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">Toca cualquier dorama para reproducirlo en la tele del búnker:</div>
-            <div class="bunker-dorama-grid">
+            <input id="tv-catalog-search" class="bunker-tv-input" placeholder="🔍 Buscar serie o dorama (Reina de las Lágrimas, Squid Game, Vincenzo...)" style="margin-bottom:8px;width:100%;" />
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Selecciona qué ver para reproducirlo en la tele 3D de la pared:</div>
+            <div class="bunker-dorama-grid" id="tv-catalog-items">
               ${DORAMA_CATALOG.map(d => `
-                <div class="bunker-dorama-card" data-video="${d.videoUrl}" data-title="${d.title}">
+                <div class="bunker-dorama-card" data-video="${d.videoUrl}" data-title="${d.title}" data-sub="${d.sub}">
                   <div class="bunker-dorama-thumb">${d.icon}</div>
                   <div class="bunker-dorama-title">${d.title}</div>
                   <div class="bunker-dorama-ep">${d.sub}</div>
-                  <button style="margin-top:6px;width:100%;height:28px;border-radius:6px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:bold;">▶️ Ver en la Tele</button>
+                  <div style="font-size:9px;color:#cbd5e1;margin-top:2px;">${d.category}</div>
+                  <button style="margin-top:6px;width:100%;height:28px;border-radius:6px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:bold;cursor:pointer;">▶️ Ver en la Tele</button>
                 </div>
               `).join('')}
             </div>
@@ -1245,14 +1285,17 @@ export class BunkerManager {
           <!-- Tab 3: Custom player / link -->
           <div id="tv-tab-player" class="tv-tab-content" style="display:none;flex:1;flex-direction:column;">
             <div class="bunker-tv-url-bar">
-              <input id="tv-custom-url" class="bunker-tv-input" placeholder="Pega aquí el enlace de cualquier serie o video..." />
+              <input id="tv-custom-url" class="bunker-tv-input" placeholder="Pega aquí el enlace de cualquier serie, video mp4 o stream..." />
               <button id="tv-custom-play" class="bunker-tv-btn-play">▶️ Proyectar</button>
             </div>
             <div class="bunker-tv-video-wrap">
               <video id="tv-active-player" class="bunker-tv-video" playsinline controls></video>
             </div>
-            <div id="tv-now-playing" style="font-size:12px;color:#38bdf8;margin-top:8px;text-align:center;">
-              📺 Listo para reproducir en la pantalla 3D del búnker
+            <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:8px;">
+              <div id="tv-now-playing" style="font-size:12px;color:#38bdf8;">
+                📺 Listo para reproducir en la pantalla 3D del búnker
+              </div>
+              <button id="tv-btn-watch-3d" style="background:#10b981;color:#fff;font-weight:bold;height:36px;padding:0 14px;border-radius:8px;border:none;cursor:pointer;font-size:12px;white-space:nowrap;">🛋️ Ver en la Pared</button>
             </div>
           </div>
         </div>
@@ -1287,12 +1330,30 @@ export class BunkerManager {
     // Close button
     modal.querySelector('#tv-btn-close').addEventListener('click', () => this.toggleTV(false));
 
+    // Watch on 3D wall button
+    const watch3dBtn = modal.querySelector('#tv-btn-watch-3d');
+    if (watch3dBtn) {
+      watch3dBtn.addEventListener('click', () => this.toggleTV(false));
+    }
+
     // Audio Unmute button
     modal.querySelector('#tv-btn-unmute').addEventListener('click', () => {
       if (activeVideo) activeVideo.muted = !activeVideo.muted;
-      if (hiddenVideo) hiddenVideo.muted = activeVideo.muted;
       modal.querySelector('#tv-btn-unmute').textContent = activeVideo.muted ? '🔇 Silenciado' : '🔊 Con Audio';
     });
+
+    // Search filter for catalog
+    const searchInput = modal.querySelector('#tv-catalog-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase().trim();
+        modal.querySelectorAll('.bunker-dorama-card').forEach(card => {
+          const t = (card.dataset.title || '').toLowerCase();
+          const s = (card.dataset.sub || '').toLowerCase();
+          card.style.display = (!q || t.includes(q) || s.includes(q)) ? 'flex' : 'none';
+        });
+      });
+    }
 
     // Web proxy navigate
     modal.querySelector('#tv-web-btn-nav').addEventListener('click', () => {
@@ -1334,10 +1395,15 @@ export class BunkerManager {
     if (!activeVideo || !hiddenVideo) return;
 
     activeVideo.src = videoUrl;
+    activeVideo.muted = false;
     activeVideo.load();
-    activeVideo.play().catch(() => {});
+    activeVideo.play().catch(() => {
+      activeVideo.muted = true;
+      activeVideo.play().catch(() => {});
+    });
 
     hiddenVideo.src = videoUrl;
+    hiddenVideo.muted = true;
     hiddenVideo.load();
     hiddenVideo.play().catch(() => {});
 
@@ -1346,6 +1412,8 @@ export class BunkerManager {
       if (typeof THREE.VideoTexture === 'function') {
         const vTex = new THREE.VideoTexture(hiddenVideo);
         vTex.colorSpace = THREE.SRGBColorSpace;
+        vTex.minFilter = THREE.LinearFilter;
+        vTex.magFilter = THREE.LinearFilter;
         this.tvVideoTexture = vTex;
         if (this.tvScreenMesh && this.tvScreenMesh.material) {
           this.tvScreenMesh.material.map = vTex;
@@ -1786,6 +1854,11 @@ export class BunkerManager {
 
   update(dt, playerPos) {
     this.timeAcc += dt;
+
+    // Keep 3D TV wall video texture refreshing smoothly on each animation frame
+    if (this.tvVideoTexture) {
+      this.tvVideoTexture.needsUpdate = true;
+    }
 
     // 1. Animate silo hatch doors (swing upward to ~85 degrees when launching) and exhaust smoke
     for (const silo of this.silos) {

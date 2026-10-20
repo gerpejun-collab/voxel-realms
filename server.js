@@ -25,9 +25,32 @@ const roomManager = new RoomManager({
 // Security & Caching middleware
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  if (!req.path.startsWith('/api/dorama-proxy') && !req.path.startsWith('/_next')) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
+});
+
+// Proxy Next.js assets for dorama view
+app.use('/_next', async (req, res) => {
+  try {
+    const upstreamUrl = 'https://doramasia.com/_next' + req.url;
+    const upstream = await fetch(upstreamUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    const cType = upstream.headers.get('content-type') || 'application/javascript';
+    res.setHeader('Content-Type', cType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.removeHeader('X-Frame-Options');
+    res.removeHeader('Content-Security-Policy');
+    const buf = await upstream.arrayBuffer();
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    res.status(404).end();
+  }
 });
 
 // Health check endpoint for Render monitoring
@@ -49,41 +72,70 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Proxy for Doramasia to strip X-Frame-Options SAMEORIGIN and block ad popups
-app.get('/api/dorama-proxy', (req, res) => {
+// Proxy for Doramasia to strip X-Frame-Options SAMEORIGIN, rewrite links, and block ad popups
+app.get('/api/dorama-proxy', async (req, res) => {
   const targetUrl = req.query.url || 'https://doramasia.com/';
   try {
-    const urlObj = new URL(targetUrl);
-    https.get(urlObj.href, {
+    const upstreamRes = await fetch(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'es-ES,es;q=0.9',
-        'Accept-Encoding': 'identity'
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
       }
-    }, (proxyRes) => {
-      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'text/html; charset=utf-8');
-      let body = '';
-      proxyRes.on('data', chunk => { body += chunk; });
-      proxyRes.on('end', () => {
-        const injection = `
-          <base href="https://doramasia.com/">
-          <script>
-            window.open = function() { return null; };
-            document.addEventListener('click', function(e) {
-              const a = e.target.closest('a');
-              if (a && a.target === '_blank') a.target = '_self';
-            }, true);
-          </script>
-        `;
-        const modified = body.replace(/<head[^>]*>/i, '$&' + injection);
-        res.send(modified);
-      });
-    }).on('error', () => {
-      res.status(502).send('Error conectando a Doramasia');
     });
-  } catch (e) {
-    res.status(400).send('URL inválida');
+
+    const contentType = upstreamRes.headers.get('content-type') || 'text/html; charset=utf-8';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.removeHeader('X-Frame-Options');
+    res.removeHeader('Content-Security-Policy');
+
+    if (contentType.includes('text/html')) {
+      let html = await upstreamRes.text();
+
+      const injection = `
+        <style>
+          #dorama-proxy-nav {
+            position: sticky; top: 0; left: 0; right: 0; z-index: 999999;
+            background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px);
+            padding: 8px 12px; display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 2px solid #38bdf8; font-family: system-ui, sans-serif;
+          }
+          #dorama-proxy-nav a {
+            background: #0284c7; color: #fff; padding: 6px 12px; border-radius: 6px;
+            font-size: 12px; font-weight: bold; text-decoration: none; border: none; cursor: pointer;
+          }
+        </style>
+        <div id="dorama-proxy-nav">
+          <span style="color:#38bdf8;font-weight:bold;font-size:12px;">📺 BÚNKER DORAMASIA PROXY</span>
+          <div style="display:flex;gap:8px;">
+            <a href="${targetUrl}" target="_blank" rel="noopener">🔗 Abrir en Pestaña Nueva</a>
+          </div>
+        </div>
+        <script>
+          // Block intrusive popup ads
+          window.open = function() { console.log('Popup ad blocked'); return null; };
+          document.addEventListener('click', function(e) {
+            const a = e.target.closest('a');
+            if (a && a.href) {
+              const href = a.getAttribute('href');
+              if (href && (href.startsWith('/') || href.startsWith('https://doramasia.com'))) {
+                e.preventDefault();
+                const fullUrl = href.startsWith('http') ? href : ('https://doramasia.com' + href);
+                window.location.href = '/api/dorama-proxy?url=' + encodeURIComponent(fullUrl);
+              }
+            }
+          }, true);
+        </script>
+      `;
+      html = html.replace(/<body[^>]*>/i, '$&' + injection);
+      res.send(html);
+    } else {
+      const buffer = await upstreamRes.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    }
+  } catch (err) {
+    res.status(502).send('Error conectando con Doramasia: ' + err.message);
   }
 });
 

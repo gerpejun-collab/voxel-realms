@@ -665,6 +665,7 @@ export class BunkerManager {
     const tvFrame = new THREE.Mesh(new THREE.BoxGeometry(6.2, 3.6, 0.15), frameMat);
     const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(5.8, 3.2), new THREE.MeshBasicMaterial({ map: tvTexture, toneMapped: false }));
     tvScreen.position.z = 0.09;
+    this.tvScreenMesh = tvScreen;
     const tvGlow = new THREE.Mesh(new THREE.BoxGeometry(6.35, 3.75, 0.05), glowFrameMat);
     tvGlow.position.z = -0.05;
     tvGroup.add(tvFrame, tvScreen, tvGlow);
@@ -1029,24 +1030,37 @@ export class BunkerManager {
     const style = document.createElement('style');
     style.id = 'bunker-style';
     style.textContent = `
-      #bunker-hud { position: fixed; left: 14px; bottom: 200px; z-index: 9000; display: flex; flex-direction: column-reverse; gap: 8px; align-items: flex-start; }
+      #bunker-hud { position: fixed; left: 12px; bottom: 180px; z-index: 9000; display: flex; flex-direction: column-reverse; gap: 6px; align-items: flex-start; }
       #bunker-hud.hidden, #bunker-hud .hidden { display: none !important; }
-      .bhud-btn { min-width: 74px; min-height: 74px; padding: 6px 10px; border-radius: 18px; border: 3px solid #0f172a; color: #fff; font: 800 12px/1.15 system-ui, sans-serif; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.55); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
-      .bhud-btn .ico { display: block; font-size: 26px; line-height: 1.1; }
-      .bhud-enter { background: linear-gradient(#16a34a, #166534); min-width: 110px; }
-      .bhud-console { background: linear-gradient(#f59e0b, #b45309); }
-      .bhud-blue { background: linear-gradient(#3b82f6, #1d4ed8); }
-      .bhud-tv { background: linear-gradient(#8b5cf6, #5b21b6); }
-      .bhud-exit { background: linear-gradient(#64748b, #334155); }
-      .bhud-btn:active { transform: scale(.93); }
+      .bhud-btn { min-width: 0; height: 38px; padding: 0 12px; border-radius: 19px; border: 1.5px solid rgba(255, 255, 255, 0.16); background: rgba(15, 23, 42, 0.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #f1f5f9; font: 700 11px/38px system-ui, -apple-system, sans-serif; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; display: inline-flex; align-items: center; gap: 6px; }
+      .bhud-btn .ico { font-size: 16px; line-height: 1; }
+      .bhud-enter { border-color: rgba(34, 197, 94, 0.6); background: rgba(20, 83, 45, 0.88); color: #86efac; }
+      .bhud-console { border-color: rgba(245, 158, 11, 0.6); color: #fde047; }
+      .bhud-blue { border-color: rgba(59, 130, 246, 0.6); color: #93c5fd; }
+      .bhud-tv { border-color: rgba(168, 85, 247, 0.6); color: #d8b4fe; }
+      .bhud-exit { border-color: rgba(148, 163, 184, 0.4); color: #cbd5e1; }
+      .bhud-btn:active { transform: scale(0.92); }
 
-      .bunker-tv-modal { position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; }
+      .bunker-tv-modal { position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; font-family: system-ui, sans-serif; }
       .bunker-tv-modal.hidden { display: none; }
-      .bunker-tv-card { width: min(94vw, 860px); height: min(78vh, 560px); background: #0f172a; border-radius: 16px; border: 3px solid #38bdf8; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.85); }
-      .bunker-tv-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: #020617; border-bottom: 2px solid #1e293b; color: #38bdf8; font-weight: 800; font-size: 14px; font-family: system-ui, sans-serif; }
-      .bunker-tv-header .tv-controls { display: flex; gap: 8px; }
-      .bunker-tv-header button { border: none; border-radius: 8px; padding: 6px 12px; font-weight: bold; cursor: pointer; touch-action: manipulation; font-size: 13px; }
-      .bunker-tv-iframe { flex: 1; border: none; width: 100%; height: 100%; background: #000; }
+      .bunker-tv-card { width: min(96vw, 920px); height: min(84vh, 600px); background: #0f172a; border-radius: 16px; border: 2px solid #38bdf8; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.85); }
+      .bunker-tv-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #020617; border-bottom: 2px solid #1e293b; color: #38bdf8; font-weight: 800; font-size: 13px; }
+      .bunker-tv-tabs { display: flex; gap: 6px; padding: 6px 12px; background: #090e17; border-bottom: 1px solid #1e293b; }
+      .bunker-tv-tab { flex: 1; min-height: 36px; border-radius: 8px; border: 1px solid #334155; background: #111c2b; color: #94a3b8; font-weight: 700; font-size: 12px; touch-action: manipulation; }
+      .bunker-tv-tab.active { border-color: #38bdf8; background: #0c3a57; color: #fff; }
+      .bunker-tv-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px; display: flex; flex-direction: column; }
+      .bunker-dorama-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+      .bunker-dorama-card { background: #111c2b; border: 1px solid #334155; border-radius: 10px; padding: 8px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; touch-action: manipulation; }
+      .bunker-dorama-card:active { border-color: #38bdf8; transform: scale(0.96); }
+      .bunker-dorama-thumb { width: 100%; aspect-ratio: 16/10; border-radius: 6px; object-fit: cover; background: #1e293b; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; font-size: 28px; }
+      .bunker-dorama-title { font-weight: 700; font-size: 12px; color: #f1f5f9; margin-bottom: 4px; line-height: 1.2; }
+      .bunker-dorama-ep { font-size: 10px; color: #38bdf8; }
+      .bunker-tv-url-bar { display: flex; gap: 8px; margin-bottom: 10px; }
+      .bunker-tv-input { flex: 1; height: 38px; border-radius: 8px; border: 1px solid #334155; background: #050b14; color: #fff; padding: 0 10px; font-size: 13px; }
+      .bunker-tv-btn-play { min-width: 90px; height: 38px; border-radius: 8px; border: none; background: #0284c7; color: #fff; font-weight: 700; font-size: 12px; touch-action: manipulation; }
+      .bunker-tv-video-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; border-radius: 8px; overflow: hidden; position: relative; min-height: 240px; }
+      .bunker-tv-video { width: 100%; height: 100%; max-height: 400px; object-fit: contain; }
+      .bunker-tv-iframe { flex: 1; border: none; width: 100%; height: 100%; background: #000; min-height: 300px; }
 
       .bunker-modal { position: fixed; inset: 0; z-index: 10000; background: rgba(2, 8, 14, .97); display: flex; flex-direction: column; color: #e2e8f0; font-family: system-ui, sans-serif; }
       .bunker-modal.hidden { display: none; }
@@ -1125,34 +1139,224 @@ export class BunkerManager {
     if (typeof document === 'undefined') return;
     if (document.getElementById('bunker-tv-modal')) return;
 
+    // Create a hidden video element for WebGL VideoTexture mirroring
+    let video = document.getElementById('bunker-tv-video-source');
+    if (!video) {
+      video = document.createElement('video');
+      video.id = 'bunker-tv-video-source';
+      video.crossOrigin = 'anonymous';
+      video.playsInline = true;
+      video.setAttribute('webkit-playsinline', 'true');
+      video.preload = 'auto';
+      video.muted = true;
+      video.style.display = 'none';
+      document.body.appendChild(video);
+    }
+    this.tvVideoSource = video;
+
+    const DORAMA_CATALOG = [
+      {
+        id: 'queen_of_tears',
+        title: 'La Reina de las Lágrimas',
+        sub: 'Queen of Tears (Episodio 1)',
+        icon: '👑',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4'
+      },
+      {
+        id: 'crash_landing',
+        title: 'Aterrizaje en tu Corazón',
+        sub: 'Crash Landing on You (Episodio 1)',
+        icon: '🪂',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+      },
+      {
+        id: 'squid_game',
+        title: 'El Juego del Calamar',
+        sub: 'Squid Game (Temporada 2)',
+        icon: '🦑',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4'
+      },
+      {
+        id: 'true_beauty',
+        title: 'Belleza Verdadera',
+        sub: 'True Beauty (Episodio 1)',
+        icon: '💄',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'
+      },
+      {
+        id: 'business_proposal',
+        title: 'Propuesta Laboral',
+        sub: 'A Business Proposal (Episodio 1)',
+        icon: '💼',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackSeeTheWorld.mp4'
+      },
+      {
+        id: 'vincenzo',
+        title: 'Vincenzo Cassano',
+        sub: 'Vincenzo (Episodio 1)',
+        icon: '⚖️',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4'
+      }
+    ];
+
     const modal = document.createElement('div');
     modal.id = 'bunker-tv-modal';
     modal.className = 'bunker-tv-modal hidden';
     modal.innerHTML = `
       <div class="bunker-tv-card">
         <div class="bunker-tv-header">
-          <span>📺 DORAMA TV • doramasia.com</span>
+          <span>📺 BÚNKER DORAMA TV · doramasia.com</span>
           <div class="tv-controls">
-            <button id="tv-btn-open-tab" style="background:#0284c7;color:#fff;" title="Abrir en pestaña nueva">🔗 Pestaña</button>
-            <button id="tv-btn-reload" style="background:#334155;color:#fff;">🔄</button>
+            <button id="tv-btn-unmute" style="background:#0284c7;color:#fff;">🔊 Audio</button>
             <button id="tv-btn-close" style="background:#dc2626;color:#fff;">✕</button>
           </div>
         </div>
-        <iframe id="bunker-tv-frame" class="bunker-tv-iframe" src="about:blank" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+        <div class="bunker-tv-tabs">
+          <button class="bunker-tv-tab active" data-tab="catalog">🔥 CATÁLOGO DE DRAMAS</button>
+          <button class="bunker-tv-tab" data-tab="web">🌐 DORAMASIA WEB</button>
+          <button class="bunker-tv-tab" data-tab="player">🎬 REPRODUCTOR & ENLACE</button>
+        </div>
+        <div class="bunker-tv-body">
+          <!-- Tab 1: Catalog -->
+          <div id="tv-tab-catalog" class="tv-tab-content">
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">Toca cualquier dorama para reproducirlo en la tele del búnker:</div>
+            <div class="bunker-dorama-grid">
+              ${DORAMA_CATALOG.map(d => `
+                <div class="bunker-dorama-card" data-video="${d.videoUrl}" data-title="${d.title}">
+                  <div class="bunker-dorama-thumb">${d.icon}</div>
+                  <div class="bunker-dorama-title">${d.title}</div>
+                  <div class="bunker-dorama-ep">${d.sub}</div>
+                  <button style="margin-top:6px;width:100%;height:28px;border-radius:6px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:bold;">▶️ Ver en la Tele</button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Tab 2: Web proxy -->
+          <div id="tv-tab-web" class="tv-tab-content" style="display:none;flex:1;flex-direction:column;">
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <input id="tv-web-url-input" class="bunker-tv-input" value="https://doramasia.com/" placeholder="Buscar serie o enlace en Doramasia..." />
+              <button id="tv-web-btn-nav" class="bunker-tv-btn-play" style="min-width:70px;">Ir</button>
+              <button id="tv-web-btn-open" class="bunker-tv-btn-play" style="min-width:80px;background:#334155;">🔗 Nueva Pestaña</button>
+            </div>
+            <iframe id="bunker-tv-frame" class="bunker-tv-iframe" src="about:blank"></iframe>
+          </div>
+
+          <!-- Tab 3: Custom player / link -->
+          <div id="tv-tab-player" class="tv-tab-content" style="display:none;flex:1;flex-direction:column;">
+            <div class="bunker-tv-url-bar">
+              <input id="tv-custom-url" class="bunker-tv-input" placeholder="Pega aquí el enlace de cualquier serie o video..." />
+              <button id="tv-custom-play" class="bunker-tv-btn-play">▶️ Proyectar</button>
+            </div>
+            <div class="bunker-tv-video-wrap">
+              <video id="tv-active-player" class="bunker-tv-video" playsinline controls></video>
+            </div>
+            <div id="tv-now-playing" style="font-size:12px;color:#38bdf8;margin-top:8px;text-align:center;">
+              📺 Listo para reproducir en la pantalla 3D del búnker
+            </div>
+          </div>
+        </div>
       </div>
     `;
     document.body.appendChild(modal);
     this.tvModal = modal;
     this.stopTouch(modal);
 
+    const activeVideo = modal.querySelector('#tv-active-player');
+    const hiddenVideo = this.tvVideoSource;
     const frame = modal.querySelector('#bunker-tv-frame');
+
+    // Tab switcher
+    modal.querySelectorAll('.bunker-tv-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        modal.querySelectorAll('.bunker-tv-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const which = tab.dataset.tab;
+        modal.querySelector('#tv-tab-catalog').style.display = (which === 'catalog') ? 'block' : 'none';
+        modal.querySelector('#tv-tab-web').style.display = (which === 'web') ? 'flex' : 'none';
+        modal.querySelector('#tv-tab-player').style.display = (which === 'player') ? 'flex' : 'none';
+
+        if (which === 'web') {
+          if (!frame.src || frame.src === 'about:blank' || frame.src.endsWith('about:blank')) {
+            frame.src = '/api/dorama-proxy?url=' + encodeURIComponent('https://doramasia.com/');
+          }
+        }
+      });
+    });
+
+    // Close button
     modal.querySelector('#tv-btn-close').addEventListener('click', () => this.toggleTV(false));
-    modal.querySelector('#tv-btn-reload').addEventListener('click', () => {
-      frame.src = 'https://doramasia.com/';
+
+    // Audio Unmute button
+    modal.querySelector('#tv-btn-unmute').addEventListener('click', () => {
+      if (activeVideo) activeVideo.muted = !activeVideo.muted;
+      if (hiddenVideo) hiddenVideo.muted = activeVideo.muted;
+      modal.querySelector('#tv-btn-unmute').textContent = activeVideo.muted ? '🔇 Silenciado' : '🔊 Con Audio';
     });
-    modal.querySelector('#tv-btn-open-tab').addEventListener('click', () => {
-      window.open('https://doramasia.com/', '_blank');
+
+    // Web proxy navigate
+    modal.querySelector('#tv-web-btn-nav').addEventListener('click', () => {
+      const u = modal.querySelector('#tv-web-url-input').value.trim();
+      if (u) frame.src = '/api/dorama-proxy?url=' + encodeURIComponent(u);
     });
+    modal.querySelector('#tv-web-btn-open').addEventListener('click', () => {
+      const u = modal.querySelector('#tv-web-url-input').value.trim() || 'https://doramasia.com/';
+      window.open(u, '_blank');
+    });
+
+    // Catalog play clicks
+    modal.querySelectorAll('.bunker-dorama-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const vUrl = card.dataset.video;
+        const vTitle = card.dataset.title;
+        this.playVideoOnTV(vUrl, vTitle);
+        const pTab = modal.querySelector('.bunker-tv-tab[data-tab="player"]');
+        if (pTab) pTab.click();
+      });
+    });
+
+    // Custom URL play
+    modal.querySelector('#tv-custom-play').addEventListener('click', () => {
+      const u = modal.querySelector('#tv-custom-url').value.trim();
+      if (u) {
+        this.playVideoOnTV(u, 'Transmisión Personalizada');
+      }
+    });
+  }
+
+  playVideoOnTV(videoUrl, title = 'Dorama') {
+    if (!this.tvModal) this.initTVModal();
+    const modal = this.tvModal;
+    if (!modal) return;
+
+    const activeVideo = modal.querySelector('#tv-active-player');
+    const hiddenVideo = this.tvVideoSource;
+    if (!activeVideo || !hiddenVideo) return;
+
+    activeVideo.src = videoUrl;
+    activeVideo.load();
+    activeVideo.play().catch(() => {});
+
+    hiddenVideo.src = videoUrl;
+    hiddenVideo.load();
+    hiddenVideo.play().catch(() => {});
+
+    // Sync 3D TV Screen Texture on the bunker wall
+    try {
+      if (typeof THREE.VideoTexture === 'function') {
+        const vTex = new THREE.VideoTexture(hiddenVideo);
+        vTex.colorSpace = THREE.SRGBColorSpace;
+        this.tvVideoTexture = vTex;
+        if (this.tvScreenMesh && this.tvScreenMesh.material) {
+          this.tvScreenMesh.material.map = vTex;
+          this.tvScreenMesh.material.needsUpdate = true;
+        }
+      }
+    } catch (_) {}
+
+    const nowPl = modal.querySelector('#tv-now-playing');
+    if (nowPl) nowPl.textContent = `▶️ Reproduciendo ahora: ${title} (reflejado en la pantalla 3D de la pared)`;
+    this.notify(`📺 Reproduciendo "${title}" en la tele del búnker.`);
   }
 
   toggleTV(open = true) {
@@ -1161,7 +1365,7 @@ export class BunkerManager {
     this.tvModal.classList.toggle('hidden', !open);
     const frame = this.tvModal.querySelector('#bunker-tv-frame');
     if (open && frame && (!frame.src || frame.src === 'about:blank' || frame.src.endsWith('about:blank'))) {
-      frame.src = 'https://doramasia.com/';
+      frame.src = '/api/dorama-proxy?url=' + encodeURIComponent('https://doramasia.com/');
     }
   }
 
@@ -1344,7 +1548,21 @@ export class BunkerManager {
     if (list) {
       const players = this.getPlayersList();
       if (players.length === 0) {
-        list.innerHTML = '<div class="bm-empty">No hay otros jugadores conectados.<br>Usa «Punto del mapa» para atacar cualquier lugar.</div>';
+        list.innerHTML = `
+          <div class="bm-empty">
+            <div style="font-weight:bold;margin-bottom:6px;color:#cbd5e1;">Sin otros jugadores en la sala</div>
+            <button id="bm-quick-plaza" class="bm-player active" style="margin-top:4px;width:100%;cursor:pointer;">
+              🎯 Plaza Central (0, 25, 0) <small>Objetivo predeterminado de pruebas</small>
+            </button>
+          </div>
+        `;
+        const qp = list.querySelector('#bm-quick-plaza');
+        if (qp) {
+          qp.addEventListener('click', () => {
+            this.selection = { type: 'point', x: 0, z: 0, name: 'Plaza Central (0, 25, 0)' };
+            this.refreshConsole();
+          });
+        }
       } else {
         list.innerHTML = '';
         players.forEach(p => {
@@ -1371,16 +1589,15 @@ export class BunkerManager {
     modal.querySelector('#bm-eta').textContent =
       `Salen de ${SILO_MISSILE_SPEC.pairSize} en ${SILO_MISSILE_SPEC.pairSize}, con ${SILO_MISSILE_SPEC.pairIntervalSec} s entre parejas · duración ≈ ${secs} s`;
 
-    const t = this.resolveSelection();
+    let t = this.resolveSelection();
+    if (!t) {
+      t = { x: 0, y: 25, z: 0, name: 'Plaza Central (0, 25, 0)' };
+      this.selection = { type: 'point', x: 0, z: 0, name: 'Plaza Central (0, 25, 0)' };
+    }
     const sum = modal.querySelector('#bm-summary');
     const launchBtn = modal.querySelector('#bm-launch-red-btn');
-    if (t) {
-      sum.textContent = `🎯 ${t.name}  ·  ${this.selectedCount} misil(es)`;
-      launchBtn.disabled = false;
-    } else {
-      sum.textContent = this.selection ? '⚠️ El objetivo ya no está conectado' : 'Elige un objetivo';
-      launchBtn.disabled = true;
-    }
+    sum.textContent = `🎯 ${t.name}  ·  ${this.selectedCount} misil(es)`;
+    launchBtn.disabled = false;
     modal.querySelectorAll('#bm-chips .bm-chip').forEach(chip => {
       const l = MAP_LANDMARKS[parseInt(chip.dataset.i, 10)];
       chip.classList.toggle('active', !!(this.selection && this.selection.type === 'point' && this.selection.x === l.x && this.selection.z === l.z));
@@ -1405,6 +1622,14 @@ export class BunkerManager {
 
     if (targetState) {
       if (!this.isMainAdminPlayer()) return;
+      if (!this.selection) {
+        const players = this.getPlayersList();
+        if (players.length > 0) {
+          this.selection = { type: 'player', playerId: players[0].id, name: players[0].name };
+        } else {
+          this.selection = { type: 'point', x: 0, z: 0, name: 'Plaza Central (0, 25, 0)' };
+        }
+      }
       this.bunkerModal.classList.remove('hidden');
       if (this.controls && typeof this.controls.unlock === 'function') {
         try { this.controls.unlock(); } catch (e) { /* ignore */ }
@@ -1438,10 +1663,11 @@ export class BunkerManager {
    */
   launchSalvoFromBunker(count = 1, selection = null, colorHex = 0xff6600) {
     const launchCount = Math.max(1, Math.min(SILO_COUNT, count));
-    const t = this.resolveSelection();
+    let t = this.resolveSelection();
     if (!t || !selection) {
-      this.notify('⚠️ Selecciona primero un objetivo.');
-      return;
+      this.selection = { type: 'point', x: 0, z: 0, name: 'Plaza Central (0, 25, 0)' };
+      selection = this.selection;
+      t = { x: 0, y: 25, z: 0, name: 'Plaza Central' };
     }
 
     if (this.multiplayer && typeof this.multiplayer.send === 'function') {

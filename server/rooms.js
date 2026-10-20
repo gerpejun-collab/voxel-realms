@@ -894,8 +894,13 @@ class RoomManager {
     const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
 
     const isLauncherMainAdmin = Boolean(
+      meta.isAdmin ||
       meta.adminEmail === ADMIN_EMAIL ||
-      (launcher.isAdmin && (launcher.name === 'ZFOLD7' || launcher.name === 'jsieiragerpe')) ||
+      meta.adminEmail === 'ZFOLD7' ||
+      meta.adminEmail === 'zfold7' ||
+      launcher.isAdmin ||
+      launcher.name === 'ZFOLD7' ||
+      launcher.name === 'jsieiragerpe' ||
       meta.id === 'p_main_admin'
     );
     // Silo salvos are exclusive to the main admin (jsieiragerpe)

@@ -2,6 +2,7 @@
 // Production-ready Express + WebSocket server for Voxel Realms
 
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -46,6 +47,44 @@ app.get('/api/status', (req, res) => {
     maxPlayers: roomManager.maxPlayers,
     seed: roomManager.defaultSeed
   });
+});
+
+// Proxy for Doramasia to strip X-Frame-Options SAMEORIGIN and block ad popups
+app.get('/api/dorama-proxy', (req, res) => {
+  const targetUrl = req.query.url || 'https://doramasia.com/';
+  try {
+    const urlObj = new URL(targetUrl);
+    https.get(urlObj.href, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9',
+        'Accept-Encoding': 'identity'
+      }
+    }, (proxyRes) => {
+      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'text/html; charset=utf-8');
+      let body = '';
+      proxyRes.on('data', chunk => { body += chunk; });
+      proxyRes.on('end', () => {
+        const injection = `
+          <base href="https://doramasia.com/">
+          <script>
+            window.open = function() { return null; };
+            document.addEventListener('click', function(e) {
+              const a = e.target.closest('a');
+              if (a && a.target === '_blank') a.target = '_self';
+            }, true);
+          </script>
+        `;
+        const modified = body.replace(/<head[^>]*>/i, '$&' + injection);
+        res.send(modified);
+      });
+    }).on('error', () => {
+      res.status(502).send('Error conectando a Doramasia');
+    });
+  } catch (e) {
+    res.status(400).send('URL inválida');
+  }
 });
 
 // Serve frontend static files

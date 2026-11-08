@@ -329,8 +329,56 @@ assert.ok(mainJs.includes("weaponType === 'bazooka'"), 'main.js must handle dest
 
 console.log('✓ SECTION 9 PASSED: Bazooka RPG, Plasma Cannon, 1-tap weapon switcher, and zero password leak verified.');
 
+// -----------------------------------------------------------------------------
+// SECTION 10: Offline Sandbox Mode, World Save/Load (.vrealm.json), Gran Pradera (+600,-600),
+//             Prefab Catalog, Multi-Block Brushes, Animal Collisions & Android Permissions
+// -----------------------------------------------------------------------------
+console.log('\n--- SECTION 10: Offline Sandbox Mode, World Save/Load, Gran Pradera & Builder Studio ---');
+const sandboxJs = fs.readFileSync(path.resolve(__dirname, '../public/src/sandbox.js'), 'utf8');
+const multiplayerJs = fs.readFileSync(path.resolve(__dirname, '../public/src/multiplayer.js'), 'utf8');
+const animalsJs = fs.readFileSync(path.resolve(__dirname, '../public/src/animals.js'), 'utf8');
+const androidManifest = fs.readFileSync(path.resolve(__dirname, '../android/app/src/main/AndroidManifest.xml'), 'utf8');
+
+// 10a. Offline Mode in MultiplayerClient & Restricted Zone Protection
+assert.ok(multiplayerJs.includes('startOfflineMode(playerName)'), 'multiplayer.js must implement startOfflineMode');
+assert.ok(multiplayerJs.includes('isRestrictedCoordinate(x, y, z)'), 'multiplayer.js must enforce restricted coordinates in offline mode');
+assert.ok(sandboxJs.includes('isRestrictedZone(x, y, z)'), 'sandbox.js must enforce restricted zones (Base Militar & Búnker) even offline');
+assert.ok(sandboxJs.includes('enforceOfflineRestrictedZones(playerPos)'), 'sandbox.js must repel non-admin players from Base Militar & Búnker in offline mode');
+
+// 10b. World File Save / Load (.vrealm.json) with playerName, playerPos, deltas & customAnimals
+assert.ok(sandboxJs.includes("format: 'VOXEL_REALMS_WORLD'"), 'sandbox.js must export VOXEL_REALMS_WORLD format');
+assert.ok(sandboxJs.includes('exportWorldFile()'), 'sandbox.js must implement exportWorldFile');
+assert.ok(sandboxJs.includes('loadWorldDataObject(data)'), 'sandbox.js must implement loadWorldDataObject');
+assert.ok(sandboxJs.includes('importWorldFromFile(file)'), 'sandbox.js must implement importWorldFromFile');
+
+// 10c. Gran Pradera Libre (+600, -600) in world.js, index.html & ui.js
+assert.ok(worldJs.includes('isInsidePradera(wx, wz)'), 'world.js must define isInsidePradera for Gran Pradera (+600, -600)');
+assert.ok(indexHtml.includes('data-landmark="pradera"'), 'index.html must include Gran Pradera Libre in World Map');
+assert.ok(uiJs.includes("id: 'pradera'"), 'ui.js LANDMARKS must include Gran Pradera Libre');
+
+// 10d. Prefab Catalog (Eiffel Tower, Pagoda, Bridges, Lakes, Trees), Brushes & 3D Cloner
+assert.ok(sandboxJs.includes("id: 'eiffel_tower'"), 'sandbox.js must include Eiffel Tower prefab');
+assert.ok(sandboxJs.includes("id: 'japan_pagoda'"), 'sandbox.js must include Japan Pagoda prefab');
+assert.ok(sandboxJs.includes("id: 'stone_bridge'"), 'sandbox.js must include Stone Suspension Bridge prefab');
+assert.ok(sandboxJs.includes("id: 'water_lake'"), 'sandbox.js must include Water Lake prefab');
+assert.ok(sandboxJs.includes('copyTargetedBuilding()'), 'sandbox.js must allow copying buildings outside restricted zones');
+
+// 10e. Animal NPCs with Solid Building Collision & Persistence
+assert.ok(animalsJs.includes('spawnCustomAnimal('), 'animals.js must implement spawnCustomAnimal');
+assert.ok(animalsJs.includes('exportCustomAnimals()'), 'animals.js must implement exportCustomAnimals');
+assert.ok(animalsJs.includes('importCustomAnimals(list)'), 'animals.js must implement importCustomAnimals');
+assert.ok(animalsJs.includes('getEffectiveGroundY(wx, wz)'), 'animals.js must check player-built blocks and avoid walking through walls');
+
+// 10f. Android Storage Permissions
+assert.ok(androidManifest.includes('android.permission.READ_EXTERNAL_STORAGE'), 'AndroidManifest.xml must declare READ_EXTERNAL_STORAGE');
+assert.ok(androidManifest.includes('android.permission.WRITE_EXTERNAL_STORAGE'), 'AndroidManifest.xml must declare WRITE_EXTERNAL_STORAGE');
+assert.ok(sandboxJs.includes('requestAndroidStoragePermissions'), 'sandbox.js must request Android storage permissions');
+assert.ok(indexHtml.includes('id="android-permission-modal"'), 'index.html must include Android permission request modal');
+
+console.log('✓ SECTION 10 PASSED: Offline Mode, World Save/Load (.vrealm.json), Gran Pradera, Prefabs, Animal Collisions & Android Permissions verified.');
+
 console.log('\n=============================================================================');
-console.log('VERIFICATION SUMMARY: ALL 9 SECTIONS PASSED WITH 100% SUCCESS!');
+console.log('VERIFICATION SUMMARY: ALL 10 SECTIONS PASSED WITH 100% SUCCESS!');
 console.log('=============================================================================');
 
 process.exit(0);

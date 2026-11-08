@@ -78,6 +78,7 @@
     <div id="hud-quick-actions">
       <button id="btn-toggle-cam" class="hud-action-pill mc-pill desktop-only" title="Alternar Vista de Cámara (F5)">📷 Vista</button>
       <button id="btn-map" class="hud-action-pill mc-pill desktop-only" title="Mapa del Mundo y Viaje Rápido (M)">🗺️ Mapa</button>
+      <button id="btn-open-builder" class="hud-action-pill mc-pill builder-pill" title="Estudio Constructor, Edificios, Animales y Guardar Mapa (B)">🛠️ Constructor</button>
       <button id="btn-share-loc" class="hud-action-pill mc-pill desktop-only" title="Compartir mi Ubicación en el Chat">📍 Ubicación</button>
       <button id="btn-toggle-weapons" class="hud-action-pill mc-pill highlight-pill" title="Alternar Modo Armas & TNT">🔫 Armas: ON</button>
       <button id="hud-speed-btn" class="hud-action-pill mc-pill hud-speed-pill desktop-only" title="Velocidad (V): 1x / 2.5x / 5x Vuelo">⚡ 1x</button>
@@ -85,6 +86,20 @@
       <button id="btn-open-inv" class="hud-action-pill mc-pill desktop-only" title="Inventario de Bloques (E)">🎒 Bloques</button>
       <button id="btn-fullscreen" class="hud-action-pill mc-pill" title="Alternar Pantalla Completa">⛶</button>
       <button id="btn-menu-toggle" class="hud-action-pill mc-pill highlight-pill" title="Menú de Juego y Ajustes (ESC)">⚙️ Menú</button>
+    </div>
+
+    <!-- Mobile-First Floating Active Builder Tool Bar (Appears when Prefab / Brush / Cloner / Animal is active) -->
+    <div id="sandbox-active-tool-bar" class="sandbox-tool-banner hidden">
+      <div class="sandbox-tool-info">
+        <span id="sandbox-tool-badge" class="sandbox-tool-badge">🛠️ Herramienta Activa</span>
+        <span id="sandbox-tool-label" class="sandbox-tool-label">Torre Eiffel</span>
+      </div>
+      <div class="sandbox-tool-actions">
+        <button id="sandbox-btn-stamp" class="mc-btn sandbox-act-btn stamp-btn" type="button" title="Pegar / Aplicar donde apuntas">✨ PEGAR / USAR</button>
+        <button id="sandbox-btn-rotate" class="mc-btn sandbox-act-btn rotate-btn" type="button" title="Rotar Estructura 90° (Tecla R)">🔄 ROTAR (0°)</button>
+        <button id="sandbox-btn-undo" class="mc-btn sandbox-act-btn undo-btn" type="button" title="Deshacer última construcción (Ctrl+Z)">↩️ DESHACER</button>
+        <button id="sandbox-btn-clear" class="mc-btn sandbox-act-btn clear-btn" type="button" title="Volver a bloque normal 1x1">❌ QUITAR</button>
+      </div>
     </div>
 
     <!-- Weapons & Reactive TNT HUD Action Bar (Visible when Weapons Mode is active) -->
@@ -335,6 +350,14 @@
           </div>
         </button>
 
+        <button class="map-dest-btn mc-btn highlight-pill" data-x="600" data-y="25" data-z="-600" data-landmark="pradera">
+          <span class="dest-icon">🌾</span>
+          <div class="dest-info">
+            <span class="dest-title">🌾 Gran Pradera Libre (+600, -600)</span>
+            <span class="dest-coords">XYZ (+600, 25, -600) • Explanada Gigante 360×360 para Construir Libremente</span>
+          </div>
+        </button>
+
         <button class="map-dest-btn mc-btn highlight-pill" data-x="-420" data-y="25" data-z="150" data-landmark="military_base">
           <span class="dest-icon">🎖️</span>
           <div class="dest-info">
@@ -448,6 +471,120 @@
     </div>
   </div>
 
+  <!-- Estudio Constructor & Sandbox Offline Modal ('B' Key / 🛠️ Button) -->
+  <div id="builder-modal" class="hidden">
+    <div class="builder-modal-card">
+      <div class="modal-header">
+        <div>
+          <h2>🛠️ Estudio Constructor & Modo Offline</h2>
+          <p class="modal-desc" style="margin:2px 0 0 0;">Construye monumentos, puentes, lagos, bosques, animales NPC y guarda o carga tu propio mapa (.vrealm.json)</p>
+        </div>
+        <button id="close-builder-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+
+      <!-- Top Quick Bar inside Builder Modal -->
+      <div class="builder-quick-bar">
+        <button id="builder-tp-pradera-btn" type="button" class="mc-btn builder-top-pill highlight-pill">
+          🌾 Ir a La Gran Pradera Libre (+600, -600)
+        </button>
+        <button id="builder-toggle-offline-btn" type="button" class="mc-btn builder-top-pill">
+          🌐 Activar Modo Offline Solo
+        </button>
+        <button id="builder-save-map-btn" type="button" class="mc-btn builder-top-pill save-pill">
+          💾 Descargar Mi Mapa
+        </button>
+        <button id="builder-load-map-btn" type="button" class="mc-btn builder-top-pill load-pill">
+          📂 Subir / Cargar Mapa
+        </button>
+      </div>
+
+      <!-- Category Tabs -->
+      <div class="builder-tabs" role="tablist">
+        <button class="builder-tab-btn mc-btn active" data-tab="buildings" type="button">🏛️ Edificios & Monumentos</button>
+        <button class="builder-tab-btn mc-btn" data-tab="nature" type="button">🌉 Puentes, Agua & Árboles</button>
+        <button class="builder-tab-btn mc-btn" data-tab="brushes" type="button">🧱 Brochas & Copiar Edificios</button>
+        <button class="builder-tab-btn mc-btn" data-tab="animals" type="button">🐾 Animales NPC</button>
+        <button class="builder-tab-btn mc-btn" data-tab="worldfile" type="button">💾 Mapa & Permisos Android</button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div id="builder-tab-buildings" class="builder-tab-panel">
+        <p class="builder-section-hint">Selecciona cualquier edificio o monumento (como la Torre Eiffel o la Pagoda Imperial) y toca en el mapa o pulsa <strong>✨ PEGAR</strong> para colocarlo donde quieras (excepto en zonas reservadas):</p>
+        <div id="builder-prefabs-buildings-grid" class="builder-catalog-grid"></div>
+      </div>
+
+      <div id="builder-tab-nature" class="builder-tab-panel hidden">
+        <p class="builder-section-hint">Coloca puentes colgantes, tramos de autopista, murallas, lagos de agua cristalina, cascadas y bosques enteros con 1 toque:</p>
+        <div id="builder-prefabs-nature-grid" class="builder-catalog-grid"></div>
+      </div>
+
+      <div id="builder-tab-brushes" class="builder-tab-panel hidden">
+        <p class="builder-section-hint">Construye con brochas multi-bloque (plataformas 3×3, 5×5, muros, esferas, piscinas de agua) o copia cualquier edificio del mapa:</p>
+        <div id="builder-brushes-grid" class="builder-catalog-grid"></div>
+
+        <div class="cloner-box">
+          <h4>📋 Clonador 3D de Edificios del Mapa (Excluye Base Militar y Búnker)</h4>
+          <p>Apunta a cualquier edificio del mapa (Torre Eiffel, rascacielos, casas, templos) y cópialo para pegarlo donde quieras:</p>
+          <div class="cloner-actions-row">
+            <button id="cloner-copy-targeted-btn" type="button" class="mc-btn highlight-pill">🎯 Copiar Edificio al que Apunto</button>
+            <button id="cloner-select-box-btn" type="button" class="mc-btn">📐 Marcar Esquina A y B</button>
+            <button id="cloner-paste-mode-btn" type="button" class="mc-btn">📋 Modo Pegar Copia</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="builder-tab-animals" class="builder-tab-panel hidden">
+        <p class="builder-section-hint">Genera animales NPC vivos que caminan libremente por tus praderas y jardines con detección de colisiones (¡no atraviesan tus edificios ni muros!):</p>
+        <div id="builder-animals-grid" class="builder-catalog-grid"></div>
+      </div>
+
+      <div id="builder-tab-worldfile" class="builder-tab-panel hidden">
+        <div class="worldfile-panel-card">
+          <h3>💾 Guardar / Descargar y Cargar Tu Mundo Offline (.vrealm.json)</h3>
+          <p>Tu archivo de mapa guarda automáticamente tu <strong>nombre de jugador</strong>, tu <strong>posición exacta</strong>, todos los <strong>bloques y edificios construidos</strong> y tus <strong>animales NPC</strong>. Las zonas reservadas (Base Militar y Búnker) permanecen protegidas.</p>
+          <div class="worldfile-actions-grid">
+            <button id="worldfile-download-btn" type="button" class="mc-btn highlight-pill" style="padding:12px 16px;font-weight:bold;">
+              💾 DESCARGAR MI MAPA AHORA (.vrealm.json)
+            </button>
+            <button id="worldfile-upload-btn" type="button" class="mc-btn" style="padding:12px 16px;font-weight:bold;">
+              📂 SUBIR Y CARGAR ARCHIVO DE MAPA
+            </button>
+          </div>
+
+          <div class="android-permissions-box">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <div>
+                <h4>📱 Permisos de Archivos del Sistema en Android</h4>
+                <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Necesarios en dispositivos Android para guardar y leer tus archivos de mapa <code>.vrealm.json</code> en el almacenamiento del dispositivo.</p>
+              </div>
+              <span id="android-perm-status-badge" class="mc-badge">🔒 Pendiente / Listo</span>
+            </div>
+            <button id="android-request-perm-btn" type="button" class="mc-btn" style="margin-top:10px;width:100%;padding:10px;">
+              🛡️ Solicitar / Verificar Permisos de Almacenamiento Android
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Android System Storage Permission Request Dialog -->
+  <div id="android-permission-modal" class="hidden">
+    <div class="android-perm-card">
+      <div class="android-perm-icon">📁📱</div>
+      <h3>Permiso de Acceso a Archivos (Android)</h3>
+      <p>¿Permitir que <strong>Voxel Realms</strong> acceda a los archivos y almacenamiento de tu dispositivo para poder <strong>guardar (descargar)</strong> y <strong>cargar (subir)</strong> tus mapas personalizados <code>.vrealm.json</code> en Modo Offline?</p>
+      <div class="android-perm-perms-list">
+        <span>• READ_EXTERNAL_STORAGE (Leer mapas guardados)</span>
+        <span>• WRITE_EXTERNAL_STORAGE (Guardar tu mapa offline)</span>
+      </div>
+      <div class="android-perm-actions">
+        <button id="android-perm-allow-btn" type="button" class="mc-btn highlight-pill" style="flex:1;padding:10px;font-weight:bold;">✅ PERMITIR ACCESO A ARCHIVOS</button>
+        <button id="android-perm-deny-btn" type="button" class="mc-btn" style="padding:10px;">Ahora no</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Pause Menu (Escape Key) -->
   <div id="pause-menu" class="hidden">
     <div class="pause-card">
@@ -520,6 +657,10 @@
         </div>
 
         <div class="pause-menu-grid">
+          <button id="menu-btn-builder" class="mc-btn menu-grid-btn highlight-pill">🛠️ Estudio Constructor</button>
+          <button id="menu-btn-pradera" class="mc-btn menu-grid-btn highlight-pill">🌾 Gran Pradera Libre</button>
+          <button id="menu-btn-save-world" class="mc-btn menu-grid-btn">💾 Descargar Mi Mapa</button>
+          <button id="menu-btn-load-world" class="mc-btn menu-grid-btn">📂 Subir / Cargar Mapa</button>
           <button id="menu-btn-map" class="mc-btn menu-grid-btn">🗺️ Mapa y Viajes</button>
           <button id="menu-btn-base-militar" class="mc-btn menu-grid-btn highlight-pill">🎖️ Base Militar</button>
           <button id="menu-btn-bunker" class="mc-btn menu-grid-btn highlight-pill">🛡️ Búnker Subterráneo</button>
@@ -612,11 +753,21 @@
         </div>
 
         <button id="join-btn" class="launch-btn">
-          <span>ENTRAR AL MUNDO</span>
+          <span>ENTRAR AL MUNDO (MULTIJUGADOR ONLINE)</span>
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
             <path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-7.85-1.42 1.42L16.86 11H5v2z"/>
           </svg>
         </button>
+
+        <div class="lobby-offline-row">
+          <button id="join-offline-btn" type="button" class="mc-btn offline-launch-btn">
+            <span>🛠️ MODO OFFLINE (SOLO / CREATIVO LIBRE)</span>
+          </button>
+          <button id="load-world-lobby-btn" type="button" class="mc-btn load-world-btn">
+            <span>📂 CARGAR MI MAPA (.vrealm / .json)</span>
+          </button>
+          <input type="file" id="world-file-input" accept=".json,.vrealm,application/json" class="hidden">
+        </div>
 
         <a href="/VoxelRealms.apk" download="VoxelRealms.apk" class="mc-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;text-decoration:none;font-size:12px;">
           <span>📱 DESCARGAR APK ANDROID (PANTALLA COMPLETA)</span>

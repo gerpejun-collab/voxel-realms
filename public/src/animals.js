@@ -356,12 +356,63 @@ class VoxelAnimal {
 
   isValidGroundPosition(wx, wz) {
     if (!this.world) return true;
-    if (typeof this.world.isValidAnimalSpawn === 'function') {
+    const bx = Math.floor(wx);
+    const bz = Math.floor(wz);
+    if (!this.isCustomSpawned && typeof this.world.isValidAnimalSpawn === 'function') {
       if (!this.world.isValidAnimalSpawn(wx, wz)) return false;
     }
-    const gy = this.world.getHeightAt(Math.floor(wx), Math.floor(wz));
+    const gy = this.world.getHeightAt(bx, bz);
     if (gy <= 18) return false; // Never enter water level
+
+    // Check actual voxel blocks at and above ground (including player-built buildings, walls, and lakes)
+    if (typeof this.world.getBlock === 'function') {
+      const surfaceBlk = this.world.getBlock(bx, gy, bz);
+      if (surfaceBlk === 11) return false; // BLOCKS.WATER
+      const footY = Math.max(gy, Math.floor(this.position ? this.position.y - 1 : gy));
+      const b1 = this.world.getBlock(bx, footY + 1, bz);
+      const b2 = this.world.getBlock(bx, footY + 2, bz);
+      if (b1 !== 0 || b2 !== 0) return false;
+
+      // Bounding radius check (±0.38m) so animals never clip into building walls or fences
+      const r = 0.38;
+      const probes = [
+        [wx + r, wz],
+        [wx - r, wz],
+        [wx, wz + r],
+        [wx, wz - r]
+      ];
+      for (let i = 0; i < probes.length; i++) {
+        const px = Math.floor(probes[i][0]);
+        const pz = Math.floor(probes[i][1]);
+        const pb1 = this.world.getBlock(px, footY + 1, pz);
+        const pb2 = this.world.getBlock(px, footY + 2, pz);
+        if (pb1 !== 0 || pb2 !== 0) return false;
+      }
+    }
     return true;
+  }
+
+  getEffectiveGroundY(wx, wz) {
+    if (!this.world) return 24;
+    const bx = Math.floor(wx);
+    const bz = Math.floor(wz);
+    let gy = this.world.getHeightAt(bx, bz);
+    if (typeof this.world.getBlock === 'function') {
+      // Check if standing on a player-built platform/floor near current elevation
+      const curY = Math.floor(this.position ? this.position.y : gy + 1);
+      for (let y = Math.min(118, curY + 2); y >= Math.max(18, gy - 2); y--) {
+        const blk = this.world.getBlock(bx, y, bz);
+        if (blk !== 0 && blk !== 11) {
+          const above1 = this.world.getBlock(bx, y + 1, bz);
+          const above2 = this.world.getBlock(bx, y + 2, bz);
+          if (above1 === 0 && above2 === 0) {
+            return y;
+          }
+          break;
+        }
+      }
+    }
+    return gy;
   }
 
   spawnNear(centerX, centerZ, minRadius = 12, maxRadius = 42) {
@@ -498,10 +549,10 @@ class VoxelAnimal {
       while (diff < -Math.PI) diff += Math.PI * 2;
       this.rotationY += diff * Math.min(1, dt * 6);
     } else {
-      // Respawn if too far from player (> 85 blocks)
+      // Respawn if too far from player (> 85 blocks), unless custom-spawned by player in Builder Mode
       const dx = this.position.x - playerPos.x;
       const dz = this.position.z - playerPos.z;
-      if (dx * dx + dz * dz > 85 * 85) {
+      if (!this.isCustomSpawned && dx * dx + dz * dz > 85 * 85) {
         this.spawnNear(playerPos.x, playerPos.z, 22, 55);
         return;
       }
@@ -529,22 +580,22 @@ class VoxelAnimal {
         const nextX = this.position.x + moveX;
         const nextZ = this.position.z + moveZ;
 
-        const curGround = this.world.getHeightAt(Math.floor(this.position.x), Math.floor(this.position.z));
-        const nextGround = this.world.getHeightAt(Math.floor(nextX), Math.floor(nextZ));
+        const curGround = this.getEffectiveGroundY(this.position.x, this.position.z);
+        const nextGround = this.getEffectiveGroundY(nextX, nextZ);
 
-        // Strict terrain check: never step into water, onto roads, or into steep walls/rocks
+        // Strict terrain & building check: never walk through buildings/walls, water, roads, or steep cliffs
         if (Math.abs(nextGround - curGround) <= 1 && this.isValidGroundPosition(nextX, nextZ)) {
           this.position.x = nextX;
           this.position.z = nextZ;
           this.position.y = nextGround + 1;
         } else {
-          // Turn away from road, water, or obstacle
+          // Smoothly turn away from building wall, fence, road, or water
           this.targetRotationY = this.rotationY + Math.PI * (0.65 + Math.random() * 0.7);
           this.state = 'idle';
-          this.stateTimer = 0.8;
+          this.stateTimer = 0.6;
         }
       } else {
-        const curGround = this.world.getHeightAt(Math.floor(this.position.x), Math.floor(this.position.z));
+        const curGround = this.getEffectiveGroundY(this.position.x, this.position.z);
         this.position.y = curGround + 1;
       }
     }
@@ -1787,16 +1838,114 @@ export class AnimalManager {
       animal.applyServerState(item);
     }
 
-    // Remove animals that were despawned or burst on server
+    // Remove animals that were despawned or burst on server (preserve custom offline/sandbox animals!)
     for (let i = this.animals.length - 1; i >= 0; i--) {
       const a = this.animals[i];
-      if (a.isDying) continue; // Keep entity visible during 3-second knockback / despawn
+      if (a.isDying || a.isCustomSpawned) continue; // Keep entity visible during knockback or if custom-spawned
       if (!activeIds.has(a.id)) {
         a.dispose();
         this.animalsById.delete(a.id);
         this.animals.splice(i, 1);
       }
     }
+  }
+
+  /**
+   * Switch to local offline animal simulation (disconnects server-controlled lock and ensures ambient + custom animals roam freely)
+   */
+  enableOfflineMode(playerPos = { x: 0, z: 0 }) {
+    this.serverSynced = false;
+    for (const animal of this.animals) {
+      animal.serverControlled = false;
+    }
+    if (this.animals.filter(a => !a.isCustomSpawned).length < 18) {
+      this.initLocalAnimals();
+    }
+  }
+
+  /**
+   * Spawn a custom persistent NPC animal at exact coordinates (walks freely and avoids buildings)
+   */
+  spawnCustomAnimal(type, x, y, z, id = null, rotationY = null) {
+    const species = ANIMAL_SPECIES.includes(type) ? type : 'sheep';
+    const customId = id || `custom_${species}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const existing = this.animalsById.get(customId);
+    if (existing) {
+      existing.dispose();
+      this.animalsById.delete(customId);
+      const idx = this.animals.indexOf(existing);
+      if (idx !== -1) this.animals.splice(idx, 1);
+    }
+
+    const animal = new VoxelAnimal(species, this.scene, this.world, customId);
+    animal.isCustomSpawned = true;
+    animal.serverControlled = false;
+    const spawnY = (typeof y === 'number' && !isNaN(y))
+      ? y
+      : (this.world ? this.world.getHeightAt(Math.floor(x), Math.floor(z)) + 1 : 25);
+    animal.position.set(x, spawnY, z);
+    animal.targetPos.copy(animal.position);
+    animal.group.position.copy(animal.position);
+    if (typeof rotationY === 'number') {
+      animal.rotationY = rotationY;
+      animal.targetRotationY = rotationY;
+      animal.group.rotation.y = rotationY;
+    }
+    animal.state = 'walk';
+    animal.stateTimer = 2.5 + Math.random() * 3.0;
+
+    this.animals.push(animal);
+    this.animalsById.set(customId, animal);
+    return animal;
+  }
+
+  /**
+   * Clear all custom-spawned animals
+   */
+  clearCustomAnimals() {
+    for (let i = this.animals.length - 1; i >= 0; i--) {
+      const a = this.animals[i];
+      if (a && a.isCustomSpawned) {
+        a.dispose();
+        this.animalsById.delete(a.id);
+        this.animals.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Export custom-spawned animals for saving in .vrealm.json world files
+   */
+  exportCustomAnimals() {
+    const list = [];
+    for (const a of this.animals) {
+      if (a && a.isCustomSpawned && !a.isDying) {
+        list.push({
+          id: a.id,
+          type: a.type,
+          x: Math.round(a.position.x * 100) / 100,
+          y: Math.round(a.position.y * 100) / 100,
+          z: Math.round(a.position.z * 100) / 100,
+          rotationY: Math.round((a.rotationY || 0) * 100) / 100
+        });
+      }
+    }
+    return list;
+  }
+
+  /**
+   * Import custom-spawned animals from a saved .vrealm.json world file
+   */
+  importCustomAnimals(list) {
+    this.clearCustomAnimals();
+    if (!Array.isArray(list)) return 0;
+    let count = 0;
+    for (const item of list) {
+      if (!item || typeof item.x !== 'number' || typeof item.z !== 'number') continue;
+      this.spawnCustomAnimal(item.type || 'sheep', item.x, item.y, item.z, item.id, item.rotationY);
+      count++;
+    }
+    return count;
   }
 
   /**

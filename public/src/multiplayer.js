@@ -14,6 +14,7 @@ export class MultiplayerClient {
     this.myEmail = '';
     this.adminKey = '';
     this.isAdmin = false;
+    this.isOfflineMode = false;
     this.connected = false;
     this.reconnecting = false;
     this.reconnectAttempts = 0;
@@ -54,7 +55,79 @@ export class MultiplayerClient {
     return this.connected;
   }
 
+  /**
+   * Returns true if the local user is the main administrator
+   */
+  isMainAdmin() {
+    const email = (this.myEmail || '').trim().toLowerCase();
+    const name = (this.myName || '').trim().toLowerCase();
+    return email === 'jsieiragerpe@gmail.com' || name === 'jsieiragerpe@gmail.com' || name === 'jsieiragerpe' || (this.isAdmin && !name.includes('cifrixa'));
+  }
+
+  /**
+   * Returns true if (x, y, z) falls inside the reserved Military Base or Underground Bunker zones
+   */
+  isRestrictedCoordinate(x, y, z) {
+    const bx = Math.round(x);
+    const bz = Math.round(z);
+    // Air Base perimeter (-455..-385, 115..185)
+    if (bx >= -455 && bx <= -385 && bz >= 115 && bz <= 185) return true;
+    // Underground Bunker & Silo perimeter (-565..-435, 235..365)
+    if (bx >= -565 && bx <= -435 && bz >= 235 && bz <= 365) return true;
+    return false;
+  }
+
+  /**
+   * Activate solo Offline / Sandbox Creative mode without connecting to the multiplayer network
+   */
+  startOfflineMode(playerName) {
+    this.isOfflineMode = true;
+    this.connected = false;
+    this.reconnecting = false;
+    this.kickedByAdminReset = false;
+    this.myId = 'offline_local_player';
+    if (playerName && playerName.trim()) {
+      this.myName = playerName.trim();
+    }
+
+    if (this.ws) {
+      try {
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        this.ws.onmessage = null;
+        this.ws.close();
+      } catch (_) {}
+      this.ws = null;
+    }
+
+    for (const avatar of this.remoteAvatars.values()) {
+      avatar.dispose();
+    }
+    this.remoteAvatars.clear();
+    this.playerDirectory.clear();
+    this.playerDirectory.set(this.myId, {
+      id: this.myId,
+      name: this.myName,
+      pos: this.physics?.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : [0, 25, 0],
+      joinedAt: Date.now()
+    });
+
+    if (this.onPlayerCountChange) {
+      this.onPlayerCountChange(1);
+    }
+    if (this.onPlayerInit) {
+      this.onPlayerInit({
+        id: this.myId,
+        player: { id: this.myId, name: this.myName, pos: [3, 25, 6] }
+      });
+    }
+    if (this.onNotification) {
+      this.onNotification(`🛠️ Modo Offline Activado (${this.myName}). Construye libremente y descarga tu mapa cuando quieras.`);
+    }
+  }
+
   connect(playerName, options = {}) {
+    this.isOfflineMode = false;
     this.myName = playerName || 'Player';
     if (options && typeof options.email === 'string') {
       this.myEmail = options.email;
@@ -122,8 +195,8 @@ export class MultiplayerClient {
 
     if (this.onDisconnected) this.onDisconnected();
 
-    // Do not auto-reconnect if kicked to login screen by an admin server reset
-    if (this.kickedByAdminReset) {
+    // Do not auto-reconnect if kicked to login screen by an admin server reset or in Offline Mode
+    if (this.kickedByAdminReset || this.isOfflineMode) {
       this.reconnecting = false;
       return;
     }
@@ -134,7 +207,7 @@ export class MultiplayerClient {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
       setTimeout(() => {
-        if (!this.connected && !this.kickedByAdminReset) {
+        if (!this.connected && !this.kickedByAdminReset && !this.isOfflineMode) {
           this.connect(this.myName, { email: this.myEmail, adminKey: this.adminKey });
         }
       }, delay);
@@ -672,12 +745,24 @@ export class MultiplayerClient {
   }
 
   sendBlockModify(x, y, z, blockType) {
+    // Restricted zone check (enforced both online and in Offline Mode for non-admins)
+    if (!this.isMainAdmin() && this.isRestrictedCoordinate(x, y, z)) {
+      if (this.onError) {
+        this.onError('🛡️ Zona reservada: La Base Militar y el Búnker están protegidos.');
+      } else if (this.onNotification) {
+        this.onNotification('🛡️ Zona reservada: La Base Militar y el Búnker están protegidos.');
+      }
+      return;
+    }
+
     // Optimistic local update using applyBlockDelta to sync local deltas Map
     const previous = this.world.getBlock(x, y, z);
     const key = `${x},${y},${z}`;
-    this.pendingModifications.set(key, previous);
+    if (!this.isOfflineMode && this.connected) {
+      this.pendingModifications.set(key, previous);
+    }
 
-    if (blockType === 0 && previous !== 0) {
+    if (blockType === 0 && previous !== 0 && this.particles && typeof this.particles.spawnBlockDebris === 'function') {
       this.particles.spawnBlockDebris(x, y, z);
     }
     this.world.applyBlockDelta(x, y, z, blockType);
@@ -687,8 +772,10 @@ export class MultiplayerClient {
       this.checkAvatarsGroundAfterBlockBreak(x, y, z);
     }
 
-    // Send request to server
-    this.send('block_modify', { x, y, z, blockType });
+    // Send request to server if online
+    if (!this.isOfflineMode && this.connected) {
+      this.send('block_modify', { x, y, z, blockType });
+    }
   }
 
   /**
@@ -718,6 +805,48 @@ export class MultiplayerClient {
   }
 
   sendTntTrigger(x, y, z, fuseMs = 1800, radius = 3) {
+    if (!this.isMainAdmin() && this.isRestrictedCoordinate(x, y, z)) {
+      if (this.onNotification) {
+        this.onNotification('🛡️ Zona reservada: Explosivos desactivados cerca de la Base Militar y el Búnker.');
+      }
+      return;
+    }
+
+    if (this.isOfflineMode || !this.connected) {
+      const r = Math.max(1, Math.min(8, typeof radius === 'number' ? radius : 3));
+      const delay = Math.max(0, typeof fuseMs === 'number' ? fuseMs : 0);
+      const detonateLocal = () => {
+        const batch = [];
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            for (let dz = -r; dz <= r; dz++) {
+              if (dx * dx + dy * dy + dz * dz <= r * r + 0.5) {
+                const bx = Math.round(x + dx);
+                const by = Math.round(y + dy);
+                const bz = Math.round(z + dz);
+                if (by >= 19 && by < 120 && (this.isMainAdmin() || !this.isRestrictedCoordinate(bx, by, bz))) {
+                  batch.push([bx, by, bz, 0]);
+                }
+              }
+            }
+          }
+        }
+        if (batch.length > 0 && this.world && typeof this.world.applyBlockDeltasBatch === 'function') {
+          this.world.applyBlockDeltasBatch(batch);
+        }
+        if (this.particles && typeof this.particles.spawnExplosion === 'function') {
+          this.particles.spawnExplosion(x, y, z);
+        }
+        this.checkAvatarsGroundAfterBlockBreak(x, y, z);
+      };
+      if (delay <= 30) {
+        detonateLocal();
+      } else {
+        setTimeout(detonateLocal, delay);
+      }
+      return;
+    }
+
     this.send('tnt_trigger', { x, y, z, fuseMs, radius });
   }
 

@@ -2,6 +2,7 @@
 // Modern game UI: Lobby, HUD, Hotbar, Inventory, Pause menu, Chat, Mobile Virtual Controls & Interactive Tutorial
 import * as THREE from 'three';
 import { BLOCKS, BLOCK_DEFS, HOTBAR_BLOCKS } from './blocks.js';
+import { PREFAB_CATALOG, BRUSH_MODES, ANIMAL_SPAWN_CATALOG } from './sandbox.js';
 import { sound } from './audio.js';
 
 export const LANDMARKS = [
@@ -85,6 +86,15 @@ export const LANDMARKS = [
     y: 25,
     z: -60,
     desc: 'XYZ (110, 25, -60) • Pista Internacional, Gradas, Boxes, Lago & Túneles'
+  },
+  {
+    id: 'pradera',
+    name: '🌾 Gran Pradera Libre (+600, -600)',
+    icon: '🌾',
+    x: 600,
+    y: 25,
+    z: -600,
+    desc: 'XYZ (+600, 25, -600) • Explanada Gigante 360×360 para Construcción Libre'
   }
 ];
 
@@ -128,9 +138,12 @@ export class UIManager {
     this.isInventoryOpen = false;
     this.isGuideOpen = false;
     this.isMapOpen = false;
+    this.isBuilderOpen = false;
     this.isPlayerListOpen = false;
     this.currentSpeedTier = 1; // 1: 1x, 2: 2.5x, 3: 5x flight
     this.tacticalRadar = null;
+    this.sandboxManager = null;
+    this.builderModal = document.getElementById('builder-modal');
 
     // Wire controls callbacks
     if (this.controls) {
@@ -365,6 +378,7 @@ export class UIManager {
     this.initGuide();
     this.initMobileControls();
     this.initPlayerList();
+    this.initBuilderStudio();
   }
 
   buildHighlightBox() {
@@ -384,6 +398,10 @@ export class UIManager {
       this.hudOnlineCount = document.getElementById('hud-online-count');
     }
     if (this.hudOnlineCount) {
+      if (this.multiplayer && this.multiplayer.isOfflineMode) {
+        this.hudOnlineCount.textContent = '🛠️ Modo Offline (Solo)';
+        return;
+      }
       const total = typeof count === 'number' ? count : (1 + (this.multiplayer?.remoteAvatars?.size || 0));
       this.hudOnlineCount.textContent = total === 1 ? '1 Jugador Conectado' : `${total} Jugadores Conectados`;
     }
@@ -504,6 +522,108 @@ export class UIManager {
       joinBtn.addEventListener('click', () => {
         sound.playClick();
         doJoin();
+      });
+    }
+
+    // Offline Mode Launch from Lobby
+    const joinOfflineBtn = document.getElementById('join-offline-btn');
+    const doJoinOffline = () => {
+      let name = (nameInput?.value || '').trim();
+      if (!name) name = 'Constructor_' + Math.floor(Math.random() * 1000);
+
+      const normName = name.trim().toLowerCase();
+      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com' || normName === 'jsieiragerpe' || normName === 'admin');
+      const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
+
+      if (isMainAdmin) {
+        const normKey = adminKeyVal.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (normKey !== 'GALAXYS26') {
+          alert('Acceso denegado: Clave de acceso incorrecta.');
+          if (accessKeyInput) {
+            accessKeyInput.focus();
+            accessKeyInput.style.borderColor = '#ef4444';
+          }
+          return;
+        }
+        this.multiplayer.myEmail = 'jsieiragerpe@gmail.com';
+        this.multiplayer.isAdmin = true;
+      }
+
+      localStorage.setItem('vr_username', name);
+
+      if (qualitySelect) {
+        this.sceneManager.setGraphicsQuality(qualitySelect.value);
+        if (qualitySelect.value === 'balanced') this.world.renderDistance = 4;
+        else if (qualitySelect.value === 'ultra') this.world.renderDistance = 7;
+      }
+
+      this.lobbyOverlay.classList.add('hidden');
+      this.hudOverlay.classList.remove('hidden');
+
+      if (this.controls.isMobile && this.mobileOverlay) {
+        this.mobileOverlay.classList.remove('hidden');
+        document.body.classList.add('mobile-mode');
+      }
+
+      if (this.multiplayer && typeof this.multiplayer.startOfflineMode === 'function') {
+        this.multiplayer.startOfflineMode(name);
+      }
+      if (this.animalManager && typeof this.animalManager.enableOfflineMode === 'function') {
+        this.animalManager.enableOfflineMode();
+      }
+      this.updatePlayerCountBadge(1);
+      this.controls.lock();
+
+      setTimeout(() => {
+        this.addSystemNotification('🛠️ ¡Modo Offline / Creativo activado! Usa [🛠️ Constructor] para pegar edificios, lagos, animales o ir a la Gran Pradera (+600, -600).');
+      }, 600);
+    };
+
+    this.triggerJoinOffline = doJoinOffline;
+
+    if (joinOfflineBtn) {
+      joinOfflineBtn.addEventListener('click', () => {
+        sound.playClick();
+        doJoinOffline();
+      });
+    }
+
+    // Load Saved World File (.vrealm / .json) from Lobby or In-Game
+    const loadWorldLobbyBtn = document.getElementById('load-world-lobby-btn');
+    const worldFileInput = document.getElementById('world-file-input');
+
+    if (loadWorldLobbyBtn && worldFileInput) {
+      loadWorldLobbyBtn.addEventListener('click', async () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          await this.sandboxManager.requestAndroidStoragePermissions(false);
+        }
+        worldFileInput.value = '';
+        worldFileInput.click();
+      });
+    }
+
+    if (worldFileInput) {
+      worldFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file || !this.sandboxManager) return;
+        try {
+          const result = await this.sandboxManager.importWorldFromFile(file);
+          if (result) {
+            this.lobbyOverlay.classList.add('hidden');
+            this.hudOverlay.classList.remove('hidden');
+            if (this.pauseMenu) this.pauseMenu.classList.add('hidden');
+            this.toggleBuilderModal(false);
+            if (this.controls.isMobile && this.mobileOverlay) {
+              this.mobileOverlay.classList.remove('hidden');
+              document.body.classList.add('mobile-mode');
+            }
+            this.updatePlayerCountBadge(1);
+            if (!this.controls.isMobile) this.controls.lock();
+          }
+        } catch (err) {
+          alert('No se pudo cargar el archivo de mapa: ' + (err.message || err));
+        }
       });
     }
     if (nameInput) {
@@ -680,6 +800,7 @@ export class UIManager {
     const btnGuide = document.getElementById('btn-open-guide');
     const btnInv = document.getElementById('btn-open-inv');
     const btnMap = document.getElementById('btn-map') || document.getElementById('btn-open-map');
+    const btnBuilder = document.getElementById('btn-open-builder');
     const btnShareLoc = document.getElementById('btn-share-loc');
     const btnSpeedToggle = document.getElementById('hud-speed-btn') || 
                            document.getElementById('hud-speed-pill') || 
@@ -725,6 +846,13 @@ export class UIManager {
       btnMap.addEventListener('click', () => {
         sound.playClick();
         this.toggleMap(true);
+      });
+    }
+
+    if (btnBuilder) {
+      btnBuilder.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleBuilderModal(!this.isBuilderOpen);
       });
     }
 
@@ -925,6 +1053,10 @@ export class UIManager {
       // Gran Circuito: stand on the starting grid facing down the main straight toward Turn 1
       vx = 110.5; vy = 25.0; vz = -60.5;
       targetYaw = 0; targetPitch = 0.05;
+    } else if ((tx === 600 && tz === -600) || (landmark && (landmark.landmark === 'pradera' || (landmark.name && landmark.name.includes('Pradera'))))) {
+      // La Gran Pradera Libre (+600, -600): stand at center of the 360x360 flat green building meadow
+      vx = 600.5; vy = 25.0; vz = -592.5;
+      targetYaw = 0; targetPitch = 0.05;
     } else if ((tx === -420 && tz === 150) || (landmark && (landmark.landmark === 'military_base' || (landmark.name && landmark.name.includes('Base Militar'))))) {
       // Base Militar: If main admin (jsieiragerpe@gmail.com), spawn INSIDE base at -410, 25, 150.
       // If non-admin, spawn at the perimeter barrier boundary at -458, 25, 150.
@@ -1101,7 +1233,9 @@ export class UIManager {
   getSectorName(x, z) {
     const distCenter = Math.hypot(x, z);
     if (distCenter <= 40) return '🏰 Plaza Central';
+    if (x >= 420 && x <= 780 && z >= -780 && z <= -420) return '🌾 Gran Pradera Libre';
     if (x >= -455 && x <= -385 && z >= 115 && z <= 185) return '🎖️ Base Militar';
+    if (x >= -565 && x <= -435 && z >= 235 && z <= 365) return '🛡️ Búnker Subterráneo';
     if (Math.hypot(x - 350, z - 350) <= 85 || Math.hypot(x - 500, z - 500) <= 90) return '🗻 Monte Fuji';
     if (z >= 420 && z <= 580 && Math.abs(x) <= 80) return '🇳🇴 Fiordos de Noruega';
     if (Math.hypot(x, z + 500) <= 120) return '🏖️ Playa Paraíso';
@@ -1545,6 +1679,49 @@ export class UIManager {
     }
 
     // Fast action grid inside Pause Menu
+    const menuBuilderBtn = document.getElementById('menu-btn-builder');
+    if (menuBuilderBtn) {
+      menuBuilderBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.pauseMenu.classList.add('hidden');
+        this.toggleBuilderModal(true);
+      });
+    }
+
+    const menuPraderaBtn = document.getElementById('menu-btn-pradera');
+    if (menuPraderaBtn) {
+      menuPraderaBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.pauseMenu.classList.add('hidden');
+        this.teleportToLandmark({ name: 'Gran Pradera Libre', x: 600, y: 25, z: -600, landmark: 'pradera' });
+      });
+    }
+
+    const menuSaveWorldBtn = document.getElementById('menu-btn-save-world');
+    if (menuSaveWorldBtn) {
+      menuSaveWorldBtn.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          this.sandboxManager.exportWorldFile();
+        }
+      });
+    }
+
+    const menuLoadWorldBtn = document.getElementById('menu-btn-load-world');
+    if (menuLoadWorldBtn) {
+      menuLoadWorldBtn.addEventListener('click', async () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          await this.sandboxManager.requestAndroidStoragePermissions(false);
+        }
+        const fileInput = document.getElementById('world-file-input');
+        if (fileInput) {
+          fileInput.value = '';
+          fileInput.click();
+        }
+      });
+    }
+
     const menuMapBtn = document.getElementById('menu-btn-map');
     if (menuMapBtn) {
       menuMapBtn.addEventListener('click', () => {
@@ -1629,12 +1806,12 @@ export class UIManager {
       const isInGame = this.lobbyOverlay.classList.contains('hidden');
       const clickPrompt = document.getElementById('click-to-lock-prompt');
 
-      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && !this.isMapOpen && isInGame && !this.controls.isMobile) {
+      if (!isLocked && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && !this.isMapOpen && !this.isBuilderOpen && isInGame && !this.controls.isMobile) {
         this.pauseMenu.classList.remove('hidden');
         if (clickPrompt) clickPrompt.classList.add('hidden');
       } else {
         this.pauseMenu.classList.add('hidden');
-        if (!isLocked && isInGame && !this.controls.isMobile && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && !this.isMapOpen) {
+        if (!isLocked && isInGame && !this.controls.isMobile && !this.isInventoryOpen && !this.isChatOpen && !this.isGuideOpen && !this.isMapOpen && !this.isBuilderOpen) {
           if (clickPrompt) clickPrompt.classList.remove('hidden');
         } else {
           if (clickPrompt) clickPrompt.classList.add('hidden');
@@ -2213,5 +2390,397 @@ export class UIManager {
       setTimeout(() => toast.classList.add('hidden'), 300);
     }, 2400);
     toast.classList.remove('hidden');
+  }
+
+  setSandboxManager(sandboxManager) {
+    this.sandboxManager = sandboxManager;
+    this.renderBuilderCatalogs();
+    this.updateSandboxToolbarUI();
+  }
+
+  toggleBuilderModal(open) {
+    this.isBuilderOpen = (open !== undefined) ? Boolean(open) : !this.isBuilderOpen;
+    if (!this.builderModal) {
+      this.builderModal = document.getElementById('builder-modal');
+    }
+    if (this.builderModal) {
+      this.builderModal.classList.toggle('hidden', !this.isBuilderOpen);
+    }
+    const toggleOfflineBtn = document.getElementById('builder-toggle-offline-btn');
+    if (toggleOfflineBtn && this.multiplayer) {
+      toggleOfflineBtn.textContent = this.multiplayer.isOfflineMode
+        ? '✅ Modo Offline Activo (Jugando Solo)'
+        : '🌐 Activar Modo Offline Solo';
+    }
+    if (this.isBuilderOpen) {
+      this.controls.unlock();
+      this.renderBuilderCatalogs();
+    } else if (!this.controls.isMobile) {
+      this.controls.lock();
+    }
+  }
+
+  updateSandboxToolbarUI() {
+    const bar = document.getElementById('sandbox-active-tool-bar');
+    const label = document.getElementById('sandbox-tool-label');
+    const rotBtn = document.getElementById('sandbox-btn-rotate');
+    if (!bar || !this.sandboxManager) return;
+
+    const sm = this.sandboxManager;
+    if (sm.activeToolType === 'none' || (sm.activeToolType === 'brush' && sm.activeBrushId === '1x1')) {
+      bar.classList.add('hidden');
+      return;
+    }
+
+    bar.classList.remove('hidden');
+    if (rotBtn) {
+      rotBtn.textContent = `🔄 ROTAR (${(sm.prefabRotation || 0) * 90}°)`;
+    }
+
+    if (label) {
+      if (sm.activeToolType === 'prefab') {
+        const item = PREFAB_CATALOG.find(p => p.id === sm.activePrefabId);
+        label.textContent = item ? `${item.icon} ${item.name}` : `Estructura: ${sm.activePrefabId}`;
+      } else if (sm.activeToolType === 'brush') {
+        const b = BRUSH_MODES.find(x => x.id === sm.activeBrushId);
+        label.textContent = b ? `${b.icon} ${b.name}` : `Brocha: ${sm.activeBrushId}`;
+      } else if (sm.activeToolType === 'animal') {
+        const a = ANIMAL_SPAWN_CATALOG.find(x => x.id === sm.activeAnimalType);
+        label.textContent = a ? `${a.icon} Generar: ${a.name}` : `Animal: ${sm.activeAnimalType}`;
+      } else if (sm.activeToolType === 'cloner_select_a') {
+        label.textContent = '📐 Clonador: Toca la Esquina A del edificio';
+      } else if (sm.activeToolType === 'cloner_select_b') {
+        label.textContent = '📐 Clonador: Ahora toca la Esquina B';
+      } else if (sm.activeToolType === 'cloner_paste') {
+        label.textContent = `📋 Pegar Copia (${sm.clipboardDeltas.length} bloques)`;
+      }
+    }
+  }
+
+  renderBuilderCatalogs() {
+    const buildingsGrid = document.getElementById('builder-prefabs-buildings-grid');
+    const natureGrid = document.getElementById('builder-prefabs-nature-grid');
+    const brushesGrid = document.getElementById('builder-brushes-grid');
+    const animalsGrid = document.getElementById('builder-animals-grid');
+
+    if (buildingsGrid && !buildingsGrid._populated) {
+      buildingsGrid._populated = true;
+      buildingsGrid.innerHTML = '';
+      for (const item of PREFAB_CATALOG.filter(p => p.category === 'buildings')) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'mc-btn builder-item-card';
+        card.innerHTML = `
+          <span class="builder-item-icon">${item.icon}</span>
+          <div class="builder-item-meta">
+            <strong class="builder-item-title">${item.name}</strong>
+            <span class="builder-item-size">Tamaño: ${item.size}</span>
+            <span class="builder-item-desc">${item.desc}</span>
+          </div>
+        `;
+        card.addEventListener('click', () => {
+          sound.playClick();
+          if (this.sandboxManager) {
+            this.sandboxManager.selectPrefab(item.id);
+            this.toggleBuilderModal(false);
+            this.showNotification(`🏗️ Seleccionado: ${item.name}. Apunta al suelo y pulsa COLOCAR o ✨ PEGAR.`);
+          }
+        });
+        buildingsGrid.appendChild(card);
+      }
+    }
+
+    if (natureGrid && !natureGrid._populated) {
+      natureGrid._populated = true;
+      natureGrid.innerHTML = '';
+      for (const item of PREFAB_CATALOG.filter(p => p.category === 'infra' || p.category === 'nature')) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'mc-btn builder-item-card';
+        card.innerHTML = `
+          <span class="builder-item-icon">${item.icon}</span>
+          <div class="builder-item-meta">
+            <strong class="builder-item-title">${item.name}</strong>
+            <span class="builder-item-size">Tamaño: ${item.size}</span>
+            <span class="builder-item-desc">${item.desc}</span>
+          </div>
+        `;
+        card.addEventListener('click', () => {
+          sound.playClick();
+          if (this.sandboxManager) {
+            this.sandboxManager.selectPrefab(item.id);
+            this.toggleBuilderModal(false);
+            this.showNotification(`🌉 Seleccionado: ${item.name}. Apunta donde quieras y pulsa COLOCAR o ✨ PEGAR.`);
+          }
+        });
+        natureGrid.appendChild(card);
+      }
+    }
+
+    if (brushesGrid && !brushesGrid._populated) {
+      brushesGrid._populated = true;
+      brushesGrid.innerHTML = '';
+      for (const b of BRUSH_MODES) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'mc-btn builder-item-card';
+        card.innerHTML = `
+          <span class="builder-item-icon">${b.icon}</span>
+          <div class="builder-item-meta">
+            <strong class="builder-item-title">${b.name}</strong>
+            <span class="builder-item-desc">${b.desc}</span>
+          </div>
+        `;
+        card.addEventListener('click', () => {
+          sound.playClick();
+          if (this.sandboxManager) {
+            this.sandboxManager.selectBrush(b.id);
+            this.toggleBuilderModal(false);
+            this.showNotification(`🧱 Brocha activa: ${b.name}`);
+          }
+        });
+        brushesGrid.appendChild(card);
+      }
+    }
+
+    if (animalsGrid && !animalsGrid._populated) {
+      animalsGrid._populated = true;
+      animalsGrid.innerHTML = '';
+      for (const a of ANIMAL_SPAWN_CATALOG) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'mc-btn builder-item-card';
+        card.innerHTML = `
+          <span class="builder-item-icon">${a.icon}</span>
+          <div class="builder-item-meta">
+            <strong class="builder-item-title">${a.name}</strong>
+            <span class="builder-item-desc">${a.desc}</span>
+          </div>
+        `;
+        card.addEventListener('click', () => {
+          sound.playClick();
+          if (this.sandboxManager) {
+            this.sandboxManager.selectAnimalSpawner(a.id);
+            this.toggleBuilderModal(false);
+            this.showNotification(`🐾 Generador de ${a.name} activo. Toca COLOCAR o ✨ USAR para crearlo.`);
+          }
+        });
+        animalsGrid.appendChild(card);
+      }
+    }
+  }
+
+  initBuilderStudio() {
+    const closeBtn = document.getElementById('close-builder-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleBuilderModal(false);
+      });
+    }
+
+    // Tab switching inside Builder Studio
+    const tabBtns = document.querySelectorAll('.builder-tab-btn');
+    const tabPanels = {
+      buildings: document.getElementById('builder-tab-buildings'),
+      nature: document.getElementById('builder-tab-nature'),
+      brushes: document.getElementById('builder-tab-brushes'),
+      animals: document.getElementById('builder-tab-animals'),
+      worldfile: document.getElementById('builder-tab-worldfile')
+    };
+    tabBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        sound.playClick();
+        const tab = btn.dataset.tab;
+        tabBtns.forEach(b => b.classList.toggle('active', b === btn));
+        Object.keys(tabPanels).forEach(k => {
+          if (tabPanels[k]) tabPanels[k].classList.toggle('hidden', k !== tab);
+        });
+      });
+    });
+
+    // Top Quick Action Buttons in Builder Modal
+    const tpPraderaBtn = document.getElementById('builder-tp-pradera-btn');
+    if (tpPraderaBtn) {
+      tpPraderaBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleBuilderModal(false);
+        this.teleportToLandmark({ name: 'Gran Pradera Libre', x: 600, y: 25, z: -600, landmark: 'pradera' });
+      });
+    }
+
+    const toggleOfflineBtn = document.getElementById('builder-toggle-offline-btn');
+    if (toggleOfflineBtn) {
+      toggleOfflineBtn.addEventListener('click', () => {
+        sound.playClick();
+        const myName = this.multiplayer?.myName || localStorage.getItem('vr_username') || 'Explorador';
+        if (this.multiplayer && typeof this.multiplayer.startOfflineMode === 'function') {
+          this.multiplayer.startOfflineMode(myName);
+        }
+        if (this.animalManager && typeof this.animalManager.enableOfflineMode === 'function') {
+          this.animalManager.enableOfflineMode();
+        }
+        this.updatePlayerCountBadge(1);
+        toggleOfflineBtn.textContent = '✅ Modo Offline Activo (Jugando Solo)';
+      });
+    }
+
+    const saveMapBtn = document.getElementById('builder-save-map-btn');
+    const worldDownloadBtn = document.getElementById('worldfile-download-btn');
+    const handleSaveWorld = () => {
+      sound.playClick();
+      if (this.sandboxManager) {
+        this.sandboxManager.exportWorldFile();
+      }
+    };
+    if (saveMapBtn) saveMapBtn.addEventListener('click', handleSaveWorld);
+    if (worldDownloadBtn) worldDownloadBtn.addEventListener('click', handleSaveWorld);
+
+    const loadMapBtn = document.getElementById('builder-load-map-btn');
+    const worldUploadBtn = document.getElementById('worldfile-upload-btn');
+    const handleLoadWorld = async () => {
+      sound.playClick();
+      if (this.sandboxManager) {
+        await this.sandboxManager.requestAndroidStoragePermissions(false);
+      }
+      const fileInput = document.getElementById('world-file-input');
+      if (fileInput) {
+        fileInput.value = '';
+        fileInput.click();
+      }
+    };
+    if (loadMapBtn) loadMapBtn.addEventListener('click', handleLoadWorld);
+    if (worldUploadBtn) worldUploadBtn.addEventListener('click', handleLoadWorld);
+
+    // Cloner Buttons
+    const copyTargetedBtn = document.getElementById('cloner-copy-targeted-btn');
+    if (copyTargetedBtn) {
+      copyTargetedBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleBuilderModal(false);
+        if (this.sandboxManager) {
+          this.sandboxManager.copyTargetedBuilding();
+        }
+      });
+    }
+
+    const selectBoxBtn = document.getElementById('cloner-select-box-btn');
+    if (selectBoxBtn) {
+      selectBoxBtn.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          this.sandboxManager.activeToolType = 'cloner_select_a';
+          this.toggleBuilderModal(false);
+          this.updateSandboxToolbarUI();
+          this.showNotification('📐 Toca el primer bloque (Esquina A) del edificio que deseas copiar.');
+        }
+      });
+    }
+
+    const pasteModeBtn = document.getElementById('cloner-paste-mode-btn');
+    if (pasteModeBtn) {
+      pasteModeBtn.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          if (!this.sandboxManager.clipboardDeltas || this.sandboxManager.clipboardDeltas.length === 0) {
+            this.showNotification('⚠️ Primero copia un edificio antes de activar Pegar.');
+            return;
+          }
+          this.sandboxManager.activeToolType = 'cloner_paste';
+          this.toggleBuilderModal(false);
+          this.updateSandboxToolbarUI();
+        }
+      });
+    }
+
+    // Floating Active Tool Banner Buttons (Mobile 1-tap Stamp, Rotate, Undo, Clear)
+    const stampBtn = document.getElementById('sandbox-btn-stamp');
+    if (stampBtn) {
+      stampBtn.addEventListener('click', () => {
+        if (this.sandboxManager) {
+          this.sandboxManager.handleToolAction(null, this.getSelectedBlock());
+        }
+      });
+    }
+
+    const rotateBtn = document.getElementById('sandbox-btn-rotate');
+    if (rotateBtn) {
+      rotateBtn.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          this.sandboxManager.rotatePrefab();
+        }
+      });
+    }
+
+    const undoBtn = document.getElementById('sandbox-btn-undo');
+    if (undoBtn) {
+      undoBtn.addEventListener('click', () => {
+        if (this.sandboxManager) {
+          this.sandboxManager.undoLastAction();
+        }
+      });
+    }
+
+    const clearBtn = document.getElementById('sandbox-btn-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          this.sandboxManager.clearActiveTool();
+          this.showNotification('🧱 Modo construcción normal (1×1 bloque) activado.');
+        }
+      });
+    }
+
+    // Android Storage Permission Modal & Request Button
+    const reqPermBtn = document.getElementById('android-request-perm-btn');
+    if (reqPermBtn) {
+      reqPermBtn.addEventListener('click', async () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          await this.sandboxManager.requestAndroidStoragePermissions(true);
+          this.showNotification('✅ Permisos de almacenamiento Android verificados y activos.');
+        }
+      });
+    }
+
+    const permAllowBtn = document.getElementById('android-perm-allow-btn');
+    if (permAllowBtn) {
+      permAllowBtn.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          this.sandboxManager.grantAndroidStoragePermission();
+          this.showNotification('📱 Permisos de acceso a archivos de Android concedidos.');
+        }
+      });
+    }
+
+    const permDenyBtn = document.getElementById('android-perm-deny-btn');
+    if (permDenyBtn) {
+      permDenyBtn.addEventListener('click', () => {
+        sound.playClick();
+        const modal = document.getElementById('android-permission-modal');
+        if (modal) modal.classList.add('hidden');
+      });
+    }
+
+    // Keyboard shortcuts: 'KeyB' to toggle Builder Studio, 'Ctrl+Z' to Undo
+    window.addEventListener('keydown', (e) => {
+      if (this.isChatOpen) return;
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+
+      if (e.code === 'KeyB') {
+        sound.playClick();
+        this.toggleBuilderModal(!this.isBuilderOpen);
+      } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+        if (this.sandboxManager) {
+          this.sandboxManager.undoLastAction();
+        }
+      } else if (e.code === 'Escape' && this.isBuilderOpen) {
+        sound.playClick();
+        this.toggleBuilderModal(false);
+      }
+    });
   }
 }

@@ -15,6 +15,7 @@ import { MissileManager } from './missile.js';
 import { StrategicBomber } from './bomber.js';
 import { BunkerManager } from './bunker.js';
 import { TacticalRadar } from './radar.js';
+import { SandboxManager } from './sandbox.js';
 import { Avatar } from './avatar.js';
 import { BLOCKS } from './blocks.js';
 import { sound } from './audio.js';
@@ -121,6 +122,19 @@ class VoxelRealmsApp {
     this.tacticalRadar = new TacticalRadar(this.multiplayer, this.missileManager);
     this.ui.setTacticalRadar(this.tacticalRadar);
 
+    // 7b. Initialize Offline Sandbox, Builder Studio, Prefab Catalog & World File Save/Load Manager
+    this.sandboxManager = new SandboxManager(
+      this.world,
+      this.physics,
+      this.controls,
+      this.multiplayer,
+      this.animalManager,
+      this.ui
+    );
+    if (typeof this.ui.setSandboxManager === 'function') {
+      this.ui.setSandboxManager(this.sandboxManager);
+    }
+
     // Connect Multiplayer Animal & Vehicle Synchronizer
     if (this.multiplayer) {
       this.multiplayer.onAnimalsUpdate = (animals) => {
@@ -201,14 +215,26 @@ class VoxelRealmsApp {
   }
 
   setupInteractions() {
-    // Left Click: Destroy Block
+    // Left Click: Destroy Block (or apply active Sandbox Eraser / Cloner corner selection)
     this.controls.onBreakBlock = (target) => {
+      if (this.sandboxManager && (this.sandboxManager.activeToolType === 'cloner_select_a' || this.sandboxManager.activeToolType === 'cloner_select_b')) {
+        this.sandboxManager.handleToolAction(target, 0);
+        return;
+      }
+      if (this.sandboxManager && this.sandboxManager.activeToolType === 'brush' && this.sandboxManager.activeBrushId === 'eraser_5x5x5') {
+        this.sandboxManager.applyBrush('eraser_5x5x5', target.x, target.y, target.z, 0);
+        return;
+      }
       this.multiplayer.sendBlockModify(target.x, target.y, target.z, 0);
     };
 
-    // Right Click: Place Selected Block
+    // Right Click / COLOCAR Button: Place Selected Block or Execute Active Builder Tool (Prefab, Multi-Block Brush, Cloner, Animal NPC)
     this.controls.onPlaceBlock = (placePos) => {
-      const selectedBlockId = this.ui.getSelectedBlock();
+      const selectedBlockId = this.ui.getSelectedBlock() || BLOCKS.DIRT;
+      if (this.sandboxManager && this.sandboxManager.activeToolType !== 'none') {
+        const handled = this.sandboxManager.handleToolAction(placePos, selectedBlockId);
+        if (handled) return;
+      }
       if (!selectedBlockId) return;
 
       // Validate that placement doesn't collide with player feet or body
@@ -526,6 +552,11 @@ class VoxelRealmsApp {
 
     // 1. Controls & Physics Update
     this.controls.update(dt);
+
+    // 1b. Enforce Restricted Zones (Base Militar & Búnker Subterráneo remain protected in Offline Mode too!)
+    if (this.sandboxManager && this.physics && this.physics.pos) {
+      this.sandboxManager.enforceOfflineRestrictedZones(this.physics.pos);
+    }
 
     // 2. Dynamic Chunk Streaming & Remeshing
     this.world.updateStreaming(this.physics.pos.x, this.physics.pos.z);

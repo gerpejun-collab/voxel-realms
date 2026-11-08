@@ -332,7 +332,17 @@ export class World {
     // 7. Mount Fuji Scenic Highways: Eastbound corridor from Japan (Z in 247..253, X in 250..440) and Northbound along X in 437..443, Z in 250..465
     if (wz >= 247 && wz <= 253 && wx >= 250 && wx <= 440) return true;
     if (wx >= 437 && wx <= 443 && wz >= 250 && wz <= 465) return true;
+    // 8. Gran Pradera Scenic Highway: Eastbound from Paris (Z in -253..-247, X in 250..500) and Northbound into Pradera (X in 497..503, Z in -430..-250)
+    if (wz >= -253 && wz <= -247 && wx >= 250 && wx <= 500) return true;
+    if (wx >= 497 && wx <= 503 && wz >= -430 && wz <= -250) return true;
     return false;
+  }
+
+  /**
+   * Returns true if coordinates lie inside La Gran Pradera Libre (+600, -600) — mega flat building meadow
+   */
+  isInsidePradera(wx, wz) {
+    return wx >= 420 && wx <= 780 && wz >= -780 && wz <= -420;
   }
 
   /**
@@ -412,6 +422,7 @@ export class World {
     if (Math.hypot(wx - 350, wz - 350) <= 70 || Math.hypot(wx - 500, wz - 500) <= 88) return true; // Mount Fuji Volcano & Reflection Lakes
     if (wx >= -460 && wx <= -365 && wz >= 115 && wz <= 185) return true; // Base Militar Aérea & Hangar
     if (Math.hypot(wx - (-500), wz - 300) <= 75) return true; // Mega Búnker Subterráneo & 180 Silos
+    if (this.isInsidePradera(wx, wz)) return true; // La Gran Pradera Libre (+600, -600)
     if (this.isRoadAt(wx, wz) || this.isTunnelAt(wx, wz)) return true;
     return false;
   }
@@ -429,6 +440,7 @@ export class World {
     if (wx >= 50 && wx <= 210 && wz >= -190 && wz <= -40) return true; // Gran Circuito Plateau
     if (wx >= -460 && wx <= -365 && wz >= 115 && wz <= 185) return true; // Base Militar Plateau
     if (Math.hypot(wx - (-500), wz - 300) <= 66) return true; // Mega Búnker Silos Plateau
+    if (this.isInsidePradera(wx, wz)) return true; // La Gran Pradera Libre Plateau
     return false;
   }
 
@@ -691,6 +703,22 @@ export class World {
       }
     }
 
+    // 5. La Gran Pradera Libre (+600, -600): Colossal 360x360 flat green building meadow (X: 420..780, Z: -780..-420)
+    if (wx >= 408 && wx <= 792 && wz >= -792 && wz <= -408) {
+      if (wx >= 425 && wx <= 775 && wz >= -775 && wz <= -425) {
+        return BASE_HEIGHT;
+      }
+      const dx = wx < 425 ? (425 - wx) : (wx > 775 ? (wx - 775) : 0);
+      const dz = wz < -775 ? (-775 - wz) : (wz > -425 ? (wz - (-425)) : 0);
+      const edgeDist = Math.hypot(dx, dz);
+      if (edgeDist < 17) {
+        const naturalH = this.getNaturalHeightAt(wx, wz);
+        const t = edgeDist / 17;
+        const smoothT = t * t * (3 - 2 * t);
+        return Math.floor(BASE_HEIGHT * (1 - smoothT) + naturalH * smoothT);
+      }
+    }
+
     return this.getNaturalHeightAt(wx, wz);
   }
 
@@ -749,6 +777,11 @@ export class World {
               const isStreet = ((wx + 250) % 12 === 0 || (wz + 250) % 12 === 0);
               const isSidewalk = (Math.abs((wx + 250) % 12) === 1 || Math.abs((wz + 250) % 12) === 1);
               block = isStreet ? BLOCKS.DIRT_DRY : (isSidewalk ? BLOCKS.STONE : BLOCKS.GRASS);
+            } else if (this.isInsidePradera(wx, wz)) {
+              // La Gran Pradera Libre (+600, -600): Vast, pristine green meadow with subtle stone border markers
+              const isOuterBorder = (wx === 425 || wx === 775 || wz === -775 || wz === -425);
+              const isCenterPlaza = (Math.abs(wx - 600) <= 3 && Math.abs(wz - (-600)) <= 3);
+              block = isCenterPlaza ? BLOCKS.GOLD_ORE : (isOuterBorder ? BLOCKS.COBBLESTONE : BLOCKS.GRASS);
             } else if (wz >= 440 && wz <= 560 && Math.abs(wx) <= 55) {
               // Norway Fjords
               if (Math.abs(wx) <= 8) {
@@ -947,7 +980,9 @@ export class World {
       (minX <= -224 && maxX >= -235 && minZ <= 252 && maxZ >= -252) || // West Highway & Tunnels
       (minZ <= 472 && maxZ >= 464 && minX <= 20 && maxX >= -20) || // Norway Bridge
       (minZ <= 255 && maxZ >= 245 && minX <= 442 && maxX >= 248) || // Fuji East Corridor
-      (minX <= 445 && maxX >= 435 && minZ <= 467 && maxZ >= 248);   // Fuji North Corridor
+      (minX <= 445 && maxX >= 435 && minZ <= 467 && maxZ >= 248) || // Fuji North Corridor
+      (minZ <= -245 && maxZ >= -255 && minX <= 505 && maxX >= 248) || // Pradera East Corridor
+      (minX <= 505 && maxX >= 495 && minZ <= -248 && maxZ >= -432);   // Pradera North Corridor
 
     if (!hasRoadOrTunnel) return;
 
@@ -988,7 +1023,9 @@ export class World {
             (wx >= 227 && wx <= 231 && Math.abs(wz) <= 250) ||
             (wx >= -231 && wx <= -227 && Math.abs(wz) <= 250) ||
             (wz >= 248 && wz <= 252 && wx >= 250 && wx <= 440) ||
-            (wx >= 438 && wx <= 442 && wz >= 250 && wz <= 465);
+            (wx >= 438 && wx <= 442 && wz >= 250 && wz <= 465) ||
+            (wz >= -252 && wz <= -248 && wx >= 250 && wx <= 500) ||
+            (wx >= 498 && wx <= 502 && wz >= -430 && wz <= -250);
 
           if (distCenter >= 18.5 && distCenter <= 23.5) {
             const onCardinalCross = (Math.abs(wx) <= 3 || Math.abs(wz) <= 3);
@@ -1012,6 +1049,12 @@ export class World {
           } else if (wx >= 437 && wx <= 443 && wz >= 250 && wz <= 465) {
             isCurb = (wx === 437 || wx === 443);
             isCenterStripe = (wx === 440 && (Math.abs(wz) % 4 <= 1));
+          } else if (wz >= -253 && wz <= -247 && wx >= 250 && wx <= 500) {
+            isCurb = (wz === -253 || wz === -247);
+            isCenterStripe = (wz === -250 && (Math.abs(wx) % 4 <= 1));
+          } else if (wx >= 497 && wx <= 503 && wz >= -430 && wz <= -250) {
+            isCurb = (wx === 497 || wx === 503);
+            isCenterStripe = (wx === 500 && (Math.abs(wz) % 4 <= 1));
           }
 
           if (inDrivingLane) {

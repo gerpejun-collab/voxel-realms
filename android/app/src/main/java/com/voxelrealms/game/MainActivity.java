@@ -1,10 +1,12 @@
 package com.voxelrealms.game;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -86,8 +88,21 @@ public class MainActivity extends Activity {
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
         webView.addJavascriptInterface(new VoxelAndroidBridge(this), "VoxelAndroid");
+        webView.addJavascriptInterface(new VoxelAndroidBridge(this), "Android");
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new GameWebViewClient(this));
+    }
+
+    public void requestStoragePermissionsFromSystem() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+                    || checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                }, 1001);
+            }
+        }
     }
 
     void showConnectionHub(String attemptedUrl) {
@@ -220,5 +235,15 @@ class VoxelAndroidBridge {
         SharedPreferences prefs = activity.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE);
         prefs.edit().putString(MainActivity.KEY_SERVER_URL, url).apply();
         activity.runOnUiThread(new LoadUrlTask(activity, url));
+    }
+
+    @JavascriptInterface
+    public void requestStoragePermission() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                activity.requestStoragePermissionsFromSystem();
+            }
+        });
     }
 }

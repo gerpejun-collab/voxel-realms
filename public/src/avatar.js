@@ -354,7 +354,8 @@ export class Avatar {
     rightArmMesh.castShadow = true;
     this.rightArmPivot.add(rightArmMesh);
 
-    // 3D Sniper Rifle model held in right hand
+    // 3D Weapon holder in right hand (Rifle, Bazooka, Plasma)
+    this.weaponType = 'rifle';
     this.weaponGroup = new THREE.Group();
     this.weaponGroup.position.set(0, -0.55, -0.22);
     this.weaponGroup.visible = false;
@@ -363,34 +364,58 @@ export class Avatar {
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.75 });
     const blueLensMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
 
+    this.rifleSubGroup = new THREE.Group();
     // Gun receiver / chamber
     const bodyGeom = new THREE.BoxGeometry(0.08, 0.12, 0.42);
     const bodyMesh = new THREE.Mesh(bodyGeom, metalMat);
-    this.weaponGroup.add(bodyMesh);
+    this.rifleSubGroup.add(bodyMesh);
 
     // Wooden stock
     const stockGeom = new THREE.BoxGeometry(0.07, 0.10, 0.28);
     const stockMesh = new THREE.Mesh(stockGeom, woodMat);
     stockMesh.position.set(0, -0.02, 0.30);
-    this.weaponGroup.add(stockMesh);
+    this.rifleSubGroup.add(stockMesh);
 
     // Barrel
     const barrelGeom = new THREE.BoxGeometry(0.045, 0.045, 0.50);
     const barrelMesh = new THREE.Mesh(barrelGeom, metalMat);
     barrelMesh.position.set(0, 0.02, -0.42);
-    this.weaponGroup.add(barrelMesh);
+    this.rifleSubGroup.add(barrelMesh);
 
     // Sniper optical scope
     const scopeGeom = new THREE.BoxGeometry(0.06, 0.06, 0.24);
     const scopeMesh = new THREE.Mesh(scopeGeom, metalMat);
     scopeMesh.position.set(0, 0.09, -0.05);
-    this.weaponGroup.add(scopeMesh);
+    this.rifleSubGroup.add(scopeMesh);
 
     // Front scope lens
     const lensGeom = new THREE.BoxGeometry(0.045, 0.045, 0.015);
     const lensMesh = new THREE.Mesh(lensGeom, blueLensMat);
     lensMesh.position.set(0, 0.09, -0.175);
-    this.weaponGroup.add(lensMesh);
+    this.rifleSubGroup.add(lensMesh);
+    this.weaponGroup.add(this.rifleSubGroup);
+
+    // 3D Bazooka RPG SubGroup for 3rd-person / remote avatars
+    this.bazookaSubGroup = new THREE.Group();
+    const oliveMat = new THREE.MeshStandardMaterial({ color: 0x3f4d28, roughness: 0.55 });
+    const warheadMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+    const rpgTube = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.95), oliveMat);
+    rpgTube.position.set(0, 0.04, -0.10);
+    const rpgHead = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.26), warheadMat);
+    rpgHead.position.set(0, 0.04, -0.66);
+    this.bazookaSubGroup.add(rpgTube, rpgHead);
+    this.bazookaSubGroup.visible = false;
+    this.weaponGroup.add(this.bazookaSubGroup);
+
+    // 3D Plasma Cannon SubGroup
+    this.plasmaSubGroup = new THREE.Group();
+    const plasmaMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.2 });
+    const plasmaBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.68), metalMat);
+    const plasmaCore = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.45), plasmaMat);
+    plasmaCore.position.set(0, 0.02, -0.15);
+    this.plasmaSubGroup.add(plasmaBody, plasmaCore);
+    this.plasmaSubGroup.visible = false;
+    this.weaponGroup.add(this.plasmaSubGroup);
 
     this.rightArmPivot.add(this.weaponGroup);
     this.group.add(this.rightArmPivot);
@@ -621,6 +646,13 @@ export class Avatar {
     if (this.weaponGroup) {
       this.weaponGroup.visible = this.weaponsEnabled;
     }
+  }
+
+  setWeaponType(type) {
+    this.weaponType = type || 'rifle';
+    if (this.rifleSubGroup) this.rifleSubGroup.visible = (this.weaponType === 'rifle');
+    if (this.bazookaSubGroup) this.bazookaSubGroup.visible = (this.weaponType === 'bazooka');
+    if (this.plasmaSubGroup) this.plasmaSubGroup.visible = (this.weaponType === 'plasma');
   }
 
   setTargetState(pos, rot, action, weaponsEnabled) {

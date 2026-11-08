@@ -75,6 +75,7 @@ export class ParticleManager {
     this.explosions = [];
     this.primedTnts = [];
     this.tracers = [];
+    this.rockets = [];
 
     // --- Animal Impact Red Blood / Flesh Particles (Instanced) ---
     this.maxBlood = 160;
@@ -453,6 +454,79 @@ export class ParticleManager {
   }
 
   /**
+   * Spawns a high-velocity 3D RPG Bazooka Rocket warhead with fiery exhaust and dense smoke trail
+   */
+  spawnBazookaRocket(origin, target, onImpact = null) {
+    if (!origin || !target) return null;
+    const ox = (origin.x !== undefined) ? origin.x : (origin[0] || 0);
+    const oy = (origin.y !== undefined) ? origin.y : (origin[1] || 0);
+    const oz = (origin.z !== undefined) ? origin.z : (origin[2] || 0);
+
+    const tx = (target.x !== undefined) ? target.x : (target[0] || 0);
+    const ty = (target.y !== undefined) ? target.y : (target[1] || 0);
+    const tz = (target.z !== undefined) ? target.z : (target[2] || 0);
+
+    const start = new THREE.Vector3(ox, oy, oz);
+    const end = new THREE.Vector3(tx, ty, tz);
+    const dist = start.distanceTo(end);
+    if (dist < 0.25) {
+      this.spawnExplosion(tx, ty, tz);
+      if (typeof onImpact === 'function') onImpact(end);
+      return null;
+    }
+
+    const dir = end.clone().sub(start).normalize();
+    const group = new THREE.Group();
+
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3f4d28, roughness: 0.45, metalness: 0.55 });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.35, metalness: 0.45 });
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.68), bodyMat);
+    const warhead = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.34), headMat);
+    warhead.position.set(0, 0, 0.42);
+    const flame = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.20, 0.36), flameMat);
+    flame.position.set(0, 0, -0.45);
+
+    group.add(body, warhead, flame);
+    group.position.copy(start);
+    if (typeof group.lookAt === 'function') {
+      group.lookAt(end);
+    }
+    if (this.scene && typeof this.scene.add === 'function') {
+      this.scene.add(group);
+    }
+
+    const rocketSpeed = 95.0;
+    const entity = {
+      group,
+      start,
+      end,
+      dir,
+      totalDist: dist,
+      currentDist: 0,
+      speed: rocketSpeed,
+      smokeTimer: 0,
+      onImpact
+    };
+    this.rockets.push(entity);
+    return entity;
+  }
+
+  /**
+   * Spawns a cyan high-energy plasma bolt tracer from origin to target
+   */
+  spawnPlasmaBolt(origin, target) {
+    if (!origin || !target) return;
+    this.spawnBulletTracer(origin, target, 190);
+    const last = this.tracers[this.tracers.length - 1];
+    if (last && last.glowMat && last.glowMat.color && typeof last.glowMat.color.setHex === 'function') {
+      last.glowMat.color.setHex(0x22d3ee);
+      if (last.coreMat && last.coreMat.color) last.coreMat.color.setHex(0xe0f2fe);
+    }
+  }
+
+  /**
    * Spawns 20+ crimson particle droplets with randomized parabolic velocity along bullet direction
    */
   spawnBloodParticles(x, y, z, dir = null) {
@@ -591,6 +665,33 @@ export class ParticleManager {
         const fade = Math.max(0, remain / tr.beamLength);
         tr.coreMat.opacity = fade * 0.95;
         tr.glowMat.opacity = fade * 0.60;
+      }
+    }
+
+    // --- Update Active 3D Bazooka Rockets ---
+    if (this.rockets && this.rockets.length > 0) {
+      for (let i = this.rockets.length - 1; i >= 0; i--) {
+        const r = this.rockets[i];
+        r.currentDist += r.speed * dt;
+        r.smokeTimer += dt;
+
+        if (r.currentDist >= r.totalDist) {
+          if (r.group && r.group.parent) r.group.parent.remove(r.group);
+          this._disposeObject3D(r.group);
+          this.rockets.splice(i, 1);
+          this.spawnExplosion(r.end.x, r.end.y, r.end.z);
+          if (typeof r.onImpact === 'function') {
+            r.onImpact(r.end);
+          }
+          continue;
+        }
+
+        const curPos = r.start.clone().addScaledVector(r.dir, r.currentDist);
+        r.group.position.copy(curPos);
+        if (r.smokeTimer >= 0.018) {
+          r.smokeTimer = 0;
+          this.spawnDriftSmoke(curPos.x, curPos.y, curPos.z, 2);
+        }
       }
     }
 

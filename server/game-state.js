@@ -355,7 +355,7 @@ class GameState {
             const bx = rx + dx;
             const by = ry + dy;
             const bz = rz + dz;
-            if (by >= 19 && by < 63) {
+            if (by >= 19 && by < 120) {
               const key = `${bx},${by},${bz}`;
               this.blockDeltas.set(key, 0);
               destroyedBlocks.push([bx, by, bz]);

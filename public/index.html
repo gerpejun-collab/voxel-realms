@@ -35,10 +35,13 @@
         <div class="scope-mil-dots-v"></div>
         <div class="scope-center-dot"></div>
       </div>
-      <div class="scope-telemetry">ZOOM ÓPTICO 2.4x • MODO FRANCOTIRADOR (ALCANCE INFINITO)</div>
+      <div class="scope-telemetry" id="scope-telemetry-text">ZOOM ÓPTICO 2.4x • MODO FRANCOTIRADOR (ALCANCE INFINITO)</div>
       <div id="scope-overlay-actions" class="scope-overlay-actions">
-        <button id="scope-btn-shoot" class="scope-action-btn scope-shoot-btn mc-btn" type="button" title="Disparar Francotirador">
-          <span>🔫 TIRAR</span>
+        <button id="scope-btn-shoot" class="scope-action-btn scope-shoot-btn mc-btn" type="button" title="Disparar Arma Actual">
+          <span id="scope-btn-shoot-label">🔫 TIRAR</span>
+        </button>
+        <button id="scope-btn-switch" class="scope-action-btn scope-switch-btn mc-btn" type="button" title="Cambiar entre Fusil, Bazooka y Plasma (Tecla C)">
+          <span id="scope-btn-switch-label">🚀 BAZOOKA</span>
         </button>
         <button id="scope-btn-exit" class="scope-action-btn scope-exit-btn mc-btn" type="button" title="Salir de la Mira">
           <span>❌ QUITAR MIRA</span>
@@ -86,13 +89,28 @@
 
     <!-- Weapons & Reactive TNT HUD Action Bar (Visible when Weapons Mode is active) -->
     <div id="weapons-hud-controls">
+      <!-- Ergonomic 1-Tap Weapon Selector Bar (FUSIL / BAZOOKA / PLASMA) -->
+      <div id="weapon-selector-bar" class="weapon-selector-bar" role="group" aria-label="Selector de Armas">
+        <button id="btn-select-rifle" class="weapon-tab-btn mc-btn active" type="button" data-weapon="rifle" title="Fusil Francotirador (Precisión Infinita)">
+          <span class="wtab-icon">🔫</span>
+          <span class="wtab-label">FUSIL</span>
+        </button>
+        <button id="btn-select-bazooka" class="weapon-tab-btn mc-btn bazooka-tab" type="button" data-weapon="bazooka" title="Bazooka RPG Destructor (Impacto Explosivo de Misil)">
+          <span class="wtab-icon">🚀</span>
+          <span class="wtab-label">BAZOOKA</span>
+        </button>
+        <button id="btn-select-plasma" class="weapon-tab-btn mc-btn plasma-tab" type="button" data-weapon="plasma" title="Cañón de Plasma Táctico (Ráfaga Energética)">
+          <span class="wtab-icon">⚡</span>
+          <span class="wtab-label">PLASMA</span>
+        </button>
+      </div>
       <button id="btn-weapon-aim" class="weapon-hud-btn mc-btn" title="Apuntar con Mira Telescópica (Click Der / Tecla Z)">
         <span class="weapon-btn-icon">🎯</span>
-        <span class="weapon-btn-label">APUNTAR</span>
+        <span class="weapon-btn-label" id="weapon-aim-label">APUNTAR</span>
       </button>
-      <button id="btn-weapon-shoot" class="weapon-hud-btn mc-btn shoot-highlight" title="Disparar Rifle (Click Izq / Tecla F)">
-        <span class="weapon-btn-icon">🔫</span>
-        <span class="weapon-btn-label">DISPARAR</span>
+      <button id="btn-weapon-shoot" class="weapon-hud-btn mc-btn shoot-highlight" title="Disparar Arma Seleccionada (Click Izq / Tecla F)">
+        <span class="weapon-btn-icon" id="weapon-shoot-icon">🔫</span>
+        <span class="weapon-btn-label" id="weapon-shoot-label">DISPARAR</span>
       </button>
       <button id="btn-weapon-tnt" class="weapon-hud-btn mc-btn tnt-highlight" title="Colocar y Detonar TNT Reactivo (Tecla G)">
         <span class="weapon-btn-icon">🧨</span>

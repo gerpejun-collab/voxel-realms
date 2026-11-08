@@ -56,7 +56,7 @@ const MAX_PLAYER_ID_LENGTH = 64;
 
 const ADMIN_EMAIL = 'jsieiragerpe@gmail.com';
 const RIVAL_ADMIN_EMAIL = 'cifrixa.labs.contact@gmail.com';
-const ADMIN_EMAILS = [ADMIN_EMAIL, RIVAL_ADMIN_EMAIL, 'ZFOLD7'];
+const ADMIN_EMAILS = [ADMIN_EMAIL, RIVAL_ADMIN_EMAIL];
 
 const AIR_BASE_BOUNDS = {
   minX: -455,
@@ -166,12 +166,12 @@ function isValidAdminCredentials(identifier, key = '') {
   const isMainAdmin = (
     normEmail === ADMIN_EMAIL.toLowerCase() ||
     normEmail === 'jsieiragerpe' ||
-    normEmail === 'zfold7'
+    normEmail === 'admin'
   );
   if (!isMainAdmin) return false;
   if (typeof key !== 'string') return false;
   const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return normKey === 'ARGON4' || normKey === 'ZFOLD7';
+  return normKey === 'GALAXYS26';
 }
 
 /**
@@ -180,10 +180,7 @@ function isValidAdminCredentials(identifier, key = '') {
 function sanitizeName(name) {
   if (typeof name !== 'string') return 'Player';
   const normEmail = name.trim().toLowerCase();
-  if (normEmail === 'zfold7') {
-    return 'ZFOLD7';
-  }
-  if (normEmail === ADMIN_EMAIL || normEmail === 'jsieiragerpe') {
+  if (normEmail === ADMIN_EMAIL || normEmail === 'jsieiragerpe' || normEmail === 'admin') {
     return 'jsieiragerpe';
   }
   if (
@@ -260,7 +257,7 @@ function validateTeleportPacket(packet) {
  */
 function isValidWeaponShoot(data) {
   if (!data || typeof data !== 'object') return false;
-  const validWeapons = ['rifle', 'shotgun', 'sniper', 'tnt'];
+  const validWeapons = ['rifle', 'shotgun', 'sniper', 'tnt', 'bazooka', 'plasma'];
   if (data.weaponType && !validWeapons.includes(data.weaponType)) return false;
   if (data.targetPlayerId !== undefined && data.targetPlayerId !== null) {
     if (typeof data.targetPlayerId !== 'string' || data.targetPlayerId.length > MAX_PLAYER_ID_LENGTH) return false;

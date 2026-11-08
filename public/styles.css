@@ -2180,8 +2180,103 @@ body.mobile-mode .desktop-only {
   right: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   z-index: 25;
+}
+
+/* Ergonomic 1-Tap Weapon Selector Bar */
+.weapon-selector-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.88);
+  padding: 4px;
+  outline: 2px solid #000000;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+}
+
+.weapon-tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 6px;
+  font-family: var(--font-title);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  background: #27272a;
+  color: #cbd5e1;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  transition: transform 0.08s ease, background 0.1s ease, color 0.1s ease;
+}
+
+.weapon-tab-btn .wtab-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.weapon-tab-btn.active[data-weapon="rifle"] {
+  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%) !important;
+  color: #ffffff !important;
+  box-shadow: inset 2px 2px 0px #7dd3fc, inset -2px -2px 0px #0c4a6e, 0 0 10px rgba(56, 189, 248, 0.5) !important;
+}
+
+.weapon-tab-btn.active[data-weapon="bazooka"] {
+  background: linear-gradient(180deg, #ea580c 0%, #b91c1c 100%) !important;
+  color: #fef08a !important;
+  box-shadow: inset 2px 2px 0px #fdba74, inset -2px -2px 0px #7f1d1d, 0 0 12px rgba(234, 88, 12, 0.65) !important;
+}
+
+.weapon-tab-btn.active[data-weapon="plasma"] {
+  background: linear-gradient(180deg, #0891b2 0%, #4f46e5 100%) !important;
+  color: #a5f3fc !important;
+  box-shadow: inset 2px 2px 0px #67e8f9, inset -2px -2px 0px #312e81, 0 0 12px rgba(6, 182, 212, 0.65) !important;
+}
+
+.scope-switch-btn {
+  background: linear-gradient(135deg, #ea580c 0%, #9a3412 100%) !important;
+  color: #fef08a !important;
+  border: 3px solid #fdba74 !important;
+  box-shadow: 0 0 16px rgba(234, 88, 12, 0.65), inset 0 2px 0 rgba(255, 255, 255, 0.35) !important;
+  text-shadow: 0 2px 4px #000000;
+}
+
+.scope-switch-btn:active {
+  background: #7c2d12 !important;
+  transform: scale(0.95);
+}
+
+#rifle-scope-overlay.bazooka-scope .scope-circle {
+  border-color: rgba(249, 115, 22, 0.9);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.76), inset 0 0 28px rgba(234, 88, 12, 0.35);
+}
+
+#rifle-scope-overlay.bazooka-scope .scope-center-dot {
+  width: 10px;
+  height: 10px;
+  background: #f97316;
+  box-shadow: 0 0 12px #ef4444;
+}
+
+#rifle-scope-overlay.bazooka-scope .scope-telemetry {
+  color: #fb923c;
+  border-color: rgba(249, 115, 22, 0.65);
+}
+
+#rifle-scope-overlay.plasma-scope .scope-circle {
+  border-color: rgba(34, 211, 238, 0.9);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.75), inset 0 0 28px rgba(6, 182, 212, 0.35);
+}
+
+#rifle-scope-overlay.plasma-scope .scope-center-dot {
+  width: 8px;
+  height: 8px;
+  background: #22d3ee;
+  box-shadow: 0 0 12px #06b6d4;
 }
 
 .weapon-hud-btn {

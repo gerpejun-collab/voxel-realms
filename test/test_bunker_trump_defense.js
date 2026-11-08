@@ -41,18 +41,20 @@ class MockWs {
 }
 
 // -----------------------------------------------------------------------------
-// SECTION 1: Strict Admin Password Enforcement (ARGON4 / ARGÓN4)
+// SECTION 1: Strict Admin Password Enforcement & Zero Password Exposure
 // -----------------------------------------------------------------------------
 console.log('\n--- SECTION 1: Strict Admin Password Enforcement ---');
 const rm = new RoomManager();
 
 // 1a. Verification of credential helper
-assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGON4'), true, 'Must validate with ARGON4');
-assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGÓN4'), true, 'Must validate with ARGÓN4');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'GALAXYS26'), true, 'Must validate with current admin key');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe', 'galaxys26'), true, 'Must validate case-insensitively');
 assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', ''), false, 'Must reject empty password');
 assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', '12345'), false, 'Must reject wrong password');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGON4'), false, 'Must reject old password');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ZFOLD7'), false, 'Must reject old password');
 
-// 1b. Server handleJoin rejecting unauthenticated jsieiragerpe
+// 1b. Server handleJoin rejecting unauthenticated jsieiragerpe without leaking password
 const unauthWs = new MockWs();
 const unauthMeta = { id: 'p_unauth' };
 rm.socketMeta.set(unauthWs, unauthMeta);
@@ -66,7 +68,8 @@ assert.strictEqual(unauthMeta.isAdmin, undefined, 'Unauthenticated user must not
 assert.strictEqual(unauthMeta.adminEmail, undefined, 'Admin email must not be set');
 assert.strictEqual(unauthWs.sent.length, 1, 'Rejection message must be sent');
 assert.strictEqual(unauthWs.sent[0].type, MSG.ERROR, 'Rejection type must be MSG.ERROR');
-assert.ok(unauthWs.sent[0].data.message.includes('ARGON4') || unauthWs.sent[0].data.message.includes('Contraseña'), 'Rejection text must state password requirement');
+assert.strictEqual(unauthWs.sent[0].data.message.includes('GALAXYS26'), false, 'Error message must NEVER expose password');
+assert.strictEqual(unauthWs.sent[0].data.message.includes('ARGON4'), false, 'Error message must NEVER expose old password');
 
 // 1c. Server handleJoin with email jsieiragerpe@gmail.com without password
 const emailUnauthWs = new MockWs();
@@ -80,18 +83,18 @@ rm.handleJoin(emailUnauthWs, emailUnauthMeta, {
 assert.strictEqual(emailUnauthMeta.isAdmin, undefined, 'Unauthenticated email must not become admin');
 assert.strictEqual(emailUnauthWs.sent[0].type, MSG.ERROR, 'Must send error for unauthenticated admin email');
 
-// 1d. Server handleJoin with valid ARGON4
+// 1d. Server handleJoin with valid credentials
 const adminWs = new MockWs();
 const adminMeta = { id: 'p_main_admin' };
 rm.socketMeta.set(adminWs, adminMeta);
 rm.handleJoin(adminWs, adminMeta, {
   name: 'jsieiragerpe',
   email: 'jsieiragerpe@gmail.com',
-  adminKey: 'ARGON4'
+  adminKey: 'GALAXYS26'
 });
-assert.strictEqual(adminMeta.isAdmin, true, 'Valid ARGON4 must grant admin privileges');
+assert.strictEqual(adminMeta.isAdmin, true, 'Valid admin key must grant admin privileges');
 assert.strictEqual(adminMeta.adminEmail, 'jsieiragerpe@gmail.com');
-console.log('✓ SECTION 1 PASSED: Strict ARGON4 / ARGÓN4 password validation enforced.');
+console.log('✓ SECTION 1 PASSED: Strict admin password validation enforced with zero password leaks.');
 
 // -----------------------------------------------------------------------------
 // SECTION 2: Bunker Coordinates, Perimeter & Forcefield Security
@@ -295,8 +298,39 @@ assert.ok(radarJs.includes("name: 'Búnker'"), 'radar.js must include Búnker in
 
 console.log('✓ SECTION 8 PASSED: Mountain terrain, bunker excavation, UI shortcuts and radar anchors verified.');
 
+// -----------------------------------------------------------------------------
+// SECTION 9: Destructive Bazooka RPG, Plasma Cannon, Weapon Switcher & Zero Password Leak
+// -----------------------------------------------------------------------------
+console.log('\n--- SECTION 9: Bazooka RPG, Plasma Cannon & Ergonomic Weapon Switcher ---');
+const controlsJs = fs.readFileSync(path.resolve(__dirname, '../public/src/controls.js'), 'utf8');
+const particlesJs = fs.readFileSync(path.resolve(__dirname, '../public/src/particles.js'), 'utf8');
+const mainJs = fs.readFileSync(path.resolve(__dirname, '../public/src/main.js'), 'utf8');
+
+// 9a. UI never leaks password in alert() or error messages
+assert.strictEqual(uiJs.includes('(ARGON4)'), false, 'ui.js must NEVER expose old password in alerts');
+assert.strictEqual(uiJs.includes("alert('Acceso Denegado: Contraseña de Administrador requerida para jsieiragerpe ("), false, 'ui.js must never leak password in alert text');
+assert.ok(uiJs.includes("alert('Acceso denegado: Clave de acceso incorrecta.')"), 'ui.js must show generic access denied message without password');
+
+// 9b. Bazooka & Plasma 3D models, selector bar, and scope switcher
+assert.ok(indexHtml.includes('id="weapon-selector-bar"'), 'index.html must include ergonomic #weapon-selector-bar');
+assert.ok(indexHtml.includes('id="btn-select-rifle"'), 'index.html must include #btn-select-rifle');
+assert.ok(indexHtml.includes('id="btn-select-bazooka"'), 'index.html must include #btn-select-bazooka');
+assert.ok(indexHtml.includes('id="btn-select-plasma"'), 'index.html must include #btn-select-plasma');
+assert.ok(indexHtml.includes('id="scope-btn-switch"'), 'index.html must include #scope-btn-switch inside scope overlay');
+
+assert.ok(controlsJs.includes('this.bazookaGroup = new THREE.Group()'), 'controls.js must build 1st-person 3D Bazooka model');
+assert.ok(controlsJs.includes('this.plasmaGroup = new THREE.Group()'), 'controls.js must build 1st-person 3D Plasma model');
+assert.ok(controlsJs.includes('setWeapon(weaponType)'), 'controls.js must implement setWeapon');
+assert.ok(controlsJs.includes('cycleWeapon()'), 'controls.js must implement cycleWeapon');
+
+assert.ok(particlesJs.includes('spawnBazookaRocket('), 'particles.js must implement spawnBazookaRocket');
+assert.ok(particlesJs.includes('spawnPlasmaBolt('), 'particles.js must implement spawnPlasmaBolt');
+assert.ok(mainJs.includes("weaponType === 'bazooka'"), 'main.js must handle destructive bazooka blast on impact');
+
+console.log('✓ SECTION 9 PASSED: Bazooka RPG, Plasma Cannon, 1-tap weapon switcher, and zero password leak verified.');
+
 console.log('\n=============================================================================');
-console.log('VERIFICATION SUMMARY: ALL 8 SECTIONS PASSED WITH 100% SUCCESS!');
+console.log('VERIFICATION SUMMARY: ALL 9 SECTIONS PASSED WITH 100% SUCCESS!');
 console.log('=============================================================================');
 
 process.exit(0);

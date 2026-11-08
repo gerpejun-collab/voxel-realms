@@ -220,6 +220,9 @@ export class MultiplayerClient {
             players: Array.from(this.playerDirectory.values())
           });
         }
+        if (this.onPlayerInit) {
+          this.onPlayerInit(data);
+        }
         if (this.onNotification) {
           this.onNotification(`Bienvenido a Voxel Realms, ${this.myName}!`);
         }
@@ -409,9 +412,21 @@ export class MultiplayerClient {
           if (o && this.particles && typeof this.particles.spawnMuzzleFlash === 'function') {
             this.particles.spawnMuzzleFlash(o);
           }
-          if (o && this.particles && typeof this.particles.spawnBulletTracer === 'function') {
+          if (o && this.particles) {
             const target = hp || { x: o.x + d.x * 65, y: o.y + d.y * 65, z: o.z + d.z * 65 };
-            this.particles.spawnBulletTracer(o, target);
+            if (data.weaponType === 'bazooka' && typeof this.particles.spawnBazookaRocket === 'function') {
+              this.particles.spawnBazookaRocket(o, target);
+            } else if (data.weaponType === 'plasma' && typeof this.particles.spawnPlasmaBolt === 'function') {
+              this.particles.spawnPlasmaBolt(o, target);
+            } else if (typeof this.particles.spawnBulletTracer === 'function') {
+              this.particles.spawnBulletTracer(o, target);
+            }
+          }
+          if (data.shooterId && data.weaponType) {
+            const remote = this.remoteAvatars.get(data.shooterId);
+            if (remote && typeof remote.setWeaponType === 'function') {
+              remote.setWeaponType(data.weaponType);
+            }
           }
         }
         break;

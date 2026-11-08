@@ -3963,9 +3963,9 @@ it('R2: Persistent Map Sync - Block modifications persist across disconnects and
   };
   rm.handleConnection(adminWs);
   const metaAdmin = rm.socketMeta.get(adminWs);
-  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'GALAXYS26' });
 
-  rm.handleAdminResetServer(adminWs, metaAdmin, { email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  rm.handleAdminResetServer(adminWs, metaAdmin, { email: 'jsieiragerpe@gmail.com', adminKey: 'GALAXYS26' });
   assert.strictEqual(room.gameState.blockDeltas.size, 0, 'Block deltas must be cleared upon admin server reset');
 
   rm.destroy();
@@ -4042,20 +4042,22 @@ it('R3: Mobile touch driving controls UI provides dedicated pedals and steering 
   assert.ok(css.includes('.mobile-action-btn.car-action-btn') || css.includes('#mobile-controls'), 'Styles must style mobile controls');
 });
 
-it('R4: Stealth Admin system - credential validation requires jsieiragerpe@gmail.com and ARGÓN4 / ARGON4 with zero public hints', () => {
+it('R4: Stealth Admin system - credential validation requires jsieiragerpe@gmail.com and strict admin key with zero public hints', () => {
   const { isValidAdminCredentials, ADMIN_EMAIL, sanitizeName } = require('../server/protocol');
   assert.strictEqual(ADMIN_EMAIL, 'jsieiragerpe@gmail.com');
 
-  // Valid credentials (with accent and normalized)
-  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGÓN4'), true);
-  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGON4'), true);
-  assert.strictEqual(isValidAdminCredentials('  jsieiragerpe@gmail.com  ', 'argon4'), true);
-  assert.strictEqual(isValidAdminCredentials('JSIEIRAGERPE@GMAIL.COM', 'Argón4'), true);
+  // Valid credentials
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'GALAXYS26'), true);
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe', 'GALAXYS26'), true);
+  assert.strictEqual(isValidAdminCredentials('  jsieiragerpe@gmail.com  ', 'galaxys26'), true);
+  assert.strictEqual(isValidAdminCredentials('JSIEIRAGERPE@GMAIL.COM', 'GalaxyS26'), true);
 
-  // Invalid credentials
+  // Invalid credentials (including old keys)
   assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'wrong_password'), false);
-  assert.strictEqual(isValidAdminCredentials('other_user@gmail.com', 'ARGÓN4'), false);
-  assert.strictEqual(isValidAdminCredentials(null, 'ARGÓN4'), false);
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGON4'), false);
+  assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ZFOLD7'), false);
+  assert.strictEqual(isValidAdminCredentials('other_user@gmail.com', 'GALAXYS26'), false);
+  assert.strictEqual(isValidAdminCredentials(null, 'GALAXYS26'), false);
   assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', null), false);
   assert.strictEqual(isValidAdminCredentials('', ''), false);
 
@@ -4092,7 +4094,7 @@ it('R4: Stealth Admin panel telemetry table tracks live players with joinedAt, c
   const metaAdmin = rm.socketMeta.get(adminWs);
   const metaBob = rm.socketMeta.get(bobWs);
 
-  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'GALAXYS26' });
   rm.handleJoin(bobWs, metaBob, { name: 'ExplorerBob' });
 
   // Bob moves to (150, 30, -80)
@@ -4137,14 +4139,14 @@ it('R4: Admin Server Reset broadcasts "El admin ha reiniciado el server", resets
   const metaAdmin = rm.socketMeta.get(adminWs);
 
   rm.handleJoin(clientWs, metaClient, { name: 'CasualGamer' });
-  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  rm.handleJoin(adminWs, metaAdmin, { name: 'jsieiragerpe', email: 'jsieiragerpe@gmail.com', adminKey: 'GALAXYS26' });
 
   const room = rm.rooms.get('main');
   room.gameState.blockDeltas.set('10,24,10', 4);
   assert.strictEqual(room.clients.size, 2);
 
   // Admin triggers server reset
-  rm.handleAdminResetServer(adminWs, metaAdmin, { email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  rm.handleAdminResetServer(adminWs, metaAdmin, { email: 'jsieiragerpe@gmail.com', adminKey: 'GALAXYS26' });
 
   // Client must receive SERVER_RESET message
   const resetMsg = clientMsgs.find(m => m.type === MSG.SERVER_RESET);
@@ -4308,7 +4310,7 @@ it('Admin Teleport: requestTeleportToPlayer and server handleTeleportToPlayer se
   };
   rm.handleConnection(adminWs);
   const adminMeta = rm.socketMeta.get(adminWs);
-  rm.handleJoin(adminWs, adminMeta, { name: 'Admin', email: 'jsieiragerpe@gmail.com', adminKey: 'ARGÓN4' });
+  rm.handleJoin(adminWs, adminMeta, { name: 'Admin', email: 'jsieiragerpe@gmail.com', adminKey: 'GALAXYS26' });
 
   // Admin teleports to Player 1
   rm.handleTeleportToPlayer(adminWs, adminMeta, { targetPlayerId: targetMeta.id });

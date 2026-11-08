@@ -450,6 +450,7 @@ export class Controls {
 
     // Weapons & Reactive TNT Mode state
     this.weaponsMode = true;
+    this.activeWeapon = 'rifle'; // 'rifle' | 'bazooka' | 'plasma'
     this.isAiming = false;
     this.aimBlend = 0;
     this.recoilProgress = 0;
@@ -465,6 +466,7 @@ export class Controls {
     this.onCycleSpeed = null;
     this.onSpeedChange = null;
     this.onWeaponShoot = null;
+    this.onWeaponTypeChange = null;
     this.onShootTnt = null;
     this.sendTntTrigger = null;
     this.onPlaceTnt = null;
@@ -674,24 +676,186 @@ export class Controls {
       handguard, barrel, muzzle, scopeRail, scopeBody, scopeRings, scopeFront, scopeRear, scopeLens,
       leftArmGroup
     );
-    this.rifleGroup.visible = this.weaponsMode;
+    this.rifleGroup.visible = this.weaponsMode && (this.activeWeapon === 'rifle');
     this.armPivot.add(this.rifleGroup);
+
+    // 1st-Person 3D Military Bazooka (RPG-7 / AT4 Rocket Launcher)
+    this.bazookaGroup = new THREE.Group();
+    const oliveMat = new THREE.MeshStandardMaterial({ color: 0x3f4d28, roughness: 0.55, metalness: 0.35 });
+    const darkSteelMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.78 });
+    const warheadMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.35, metalness: 0.45 });
+    const hazardMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4, metalness: 0.5 });
+
+    // Main heavy shoulder tube
+    const rpgTube = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 1.15), oliveMat);
+    rpgTube.position.set(0.02, 0.06, -0.32);
+    // Flared rear exhaust nozzle (Venturi cone)
+    const rearCone = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.16), darkSteelMat);
+    rearCone.position.set(0.02, 0.06, 0.28);
+    // Reinforcing steel bands
+    const frontBand = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.155, 0.08), darkSteelMat);
+    frontBand.position.set(0.02, 0.06, -0.82);
+    const midBand = new THREE.Mesh(new THREE.BoxGeometry(0.152, 0.152, 0.08), hazardMat);
+    midBand.position.set(0.02, 0.06, -0.25);
+    // Protruding High-Explosive Anti-Tank (HEAT) RPG Warhead at front
+    const warheadBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.26), warheadMat);
+    warheadBody.position.set(0.02, 0.06, -0.98);
+    const warheadTip = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.10, 0.16), hazardMat);
+    warheadTip.position.set(0.02, 0.06, -1.16);
+    this.bazookaMuzzleMesh = warheadTip;
+    // Dual tactical grips + optical sight
+    const rpgGripRear = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.09), darkSteelMat);
+    rpgGripRear.position.set(0.02, -0.09, -0.05);
+    rpgGripRear.rotation.x = -0.32;
+    const rpgGripFront = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.08), darkSteelMat);
+    rpgGripFront.position.set(0.02, -0.08, -0.45);
+    const rpgSight = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.22), darkSteelMat);
+    rpgSight.position.set(-0.04, 0.16, -0.22);
+    const rpgLeftArm = (typeof leftArmGroup.clone === 'function') ? leftArmGroup.clone() : new THREE.Group();
+
+    this.bazookaGroup.add(
+      rpgTube, rearCone, frontBand, midBand, warheadBody, warheadTip,
+      rpgGripRear, rpgGripFront, rpgSight, rpgLeftArm
+    );
+    this.bazookaGroup.visible = this.weaponsMode && (this.activeWeapon === 'bazooka');
+    this.armPivot.add(this.bazookaGroup);
+
+    // 1st-Person 3D Tactical Plasma Cannon
+    this.plasmaGroup = new THREE.Group();
+    const plasmaBodyMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.85 });
+    const plasmaGlowMat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x06b6d4, roughness: 0.15 });
+    const pChassis = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.78), plasmaBodyMat);
+    pChassis.position.set(0, 0.03, -0.30);
+    const pCoil1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.15, 0.06), plasmaGlowMat);
+    pCoil1.position.set(0, 0.03, -0.25);
+    const pCoil2 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.15, 0.06), plasmaGlowMat);
+    pCoil2.position.set(0, 0.03, -0.45);
+    const pCoil3 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.15, 0.06), plasmaGlowMat);
+    pCoil3.position.set(0, 0.03, -0.65);
+    const pMuzzle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.14), plasmaGlowMat);
+    pMuzzle.position.set(0, 0.03, -0.76);
+    this.plasmaMuzzleMesh = pMuzzle;
+    const pGrip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.09), plasmaBodyMat);
+    pGrip.position.set(0, -0.11, 0.02);
+    pGrip.rotation.x = -0.35;
+    const pLeftArm = (typeof leftArmGroup.clone === 'function') ? leftArmGroup.clone() : new THREE.Group();
+    this.plasmaGroup.add(pChassis, pCoil1, pCoil2, pCoil3, pMuzzle, pGrip, pLeftArm);
+    this.plasmaGroup.visible = this.weaponsMode && (this.activeWeapon === 'plasma');
+    this.armPivot.add(this.plasmaGroup);
 
     this.firstPersonArm.add(this.armPivot);
     this.punchProgress = 0;
   }
 
   getMuzzleWorldPosition(targetVec = new THREE.Vector3()) {
-    if (this.muzzleMesh) {
+    const activeMuzzle = (this.activeWeapon === 'bazooka' && this.bazookaMuzzleMesh)
+      ? this.bazookaMuzzleMesh
+      : ((this.activeWeapon === 'plasma' && this.plasmaMuzzleMesh) ? this.plasmaMuzzleMesh : this.muzzleMesh);
+    if (activeMuzzle) {
       if (this.camera && typeof this.camera.updateMatrixWorld === 'function') {
         this.camera.updateMatrixWorld(true);
       }
-      return this.muzzleMesh.getWorldPosition(targetVec);
+      return activeMuzzle.getWorldPosition(targetVec);
     }
     const eye = this.physics ? this.physics.getEyePosition() : this.camera.position;
     const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
     const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, this.yaw, 0));
     return targetVec.copy(eye).addScaledVector(forward, 0.8).addScaledVector(right, 0.25).add(new THREE.Vector3(0, -0.15, 0));
+  }
+
+  setWeapon(weaponType) {
+    const valid = ['rifle', 'bazooka', 'plasma'];
+    const next = valid.includes(weaponType) ? weaponType : 'rifle';
+    this.activeWeapon = next;
+    if (!this.weaponsMode) {
+      this.setWeaponsMode(true);
+    }
+    this.updateWeaponVisibility();
+    this.updateWeaponHUD();
+    if (this.localAvatar && typeof this.localAvatar.setWeaponType === 'function') {
+      this.localAvatar.setWeaponType(this.activeWeapon);
+    }
+    if (sound && typeof sound.playClick === 'function') {
+      sound.playClick(next === 'bazooka' ? 0.75 : (next === 'plasma' ? 1.35 : 1.05));
+    }
+    if (this.onWeaponTypeChange) {
+      this.onWeaponTypeChange(this.activeWeapon);
+    }
+    return this.activeWeapon;
+  }
+
+  cycleWeapon() {
+    const order = ['rifle', 'bazooka', 'plasma'];
+    const idx = order.indexOf(this.activeWeapon);
+    const next = order[(idx + 1) % order.length];
+    return this.setWeapon(next);
+  }
+
+  updateWeaponVisibility() {
+    const show3D = Boolean(this.weaponsMode && (this.aimBlend <= 0.60));
+    if (this.rifleGroup) {
+      this.rifleGroup.visible = show3D && (this.activeWeapon === 'rifle');
+    }
+    if (this.bazookaGroup) {
+      this.bazookaGroup.visible = show3D && (this.activeWeapon === 'bazooka');
+    }
+    if (this.plasmaGroup) {
+      this.plasmaGroup.visible = show3D && (this.activeWeapon === 'plasma');
+    }
+  }
+
+  updateWeaponHUD() {
+    if (typeof document === 'undefined') return;
+    const btnRifle = document.getElementById('btn-select-rifle');
+    const btnBazooka = document.getElementById('btn-select-bazooka');
+    const btnPlasma = document.getElementById('btn-select-plasma');
+    if (btnRifle) btnRifle.classList.toggle('active', this.activeWeapon === 'rifle');
+    if (btnBazooka) btnBazooka.classList.toggle('active', this.activeWeapon === 'bazooka');
+    if (btnPlasma) btnPlasma.classList.toggle('active', this.activeWeapon === 'plasma');
+
+    const shootIcon = document.getElementById('weapon-shoot-icon');
+    const shootLabel = document.getElementById('weapon-shoot-label');
+    const scopeShootLabel = document.getElementById('scope-btn-shoot-label');
+    const scopeSwitchLabel = document.getElementById('scope-btn-switch-label');
+    const scopeTelemetry = document.getElementById('scope-telemetry-text');
+    const scopeOverlay = document.getElementById('rifle-scope-overlay');
+
+    if (this.activeWeapon === 'bazooka') {
+      if (shootIcon) shootIcon.textContent = '🚀';
+      if (shootLabel) shootLabel.textContent = 'LANZAR COHETE';
+      if (scopeShootLabel) scopeShootLabel.textContent = '🚀 LANZAR RPG';
+      if (scopeSwitchLabel) scopeSwitchLabel.textContent = '⚡ PLASMA';
+      if (scopeTelemetry) {
+        scopeTelemetry.textContent = 'MIRA BALÍSTICA RPG 2.0x • BAZOOKA DESTRUCTOR (IMPACTO DE MISIL)';
+      }
+      if (scopeOverlay) {
+        scopeOverlay.classList.add('bazooka-scope');
+        scopeOverlay.classList.remove('plasma-scope');
+      }
+    } else if (this.activeWeapon === 'plasma') {
+      if (shootIcon) shootIcon.textContent = '⚡';
+      if (shootLabel) shootLabel.textContent = 'PULSO PLASMA';
+      if (scopeShootLabel) scopeShootLabel.textContent = '⚡ DISPARAR';
+      if (scopeSwitchLabel) scopeSwitchLabel.textContent = '🔫 FUSIL';
+      if (scopeTelemetry) {
+        scopeTelemetry.textContent = 'MIRA LÁSER PLASMA 2.2x • CAÑÓN DE ENERGÍA TÁCTICO';
+      }
+      if (scopeOverlay) {
+        scopeOverlay.classList.add('plasma-scope');
+        scopeOverlay.classList.remove('bazooka-scope');
+      }
+    } else {
+      if (shootIcon) shootIcon.textContent = '🔫';
+      if (shootLabel) shootLabel.textContent = 'DISPARAR';
+      if (scopeShootLabel) scopeShootLabel.textContent = '🔫 TIRAR';
+      if (scopeSwitchLabel) scopeSwitchLabel.textContent = '🚀 BAZOOKA';
+      if (scopeTelemetry) {
+        scopeTelemetry.textContent = 'ZOOM ÓPTICO 2.4x • MODO FRANCOTIRADOR (ALCANCE INFINITO)';
+      }
+      if (scopeOverlay) {
+        scopeOverlay.classList.remove('bazooka-scope', 'plasma-scope');
+      }
+    }
   }
 
   updateHeldBlock(blockId) {
@@ -720,10 +884,10 @@ export class Controls {
     };
     if (this.weaponsMode) {
       this.heldBlockMesh.visible = false;
-      if (this.rifleGroup) this.rifleGroup.visible = true;
+      this.updateWeaponVisibility();
       return;
     }
-    if (this.rifleGroup) this.rifleGroup.visible = this.weaponsMode;
+    this.updateWeaponVisibility();
     if (colors[blockId]) {
       this.heldBlockMat.color.setHex(colors[blockId]);
       this.heldBlockMesh.visible = !this.weaponsMode;
@@ -737,9 +901,7 @@ export class Controls {
     if (!this.weaponsMode && this.isAiming) {
       this.setAiming(false);
     }
-    if (this.rifleGroup) {
-      this.rifleGroup.visible = this.weaponsMode && (this.aimBlend <= 0.82);
-    }
+    this.updateWeaponVisibility();
     if (this.heldBlockMesh) {
       this.heldBlockMesh.visible = !this.weaponsMode;
     }
@@ -815,9 +977,10 @@ export class Controls {
       dir.set(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
     }
 
-    // Infinite / long-range raycast when in Sniper Scope mode (isAiming), 85m in hip-fire
-    // Non-destructive: Bullets NEVER destroy terrain blocks
-    const effectiveRange = isSniperShot ? 1000.0 : 85.0;
+    // Infinite / long-range raycast when in Scope mode (isAiming);
+    // Bazooka has 350m hip-fire range & 1000m scoped range; Rifle has 85m hip-fire & 1000m scoped
+    const hipRange = (this.activeWeapon === 'bazooka') ? 350.0 : ((this.activeWeapon === 'plasma') ? 180.0 : 85.0);
+    const effectiveRange = isSniperShot ? 1000.0 : hipRange;
     const savedReach = this.reachDistance;
     this.reachDistance = effectiveRange;
     const longVoxelHit = this.raycastVoxel(origin, dir);
@@ -875,6 +1038,7 @@ export class Controls {
     }
 
     const shotData = {
+      weaponType: this.activeWeapon || 'rifle',
       origin: { x: origin.x, y: origin.y, z: origin.z },
       dir: { x: dir.x, y: dir.y, z: dir.z },
       muzzlePos: { x: muzzleVec.x, y: muzzleVec.y, z: muzzleVec.z },
@@ -1417,6 +1581,36 @@ export class Controls {
       scopeBtnExit.addEventListener('touchstart', onScopeExit, { passive: false });
       scopeBtnExit.addEventListener('click', onScopeExit);
     }
+
+    const scopeBtnSwitch = document.getElementById('scope-btn-switch');
+    if (scopeBtnSwitch && !scopeBtnSwitch.__fanBound) {
+      scopeBtnSwitch.__fanBound = true;
+      const onScopeSwitch = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        this.cycleWeapon();
+      };
+      scopeBtnSwitch.addEventListener('touchstart', onScopeSwitch, { passive: false });
+      scopeBtnSwitch.addEventListener('click', onScopeSwitch);
+    }
+
+    // 1-Tap Weapon Selector Bar (FUSIL / BAZOOKA / PLASMA)
+    const weaponTabBtns = [
+      { id: 'btn-select-rifle', type: 'rifle' },
+      { id: 'btn-select-bazooka', type: 'bazooka' },
+      { id: 'btn-select-plasma', type: 'plasma' }
+    ];
+    for (const item of weaponTabBtns) {
+      const btn = document.getElementById(item.id);
+      if (btn && !btn.__fanBound) {
+        btn.__fanBound = true;
+        const onSelect = (e) => {
+          if (e) { e.preventDefault(); e.stopPropagation(); }
+          this.setWeapon(item.type);
+        };
+        btn.addEventListener('touchstart', onSelect, { passive: false });
+        btn.addEventListener('click', onSelect);
+      }
+    }
   }
 
   initHotbarIsolation() {
@@ -1610,6 +1804,13 @@ export class Controls {
         if (this.weaponsMode) {
           e.preventDefault();
           this.triggerTnt();
+        }
+        break;
+      case 'KeyC':
+      case 'KeyX':
+        if (this.weaponsMode && !e.repeat) {
+          e.preventDefault();
+          this.cycleWeapon();
         }
         break;
       case 'F5':
@@ -1914,9 +2115,7 @@ export class Controls {
         if (part) part.visible = showOptics;
       }
     }
-    if (this.rifleGroup) {
-      this.rifleGroup.visible = this.weaponsMode && (this.aimBlend <= 0.60);
-    }
+    this.updateWeaponVisibility();
 
     // Toggle #rifle-scope-overlay and #crosshair when aimBlend > 0.60
     if (typeof document !== 'undefined') {

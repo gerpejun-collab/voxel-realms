@@ -162,7 +162,7 @@ export class BunkerManager {
     if (!m) return false;
     const em = String(m.myEmail || '').toLowerCase();
     const nm = String(m.myName || '').toLowerCase();
-    return em === 'zfold7' || nm === 'zfold7' || em === 'jsieiragerpe@gmail.com' || nm === 'jsieiragerpe';
+    return (m.isAdmin && !nm.includes('cifrixa')) || em === 'jsieiragerpe@gmail.com' || nm === 'jsieiragerpe';
   }
 
   notify(text) {

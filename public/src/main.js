@@ -141,6 +141,22 @@ class VoxelRealmsApp {
           }
         }
       };
+      this.multiplayer.onPlayerInit = (data) => {
+        const joinedName = data?.player?.name || this.multiplayer?.myName;
+        if (joinedName && this.localAvatar && this.localAvatar.name !== joinedName) {
+          if (typeof this.localAvatar.dispose === 'function') {
+            this.localAvatar.dispose();
+          }
+          this.localAvatar = new Avatar('local_player', joinedName, this.sceneManager.scene, this.world);
+          if (this.localAvatar.nameSprite) {
+            this.localAvatar.nameSprite.visible = false;
+          }
+          this.controls.setLocalAvatar(this.localAvatar);
+          if (this.controls.activeWeapon && typeof this.localAvatar.setWeaponType === 'function') {
+            this.localAvatar.setWeaponType(this.controls.activeWeapon);
+          }
+        }
+      };
     }
 
     // Connect Vehicle Events to Multiplayer and UI
@@ -220,11 +236,12 @@ class VoxelRealmsApp {
       this.multiplayer.sendBlockModify(placePos.x, placePos.y, placePos.z, selectedBlockId);
     };
 
-    // Rifle Shoot (Authentic 3D rifle, luminous tracer, animal blood particles & shoot-to-detonate TNT)
-    this.controls.onWeaponShoot = ({ origin, dir, muzzlePos, voxelHit, range, isSniperShot }) => {
+    // Weapon Shoot (Precision Rifle, Destructive Bazooka RPG, & Tactical Plasma Cannon)
+    this.controls.onWeaponShoot = ({ weaponType: shotWeaponType, origin, dir, muzzlePos, voxelHit, range, isSniperShot }) => {
+      const weaponType = shotWeaponType || this.controls?.activeWeapon || 'rifle';
       const isScoped = Boolean(isSniperShot || (this.controls && (this.controls.isAiming || this.controls.aimBlend > 0.3)));
       const tracerStart = isScoped ? (this.controls?.camera?.position || origin) : (muzzlePos || origin);
-      const effectiveRange = typeof range === 'number' ? range : (isScoped ? 1000 : 85);
+      const effectiveRange = typeof range === 'number' ? range : (isScoped ? 1000 : (weaponType === 'bazooka' ? 350 : 85));
 
       // 1. Particle muzzle flash & smoke at gun barrel
       if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
@@ -259,7 +276,7 @@ class VoxelRealmsApp {
       let targetAnimalId = null;
 
       if (hitAnim && animalDist <= playerDist && animalDist <= voxelDist) {
-        // Bullet hit an animal or NPC: spawn blood particles & trigger knockback animation
+        // Hit an animal or NPC: spawn blood particles & trigger knockback animation
         targetAnimalId = hitAnim.id;
         targetPoint = { x: hitAnim.x, y: hitAnim.y, z: hitAnim.z };
 
@@ -277,7 +294,7 @@ class VoxelRealmsApp {
           this.animalManager.triggerAnimalHit(hitAnim.id, dir);
         }
       } else if (targetPlayerHit && playerDist <= animalDist && playerDist <= voxelDist) {
-        // Bullet hit a remote player (friendly notification)
+        // Hit a remote player
         targetPoint = {
           x: origin.x + dir.x * targetPlayerHit.distance,
           y: origin.y + dir.y * targetPlayerHit.distance,
@@ -298,14 +315,14 @@ class VoxelRealmsApp {
               sound.playExplosion();
             }
           }
-        } else {
-          // NON-DESTRUCTIVE SHOOTING: Shooting MUST NEVER destroy terrain blocks!
+        } else if (weaponType === 'rifle') {
+          // NON-DESTRUCTIVE RIFLE SHOOTING: Sniper bullets never destroy terrain blocks
           if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
             this.particleManager.spawnMuzzleFlash(targetPoint);
           }
         }
       } else {
-        // No surface hit: tracer travels into the distance
+        // No surface hit: projectile travels into the distance
         const tracerDist = Math.min(effectiveRange, 220);
         targetPoint = {
           x: origin.x + dir.x * tracerDist,
@@ -314,14 +331,71 @@ class VoxelRealmsApp {
         };
       }
 
-      // 5. Render visible high-speed luminous 3D bullet tracer beam from gun barrel toward target
-      if (this.particleManager && typeof this.particleManager.spawnBulletTracer === 'function') {
-        this.particleManager.spawnBulletTracer(tracerStart, targetPoint);
+      // 5. Weapon-specific projectile & destructive impact logic
+      if (weaponType === 'bazooka') {
+        const hasSurfaceOrEntityImpact = Boolean((voxelHit && voxelDist < Infinity) || targetPlayerHit || hitAnim);
+        const impactX = Math.round(targetPoint.x);
+        const impactY = Math.round(targetPoint.y);
+        const impactZ = Math.round(targetPoint.z);
+        const bazookaRadius = 5; // Missile-grade destructive crater (destroys trees, buildings, terrain)
+
+        const triggerBazookaBlast = () => {
+          if (sound && typeof sound.playExplosion === 'function') {
+            sound.playExplosion();
+          }
+          if (hasSurfaceOrEntityImpact) {
+            if (this.multiplayer && this.multiplayer.connected && typeof this.multiplayer.sendTntTrigger === 'function') {
+              this.multiplayer.sendTntTrigger(impactX, impactY, impactZ, 0, bazookaRadius);
+            } else if (this.world && typeof this.world.applyBlockDeltasBatch === 'function') {
+              // Offline fallback destructive blast
+              const deltas = [];
+              for (let dx = -bazookaRadius; dx <= bazookaRadius; dx++) {
+                for (let dy = -bazookaRadius; dy <= bazookaRadius; dy++) {
+                  for (let dz = -bazookaRadius; dz <= bazookaRadius; dz++) {
+                    if (dx * dx + dy * dy + dz * dz <= bazookaRadius * bazookaRadius) {
+                      const by = impactY + dy;
+                      if (by >= 19 && by < 120) {
+                        deltas.push([impactX + dx, by, impactZ + dz, 0]);
+                      }
+                    }
+                  }
+                }
+              }
+              this.world.applyBlockDeltasBatch(deltas);
+            }
+          }
+        };
+
+        if (this.particleManager && typeof this.particleManager.spawnBazookaRocket === 'function') {
+          this.particleManager.spawnBazookaRocket(tracerStart, targetPoint, triggerBazookaBlast);
+        } else {
+          triggerBazookaBlast();
+        }
+      } else if (weaponType === 'plasma') {
+        if (this.particleManager && typeof this.particleManager.spawnPlasmaBolt === 'function') {
+          this.particleManager.spawnPlasmaBolt(tracerStart, targetPoint);
+        } else if (this.particleManager && typeof this.particleManager.spawnBulletTracer === 'function') {
+          this.particleManager.spawnBulletTracer(tracerStart, targetPoint);
+        }
+        if ((voxelHit && voxelDist < Infinity) || targetPlayerHit || hitAnim) {
+          const px = Math.round(targetPoint.x);
+          const py = Math.round(targetPoint.y);
+          const pz = Math.round(targetPoint.z);
+          if (this.multiplayer && this.multiplayer.connected && typeof this.multiplayer.sendTntTrigger === 'function') {
+            this.multiplayer.sendTntTrigger(px, py, pz, 0, 2);
+          }
+        }
+      } else {
+        // Default Precision Sniper Rifle tracer
+        if (this.particleManager && typeof this.particleManager.spawnBulletTracer === 'function') {
+          this.particleManager.spawnBulletTracer(tracerStart, targetPoint);
+        }
       }
 
       // 6. Send multiplayer packet
       if (this.multiplayer && typeof this.multiplayer.sendWeaponShoot === 'function') {
         this.multiplayer.sendWeaponShoot({
+          weaponType,
           origin: [tracerStart.x, tracerStart.y, tracerStart.z],
           dir: [dir.x, dir.y, dir.z],
           targetPlayerId,

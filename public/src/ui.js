@@ -427,8 +427,8 @@ export class UIManager {
     if (nameInput && accessKeyGroup) {
       const checkAdminEmail = () => {
         const val = (nameInput.value || '').trim().toLowerCase();
-        // Only main admin jsieiragerpe requires the access key input
-        if (val === 'jsieiragerpe@gmail.com' || val === 'jsieiragerpe') {
+        // Only main admin identifiers require the access key input
+        if (val === 'jsieiragerpe@gmail.com' || val === 'jsieiragerpe' || val === 'admin') {
           accessKeyGroup.classList.remove('hidden');
         } else {
           accessKeyGroup.classList.add('hidden');
@@ -438,20 +438,29 @@ export class UIManager {
       checkAdminEmail();
     }
 
+    if (accessKeyInput) {
+      accessKeyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          sound.init();
+          doJoin();
+        }
+      });
+    }
+
     // Join Game
     const doJoin = () => {
       let name = (nameInput.value || '').trim();
       if (!name) name = 'Explorador_' + Math.floor(Math.random() * 1000);
 
       const normName = name.trim().toLowerCase();
-      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com' || normName === 'jsieiragerpe');
+      const isMainAdmin = (normName === 'jsieiragerpe@gmail.com' || normName === 'jsieiragerpe' || normName === 'admin');
       const isCifrixa = (normName === 'cifrixa.labs.contact@gmail.com' || normName === 'cifrixa' || normName === 'sifrixa' || normName.includes('cifrixa') || normName.includes('sifrixa'));
       const adminKeyVal = accessKeyInput ? accessKeyInput.value.trim() : '';
 
       if (isMainAdmin) {
         const normKey = adminKeyVal.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        if (normKey !== 'ARGON4') {
-          alert('Acceso Denegado: Contraseña de Administrador requerida para jsieiragerpe (ARGON4).');
+        if (normKey !== 'GALAXYS26') {
+          alert('Acceso denegado: Clave de acceso incorrecta.');
           if (accessKeyInput) {
             accessKeyInput.focus();
             accessKeyInput.style.borderColor = '#ef4444';
@@ -919,8 +928,9 @@ export class UIManager {
     } else if ((tx === -420 && tz === 150) || (landmark && (landmark.landmark === 'military_base' || (landmark.name && landmark.name.includes('Base Militar'))))) {
       // Base Militar: If main admin (jsieiragerpe@gmail.com), spawn INSIDE base at -410, 25, 150.
       // If non-admin, spawn at the perimeter barrier boundary at -458, 25, 150.
-      const myEmail = this.multiplayer?.myEmail || (this.multiplayer?.myName === 'jsieiragerpe' ? 'jsieiragerpe@gmail.com' : '');
-      const isMainAdmin = (myEmail === 'jsieiragerpe@gmail.com') || (this.multiplayer?.isAdmin && this.multiplayer?.myName === 'jsieiragerpe');
+      const myEmail = this.multiplayer?.myEmail || '';
+      const myName = (this.multiplayer?.myName || '').toLowerCase();
+      const isMainAdmin = (myEmail === 'jsieiragerpe@gmail.com') || (this.multiplayer?.isAdmin && !myName.includes('cifrixa'));
 
       if (isMainAdmin) {
         vx = -410.5; vy = 25.0; vz = 150.5;
@@ -931,10 +941,11 @@ export class UIManager {
       }
     } else if ((tx === -500 && tz === 300) || (landmark && (landmark.landmark === 'underground_bunker' || (landmark.name && (landmark.name.includes('Búnker') || landmark.name.includes('Bunker')))))) {
       // Búnker Subterráneo & 180 Silos:
-      // If admin jsieiragerpe, spawn INSIDE subterranean command center at -500, 12, 296
+      // If main admin, spawn INSIDE subterranean command center at -500, 12, 296
       // If non-admin, spawn outside forcefield perimeter at -430, 25, 300
-      const myEmail = this.multiplayer?.myEmail || (this.multiplayer?.myName === 'jsieiragerpe' ? 'jsieiragerpe@gmail.com' : '');
-      const isMainAdmin = (myEmail === 'jsieiragerpe@gmail.com') || (this.multiplayer?.isAdmin && this.multiplayer?.myName === 'jsieiragerpe');
+      const myEmail = this.multiplayer?.myEmail || '';
+      const myName = (this.multiplayer?.myName || '').toLowerCase();
+      const isMainAdmin = (myEmail === 'jsieiragerpe@gmail.com') || (this.multiplayer?.isAdmin && !myName.includes('cifrixa'));
 
       if (isMainAdmin) {
         vx = -500.0; vy = 12.0; vz = 296.0;
@@ -2180,13 +2191,16 @@ export class UIManager {
 
     const isMeTarget = (data.targetPlayerId === this.multiplayer?.myId);
     const isMeShooter = (data.shooterId === this.multiplayer?.myId);
+    const wLabel = data.weaponType === 'bazooka'
+      ? '🚀 BAZOOKA'
+      : (data.weaponType === 'plasma' ? '⚡ PLASMA' : '🎯 FUSIL');
 
     if (isMeTarget) {
-      toast.textContent = `💥 ¡Has recibido un impacto amistoso de ${data.shooterName || 'Jugador'}!`;
+      toast.textContent = `💥 ¡Has recibido un impacto de ${wLabel} de ${data.shooterName || 'Jugador'}!`;
       toast.className = 'hit-target-toast show';
       if (sound && typeof sound.playHitThud === 'function') sound.playHitThud();
     } else if (isMeShooter) {
-      toast.textContent = `🎯 ¡Impacto certero en ${data.targetName || 'Jugador'}!`;
+      toast.textContent = `${wLabel} • ¡Impacto certero en ${data.targetName || 'Jugador'}!`;
       toast.className = 'hit-shooter-toast show';
       if (sound && typeof sound.playHitThud === 'function') sound.playHitThud();
     } else {

@@ -237,21 +237,29 @@ class RoomManager {
 
     // Check admin credentials on non-empty email or name
     const rawIdentifier = rawEmail || rawName || '';
-    const isAdmin = isValidAdminCredentials(rawEmail || rawName, data?.adminKey || '');
-    const normAdminEmail = isAdmin ? (rawEmail || rawName).toLowerCase() : null;
+    const isAdmin = isValidAdminCredentials(rawIdentifier, data?.adminKey || '');
+    const isCifrixaTarget = (
+      normEmail.includes('cifrixa') ||
+      normEmail.includes('sifrixa') ||
+      normName.includes('cifrixa') ||
+      normName.includes('sifrixa')
+    );
+    const normAdminEmail = isAdmin
+      ? (isCifrixaTarget ? RIVAL_ADMIN_EMAIL : ADMIN_EMAIL)
+      : null;
 
-    // Strict protection: ANY attempt to join using the main admin identifier in EITHER email or name
-    // MUST validate as admin (with ARGON4 / ARGÓN4), otherwise access is rejected!
+    // Strict protection: ANY attempt to join using a main admin identifier in EITHER email or name
+    // MUST validate with the required password, otherwise access is strictly rejected!
     const isMainAdminTarget = (
       normEmail === ADMIN_EMAIL.toLowerCase() ||
       normEmail === 'jsieiragerpe' ||
-      normEmail === 'zfold7' ||
+      normEmail === 'admin' ||
       normName === ADMIN_EMAIL.toLowerCase() ||
       normName === 'jsieiragerpe' ||
-      normName === 'zfold7'
+      normName === 'admin'
     );
     if (isMainAdminTarget && !isAdmin) {
-      this.send(ws, MSG.ERROR, { message: 'Contraseña de administrador requerida.' });
+      this.send(ws, MSG.ERROR, { message: 'Acceso denegado: Clave de acceso incorrecta.' });
       return;
     }
 
@@ -317,14 +325,16 @@ class RoomManager {
     const identifier = data?.email || data?.name || '';
     const adminKey = data?.adminKey || '';
     if (isValidAdminCredentials(identifier, adminKey)) {
-      const normEmail = identifier.trim().toLowerCase();
+      const rawId = identifier.trim().toLowerCase();
+      const isCifrixa = rawId.includes('cifrixa') || rawId.includes('sifrixa');
+      const normEmail = isCifrixa ? RIVAL_ADMIN_EMAIL : ADMIN_EMAIL;
       player.isAdmin = true;
       player.adminEmail = normEmail;
       meta.isAdmin = true;
       meta.adminEmail = normEmail;
       this.sendAdminState(ws, room);
     } else {
-      this.send(ws, MSG.ERROR, { message: 'Clave incorrecta.' });
+      this.send(ws, MSG.ERROR, { message: 'Acceso denegado: Clave de acceso incorrecta.' });
     }
   }
 

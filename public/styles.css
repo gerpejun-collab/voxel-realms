@@ -1476,21 +1476,45 @@ body.mobile-mode .desktop-only {
     border-radius: 4px;
   }
 
-  /* Weapons HUD Bar Compact Layout on Mobile */
+  /* Weapons HUD Bar Compact Layout on Mobile (Horizontal Dock, never vertical to prevent bottom collision) */
   #weapons-hud-controls {
-    top: 46px;
-    right: 6px;
-    gap: 4px;
-    max-width: 180px;
+    top: 48px !important;
+    right: 8px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 4px !important;
+    max-width: fit-content !important;
+    padding: 3px 6px !important;
+    background: rgba(15, 23, 42, 0.75) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 20px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    z-index: 25 !important;
   }
 
   .weapon-selector-bar {
-    padding: 2px;
-    gap: 2px;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    padding: 1px 3px !important;
+    gap: 2px !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.25) !important;
+    margin-right: 2px !important;
   }
 
   .weapon-tab-btn {
-    padding: 4px;
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
     font-size: 8px;
   }
 
@@ -1503,7 +1527,14 @@ body.mobile-mode .desktop-only {
   }
 
   .weapon-hud-btn {
-    padding: 5px 8px;
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
     font-size: 10px;
   }
 
@@ -1512,7 +1543,7 @@ body.mobile-mode .desktop-only {
   }
 
   .weapon-hud-btn .weapon-btn-icon {
-    font-size: 15px;
+    font-size: 16px;
     margin: 0 auto;
   }
 
@@ -2819,8 +2850,10 @@ body.mobile-mode .desktop-only {
     max-height: 52vh !important;
   }
   #weapons-hud-controls {
-    top: 50px !important;
-    right: 12px !important;
+    top: 48px !important;
+    right: 8px !important;
+    flex-direction: row !important;
+    max-width: fit-content !important;
   }
   .weapon-hud-btn {
     padding: 6px 10px !important;

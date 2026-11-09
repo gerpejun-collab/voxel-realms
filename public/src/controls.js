@@ -991,7 +991,10 @@ export class Controls {
             this.stopAutoFire();
             return;
           }
-          if (this.activeWeapon === 'bazooka' && this.missileSalvoCount > 1) {
+          if (this.missileSalvoCount > 1) {
+            if (this.activeWeapon !== 'bazooka') {
+              this.setWeapon('bazooka');
+            }
             if (!this.isSalvoRunning) {
               this.fireMissileSalvo();
             }
@@ -1016,6 +1019,9 @@ export class Controls {
     const idx = steps.indexOf(this.missileSalvoCount);
     const next = (idx === -1 || idx === steps.length - 1) ? steps[0] : steps[idx + 1];
     this.missileSalvoCount = next;
+    if (next > 1) {
+      this.setWeapon('bazooka');
+    }
     const badge = document.getElementById('weapon-salvo-hud-label');
     if (badge) badge.textContent = `x${next}`;
     const slider = document.getElementById('weapon-salvo-count');
@@ -1029,9 +1035,17 @@ export class Controls {
   fireMissileSalvo() {
     if (this.isSalvoRunning) return;
     this.isSalvoRunning = true;
+    if (this.activeWeapon !== 'bazooka') {
+      this.setWeapon('bazooka');
+    }
     const count = Math.min(200, Math.max(1, this.missileSalvoCount || 1));
     const mode = this.missileSalvoMode || 'sequential';
-    const delayMs = Math.round(Math.max(200, Math.min(1000, (this.missileSalvoDelay || 0.25) * 1000)));
+    let delayMs = Math.round(Math.max(30, Math.min(1000, (this.missileSalvoDelay || 0.25) * 1000)));
+    if (count >= 100) {
+      delayMs = Math.min(delayMs, 40); // 40ms stream for 100-200 rockets (continuous MLRS volley)
+    } else if (count >= 20) {
+      delayMs = Math.min(delayMs, 80); // 80ms stream for 20-50 rockets
+    }
 
     if (mode === 'simultaneous') {
       const spreadFactor = 0.16;
@@ -1117,7 +1131,10 @@ export class Controls {
     if (!this.weaponsMode) return null;
 
     // Check if Bazooka Salvo Barrage should be executed
-    if (this.activeWeapon === 'bazooka' && this.missileSalvoCount > 1 && !force) {
+    if (this.missileSalvoCount > 1 && !force) {
+      if (this.activeWeapon !== 'bazooka') {
+        this.setWeapon('bazooka');
+      }
       this.fireMissileSalvo();
       return null;
     }

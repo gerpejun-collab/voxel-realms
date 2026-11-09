@@ -1907,7 +1907,12 @@ export class UIManager {
     if (salvoCountSlider) {
       salvoCountSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value, 10);
-        if (this.controls) this.controls.missileSalvoCount = val;
+        if (this.controls) {
+          this.controls.missileSalvoCount = val;
+          if (val > 1) {
+            this.controls.setWeapon('bazooka');
+          }
+        }
         if (salvoCountLabel) salvoCountLabel.textContent = `${val} misil${val > 1 ? 'es' : ''}`;
         if (salvoHudBadge) salvoHudBadge.textContent = `x${val}`;
         try { localStorage.setItem('voxel_missile_salvo_count', val); } catch (e) {}
@@ -3365,7 +3370,8 @@ export class UIManager {
         sound.playClick();
         if (this.controls && typeof this.controls.cycleMissileSalvo === 'function') {
           const count = this.controls.cycleMissileSalvo();
-          this.showNotification(`🚀 Salva de Misiles: x${count} misiles por disparo`);
+          this.controls.setWeapon('bazooka');
+          this.showNotification(`🚀 Bazooka RPG: Salva de x${count} misiles activada`);
         }
       });
     }

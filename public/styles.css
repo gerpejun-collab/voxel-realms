@@ -1029,14 +1029,16 @@ body.mobile-mode .desktop-only {
 }
 
 /* ==========================================================================
-   HUD QUICK ACTION PILLS (Top Right)
+   HUD QUICK ACTION PILLS (Top Right - Responsive, Compact & Anti-Overflow)
    ========================================================================== */
 #hud-quick-actions {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 14px;
+  right: 14px;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100vw - 230px);
   z-index: 25;
   pointer-events: auto;
 }
@@ -1044,7 +1046,7 @@ body.mobile-mode .desktop-only {
 .hud-action-pill {
   background: #5c5c62;
   color: #ffffff;
-  padding: 8px 14px;
+  padding: 6px 9px;
   border-radius: 0px;
   border: none;
   outline: 2px solid #000000;
@@ -1052,16 +1054,37 @@ body.mobile-mode .desktop-only {
     inset 2px 2px 0px rgba(255, 255, 255, 0.5),
     inset -2px -2px 0px rgba(0, 0, 0, 0.7);
   font-family: var(--font-title);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   text-shadow: 1px 1px 0px #000000;
   transition: background 0.08s ease, color 0.08s ease;
+  white-space: nowrap;
+}
+
+@media (max-width: 1440px) {
+  .hud-action-pill:not(.highlight-pill):not(.builder-pill) .hud-pill-txt {
+    display: none;
+  }
+  .hud-action-pill {
+    padding: 6px 8px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .hud-action-pill .hud-pill-txt {
+    display: none;
+  }
+  .hud-action-pill {
+    padding: 6px 8px;
+    width: 32px;
+    justify-content: center;
+  }
 }
 
 .hud-action-pill:hover {

@@ -458,6 +458,11 @@ export class Controls {
 
     // Automatic Continuous Burst Fire & Cadence Settings
     this.autoFireEnabled = false;
+    // Missile Salvo & Barrage Parameters (1 to 200 Missiles)
+    this.missileSalvoCount = 1;
+    this.missileSalvoMode = 'sequential'; // 'sequential' | 'pairs' | 'simultaneous'
+    this.missileSalvoDelay = 0.25; // in seconds (0.2s - 1.0s)
+    this.isSalvoRunning = false;
     this.fireRates = {
       rifle: 120,   // ms per shot (~8.3 shots/sec)
       bazooka: 650, // ms per rocket
@@ -1000,7 +1005,84 @@ export class Controls {
     }
   }
 
-  triggerShoot(force = false) {
+  cycleMissileSalvo() {
+    const steps = [1, 5, 20, 50, 100, 200];
+    const idx = steps.indexOf(this.missileSalvoCount);
+    const next = (idx === -1 || idx === steps.length - 1) ? steps[0] : steps[idx + 1];
+    this.missileSalvoCount = next;
+    const badge = document.getElementById('weapon-salvo-hud-label');
+    if (badge) badge.textContent = `x${next}`;
+    const slider = document.getElementById('weapon-salvo-count');
+    if (slider) slider.value = next;
+    const label = document.getElementById('salvo-count-val');
+    if (label) label.textContent = `${next} misil${next > 1 ? 'es' : ''}`;
+    try { localStorage.setItem('voxel_missile_salvo_count', next); } catch (e) {}
+    return next;
+  }
+
+  fireMissileSalvo() {
+    if (this.isSalvoRunning) return;
+    this.isSalvoRunning = true;
+    const count = Math.min(200, Math.max(1, this.missileSalvoCount || 1));
+    const mode = this.missileSalvoMode || 'sequential';
+    const delayMs = Math.round(Math.max(200, Math.min(1000, (this.missileSalvoDelay || 0.25) * 1000)));
+
+    if (mode === 'simultaneous') {
+      const spreadFactor = 0.16;
+      for (let i = 0; i < count; i++) {
+        const spread = (typeof THREE !== 'undefined' && THREE.Vector3)
+          ? new THREE.Vector3((Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor)
+          : null;
+        this.triggerShoot(true, spread);
+      }
+      this.isSalvoRunning = false;
+      return;
+    }
+
+    if (mode === 'pairs') {
+      let launched = 0;
+      const interval = setInterval(() => {
+        if (!this.weaponsMode || launched >= count) {
+          clearInterval(interval);
+          this.isSalvoRunning = false;
+          return;
+        }
+        const s1 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(-0.05, 0, 0) : null;
+        const s2 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(0.05, 0, 0) : null;
+        this.triggerShoot(true, s1);
+        launched++;
+        if (launched < count) {
+          this.triggerShoot(true, s2);
+          launched++;
+        }
+      }, delayMs);
+      return;
+    }
+
+    // Default 'sequential' (one by one with cadence)
+    let launched = 0;
+    const interval = setInterval(() => {
+      if (!this.weaponsMode || launched >= count) {
+        clearInterval(interval);
+        this.isSalvoRunning = false;
+        return;
+      }
+      const spread = (typeof THREE !== 'undefined' && THREE.Vector3)
+        ? new THREE.Vector3((Math.random() - 0.5) * 0.04, (Math.random() - 0.5) * 0.04, (Math.random() - 0.5) * 0.04)
+        : null;
+      this.triggerShoot(true, spread);
+      launched++;
+    }, delayMs);
+  }
+
+  triggerShoot(force = false, customSpread = null) {
+    if (!this.weaponsMode) return null;
+
+    // Check if Bazooka Salvo Barrage should be executed
+    if (this.activeWeapon === 'bazooka' && this.missileSalvoCount > 1 && !force) {
+      this.fireMissileSalvo();
+      return null;
+    }
     if (!this.weaponsMode) return null;
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     // Only debounce repeated mouse clicks if more than 0ms elapsed and less than 150ms in browser environments with window.requestAnimationFrame
@@ -1032,11 +1114,15 @@ export class Controls {
     } else {
       dir.set(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
     }
+    if (customSpread && typeof dir.add === 'function') {
+      dir.add(customSpread).normalize();
+    }
 
     // Infinite / long-range raycast when in Scope mode (isAiming);
     // Bazooka has 350m hip-fire range & 1000m scoped range; Rifle has 85m hip-fire & 1000m scoped
-    const hipRange = (this.activeWeapon === 'bazooka') ? 350.0 : ((this.activeWeapon === 'plasma') ? 180.0 : 85.0);
-    const effectiveRange = isSniperShot ? 1000.0 : hipRange;
+    // Bazooka has virtually unlimited range (3500m) to blast anywhere across the sky and terrain with zero distance limits; Sniper has 1000m
+    const hipRange = (this.activeWeapon === 'bazooka') ? 3500.0 : ((this.activeWeapon === 'plasma') ? 180.0 : 85.0);
+    const effectiveRange = (this.activeWeapon === 'bazooka') ? 3500.0 : (isSniperShot ? 1000.0 : hipRange);
     const savedReach = this.reachDistance;
     this.reachDistance = effectiveRange;
     const longVoxelHit = this.raycastVoxel(origin, dir);

@@ -702,15 +702,18 @@ export class Avatar {
   }
 
   update(dt) {
-    // Distance snap if teleported/respawned or if seated inside a car
+    // Distance snap if teleported/respawned, large vertical drop/jump, or if seated inside a car
     const distSq = this.group.position.distanceToSquared(this.targetPos);
+    const vertDelta = Math.abs(this.group.position.y - this.targetPos.y);
+
     if (this.action === 'driving') {
       // Snap directly to cockpit seat position so avatar never lags behind the moving car
       this.group.position.copy(this.targetPos);
       this.group.rotation.y = this.targetYaw;
       this.velY = 0;
       this.onGround = true;
-    } else if (distSq > 100) {
+    } else if (distSq > 25 || vertDelta > 5.0) {
+      // Instant snap when falling through world, void-wrapping, teleporting, or respawning
       this.group.position.copy(this.targetPos);
       this.velY = 0;
       this.onGround = true;
@@ -724,7 +727,7 @@ export class Avatar {
       const groundY = this.getGroundHeight(this.group.position.x, this.group.position.z, this.group.position.y);
 
       if (this.group.position.y > this.targetPos.y) {
-        // Fall naturally using gravity
+        // Fall naturally using gravity towards authoritative target
         this.velY = (this.velY || 0) + (this.gravity || -26.0) * dt;
         this.group.position.y += this.velY * dt;
         if (this.group.position.y <= this.targetPos.y) {
@@ -735,13 +738,13 @@ export class Avatar {
           this.onGround = false;
         }
       } else if (this.group.position.y < this.targetPos.y) {
-        // Ascending (e.g. jump or step up)
-        this.group.position.y += (this.targetPos.y - this.group.position.y) * Math.min(1.0, dt * 14.0);
+        // Ascending smoothly towards authoritative target (jump, elevator, or climb)
+        this.group.position.y += (this.targetPos.y - this.group.position.y) * Math.min(1.0, dt * 16.0);
         this.velY = 0;
       }
 
-      // Eliminate burying or sinking glitch: clamp strictly to true ground floor
-      if (this.group.position.y < groundY) {
+      // Eliminate burying into solid floor above, BUT DO NOT clamp if player is intentionally below ground (bunker, tunnels, falling through)
+      if (this.targetPos.y >= groundY - 0.25 && this.group.position.y < groundY) {
         this.group.position.y = groundY;
         this.velY = 0;
         this.onGround = true;

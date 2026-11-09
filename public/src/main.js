@@ -283,7 +283,7 @@ class VoxelRealmsApp {
       const weaponType = shotWeaponType || this.controls?.activeWeapon || 'rifle';
       const isScoped = Boolean(isSniperShot || (this.controls && (this.controls.isAiming || this.controls.aimBlend > 0.3)));
       const tracerStart = isScoped ? (this.controls?.camera?.position || origin) : (muzzlePos || origin);
-      const effectiveRange = typeof range === 'number' ? range : (isScoped ? 1000 : (weaponType === 'bazooka' ? 350 : 85));
+      const effectiveRange = typeof range === 'number' ? range : (weaponType === 'bazooka' ? 3500 : (isScoped ? 1000 : 85));
 
       // 1. Particle muzzle flash & smoke at gun barrel
       if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
@@ -396,7 +396,7 @@ class VoxelRealmsApp {
                   for (let dz = -bazookaRadius; dz <= bazookaRadius; dz++) {
                     if (dx * dx + dy * dy + dz * dz <= bazookaRadius * bazookaRadius) {
                       const by = impactY + dy;
-                      if (by >= 19 && by < 120) {
+                      if (by >= 1 && by < 124) {
                         deltas.push([impactX + dx, by, impactZ + dz, 0]);
                       }
                     }

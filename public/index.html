@@ -86,7 +86,6 @@
       <button id="btn-map" class="hud-action-pill mc-pill" title="Mapa del Mundo y Viaje Rápido (M)"><span class="hud-pill-icon">🗺️</span><span class="hud-pill-txt"> Mapa</span></button>
       <button id="btn-share-loc" class="hud-action-pill mc-pill desktop-only" title="Compartir mi Ubicación en el Chat"><span class="hud-pill-icon">📍</span><span class="hud-pill-txt"> Ubicación</span></button>
       <button id="btn-open-builder" class="hud-action-pill mc-pill builder-pill" title="Estudio Constructor, Edificios, Animales y Guardar Mapa (B)"><span class="hud-pill-icon">🛠️</span><span class="hud-pill-txt"> Constructor</span></button>
-      <button id="btn-jetpack" class="hud-action-pill mc-pill jetpack-pill" title="Activar / Desactivar Jetpack Volador (J)"><span class="hud-pill-icon">🚀</span><span class="hud-pill-txt"> Jetpack</span></button>
       <button id="btn-grapple" class="hud-action-pill mc-pill grapple-pill" title="Disparar Gancho de Agarre a Edificios (G)"><span class="hud-pill-icon">🪝</span><span class="hud-pill-txt"> Gancho</span></button>
       <button id="btn-cycle-weather" class="hud-action-pill mc-pill weather-pill" title="Cambiar Clima y Hora (Día / Noche / Lluvia)"><span class="hud-pill-icon">☀️</span><span class="hud-pill-txt"> Clima</span></button>
       <button id="btn-toggle-weapons" class="hud-action-pill mc-pill highlight-pill" title="Alternar Modo Armas & TNT"><span class="hud-pill-icon">🔫</span><span class="hud-pill-txt"> Armas</span></button>
@@ -136,6 +135,10 @@
         <span class="weapon-btn-icon" id="weapon-shoot-icon">🔫</span>
         <span class="weapon-btn-label" id="weapon-shoot-label">DISPARAR</span>
       </button>
+      <button id="btn-weapon-salvo" class="weapon-hud-btn mc-btn salvo-badge-btn" type="button" title="Salva de Misiles: 1x / 5x / 20x / 50x / 200x">
+        <span class="weapon-btn-icon">🚀</span>
+        <span id="weapon-salvo-hud-label" class="weapon-btn-label">x1</span>
+      </button>
       <button id="btn-weapon-tnt" class="weapon-hud-btn mc-btn tnt-highlight" title="Colocar y Detonar TNT Reactivo (Tecla G)">
         <span class="weapon-btn-icon">🧨</span>
         <span class="weapon-btn-label">TNT REACTIVO</span>
@@ -161,13 +164,13 @@
     </button>
 
     <div id="quick-build-dock" class="quick-build-dock collapsed">
-      <button id="qbuild-btn-fill" class="qbuild-btn mc-btn" type="button" title="Varita de Relleno 3D (Toca 2 esquinas para rellenar cubo)">
-        <span class="qbuild-icon">📐</span>
-        <span class="qbuild-label">RELLENO 3D</span>
+      <button id="qbuild-btn-torch" class="qbuild-btn mc-btn" type="button" title="Colocar Antorcha / Luz Instantánea">
+        <span class="qbuild-icon">💡</span>
+        <span class="qbuild-label">LUZ</span>
       </button>
-      <button id="qbuild-btn-paint" class="qbuild-btn mc-btn" type="button" title="Pincel Pintor (Toca para cambiar material sin romper)">
-        <span class="qbuild-icon">🎨</span>
-        <span class="qbuild-label">PINTAR</span>
+      <button id="qbuild-btn-flatten" class="qbuild-btn mc-btn" type="button" title="Aplanar Terreno 3x3 (Bulldozer Rápido)">
+        <span class="qbuild-icon">🚜</span>
+        <span class="qbuild-label">APLANAR</span>
       </button>
       <button id="qbuild-btn-dome" class="qbuild-btn mc-btn" type="button" title="Generador Instantáneo de Cúpulas">
         <span class="qbuild-icon">⭕</span>
@@ -263,34 +266,24 @@
 
       <!-- Right Touch Action Fan Arc (#mobile-action-buttons) -->
       <!-- Dedicated Right Floating Mobility Dock (Gancho & Jetpack - Ergonómico y Separado) -->
+      <!-- Dedicated Right Floating Hook Dock (Gancho de Agarre - Cristal Puro) -->
       <div id="mobile-mobility-dock" class="mobile-mobility-dock">
-        <button id="mobile-btn-grapple" class="mobile-action-btn grapple-btn mc-action-btn glass-action-btn" type="button" title="Gancho de Agarre a Edificios (G)">
+        <button id="mobile-btn-grapple" class="mobile-action-btn grapple-btn mc-action-btn glass-pure-btn" type="button" title="Gancho de Agarre a Edificios (G)">
           <span class="btn-icon">🪝</span>
-          <span class="btn-label">GANCHO</span>
-        </button>
-        <button id="mobile-btn-jetpack" class="mobile-action-btn jetpack-btn mc-action-btn glass-action-btn" type="button" title="Impulso Jetpack (Vuelo)">
-          <span class="btn-icon">🚀</span>
-          <span class="btn-label">JETPACK</span>
         </button>
       </div>
-
-      <!-- Right Touch Action 2x2 Cluster (#mobile-action-buttons) (Glassmorphism con Blur) -->
       <div id="mobile-action-buttons" class="action-fan-arc">
-        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn glass-action-btn" title="Alternar Correr">
+        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn glass-pure-btn" title="Alternar Correr">
           <span class="btn-icon">⚡</span>
-          <span class="btn-label">CORRER</span>
         </button>
-        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn glass-action-btn" title="Romper Bloque / Disparar">
+        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn glass-pure-btn" title="Romper Bloque / Disparar">
           <span class="btn-icon">⛏️</span>
-          <span class="btn-label">ROMPER</span>
         </button>
-        <button id="mobile-btn-place" class="mobile-action-btn place-btn mc-action-btn glass-action-btn" title="Colocar Bloque">
+        <button id="mobile-btn-place" class="mobile-action-btn place-btn mc-action-btn glass-pure-btn" title="Colocar Bloque">
           <span class="btn-icon">🧱</span>
-          <span class="btn-label">COLOCAR</span>
         </button>
-        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn mc-action-btn glass-action-btn" title="Saltar">
+        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn mc-action-btn glass-pure-btn" title="Saltar">
           <span class="btn-icon">⏫</span>
-          <span class="btn-label">SALTAR</span>
         </button>
       </div>
 
@@ -701,6 +694,33 @@
             <div class="settings-group mc-slider-group">
               <label for="weapon-cadence-plasma">Cadencia Plasma/Láser: <strong id="cadence-plasma-val">180 ms</strong></label>
               <input type="range" id="weapon-cadence-plasma" class="mc-range" min="80" max="500" step="20" value="180">
+            </div>
+          </div>
+
+          <!-- Nueva Función Avanzada: Ráfagas y Salvas de Misiles (1 a 200) -->
+          <div class="weapons-salvo-config">
+            <div class="weapons-config-header" style="margin-top: 12px;">
+              <span class="weapons-config-icon">🚀</span>
+              <span class="weapons-config-title">Salvas de Misiles (1 a 200 por disparo)</span>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-salvo-count">Cantidad de Misiles por Disparo: <strong id="salvo-count-val">1 misil</strong></label>
+              <input type="range" id="weapon-salvo-count" class="mc-range" min="1" max="200" step="1" value="1">
+            </div>
+
+            <div class="settings-group">
+              <label for="weapon-salvo-mode">Modo de Ráfaga de Misiles:</label>
+              <select id="weapon-salvo-mode" class="mc-select">
+                <option value="sequential" selected>Tandas seguidas (uno a uno con cadencia)</option>
+                <option value="pairs">De par en par (2 a 2 en ráfaga)</option>
+                <option value="simultaneous">Bombardeo simultáneo (todos a la vez)</option>
+              </select>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-salvo-delay">Intervalo entre Misiles: <strong id="salvo-delay-val">0.25 seg</strong></label>
+              <input type="range" id="weapon-salvo-delay" class="mc-range" min="0.2" max="1.0" step="0.05" value="0.25">
             </div>
           </div>
         </div>

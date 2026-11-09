@@ -248,12 +248,28 @@ export class MultiplayerClient {
       case 'switch_room_confirm':
         this.currentRoomId = data.roomId || 'main';
         this.currentRoomName = data.roomName || 'Sala Principal';
+        for (const avatar of this.remoteAvatars.values()) {
+          avatar.remove();
+        }
+        this.remoteAvatars.clear();
+        this.playerDirectory.clear();
+        if (this.world) {
+          if (this.world.blockDeltas) this.world.blockDeltas.clear();
+          if (typeof this.world.reloadAllChunks === 'function') {
+            this.world.reloadAllChunks();
+          }
+        }
         if (typeof this.onRoomSwitch === 'function') {
           this.onRoomSwitch(data);
         }
         break;
 
       case 'init':
+        for (const avatar of this.remoteAvatars.values()) {
+          avatar.remove();
+        }
+        this.remoteAvatars.clear();
+        this.playerDirectory.clear();
         this.myId = data.id;
         this.timeOfDay = data.timeOfDay ?? 0.32;
         if (data.isAdmin || (data.player && data.player.isAdmin)) {

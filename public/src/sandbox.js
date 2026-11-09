@@ -609,6 +609,37 @@ export class SandboxManager {
     return count;
   }
 
+  placeInstantTorch() {
+    const p = this.physics ? this.physics.pos : { x: 0, y: 25, z: 0 };
+    const tx = Math.round(p.x);
+    const ty = Math.round(p.y);
+    const tz = Math.round(p.z);
+    // Block 10 (Glowstone / Luz)
+    this.applyDeltasWithUndo([[tx, ty, tz, 10]], 'Antorcha Instantánea');
+    if (this.ui) this.ui.showNotification(`💡 Luz colocada en (${tx}, ${ty}, ${tz})`);
+    return true;
+  }
+
+  flattenGround3x3() {
+    const p = this.physics ? this.physics.pos : { x: 0, y: 25, z: 0 };
+    const cx = Math.round(p.x);
+    const cy = Math.round(p.y) - 1; // foot level
+    const cz = Math.round(p.z);
+    const deltas = [];
+    const floorBlock = this.ui?.getSelectedBlock() || 1; // selected or stone
+
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        deltas.push([cx + dx, cy, cz + dz, floorBlock]); // solid floor
+        deltas.push([cx + dx, cy + 1, cz + dz, 0]); // air clearance
+        deltas.push([cx + dx, cy + 2, cz + dz, 0]); // air clearance
+      }
+    }
+    const count = this.applyDeltasWithUndo(deltas, 'Aplanador 3x3');
+    if (this.ui) this.ui.showNotification(`🚜 Terreno 3x3 aplanado (${count} bloques modificados)`);
+    return count;
+  }
+
   undo() {
     return this.undoLastAction();
   }

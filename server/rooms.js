@@ -305,19 +305,24 @@ class RoomManager {
     const player = newRoom.gameState.addPlayer(meta.id, cleanName);
     newRoom.clients.set(ws, meta.id);
 
-    const initData = {
+    const initialState = newRoom.gameState.getInitialState(meta.id);
+    this.send(ws, MSG.INIT, {
       id: meta.id,
       player,
       roomId: targetId,
       roomName: roomMeta ? roomMeta.name : targetId,
-      players: newRoom.gameState.getPlayersSnapshot(),
-      worldSeed: newRoom.gameState.worldSeed,
-      blockDeltas: newRoom.gameState.getBlockDeltas(),
-      timeOfDay: 0.32
-    };
-    this.send(ws, MSG.INIT, initData);
+      ...initialState
+    });
     this.send(ws, MSG.SWITCH_ROOM_CONFIRM, { roomId: targetId, roomName: roomMeta ? roomMeta.name : targetId });
-    this.broadcast(newRoom, MSG.PLAYER_JOINED, player, ws);
+    this.broadcast(newRoom, MSG.PLAYER_JOINED, {
+      id: player.id,
+      name: player.name,
+      pos: player.pos,
+      rot: player.rot,
+      action: player.action,
+      weaponsEnabled: !!player.weaponsEnabled,
+      joinedAt: player.joinedAt
+    }, ws);
   }
 
   handleJoin(ws, meta, data) {

@@ -1848,7 +1848,61 @@ export class UIManager {
       });
     }
 
-    // Weapons Auto-Fire & Cadence Config
+    // Weapons Auto-Fire, Cadence & Missile Salvo Config
+    const salvoCountSlider = document.getElementById('weapon-salvo-count');
+    const salvoModeSelect = document.getElementById('weapon-salvo-mode');
+    const salvoDelaySlider = document.getElementById('weapon-salvo-delay');
+    const salvoCountLabel = document.getElementById('salvo-count-val');
+    const salvoDelayLabel = document.getElementById('salvo-delay-val');
+    const salvoHudBadge = document.getElementById('weapon-salvo-hud-label');
+
+    try {
+      const savedSalvoCount = parseInt(localStorage.getItem('voxel_missile_salvo_count'), 10) || 1;
+      const savedSalvoMode = localStorage.getItem('voxel_missile_salvo_mode') || 'sequential';
+      const savedSalvoDelay = parseFloat(localStorage.getItem('voxel_missile_salvo_delay')) || 0.25;
+
+      if (this.controls) {
+        this.controls.missileSalvoCount = savedSalvoCount;
+        this.controls.missileSalvoMode = savedSalvoMode;
+        this.controls.missileSalvoDelay = savedSalvoDelay;
+      }
+      if (salvoCountSlider) salvoCountSlider.value = savedSalvoCount;
+      if (salvoCountLabel) salvoCountLabel.textContent = `${savedSalvoCount} misil${savedSalvoCount > 1 ? 'es' : ''}`;
+      if (salvoHudBadge) salvoHudBadge.textContent = `x${savedSalvoCount}`;
+      if (salvoModeSelect) salvoModeSelect.value = savedSalvoMode;
+      if (salvoDelaySlider) salvoDelaySlider.value = savedSalvoDelay;
+      if (salvoDelayLabel) salvoDelayLabel.textContent = `${savedSalvoDelay.toFixed(2)} seg`;
+    } catch (e) {}
+
+    if (salvoCountSlider) {
+      salvoCountSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (this.controls) this.controls.missileSalvoCount = val;
+        if (salvoCountLabel) salvoCountLabel.textContent = `${val} misil${val > 1 ? 'es' : ''}`;
+        if (salvoHudBadge) salvoHudBadge.textContent = `x${val}`;
+        try { localStorage.setItem('voxel_missile_salvo_count', val); } catch (e) {}
+      });
+    }
+
+    if (salvoModeSelect) {
+      salvoModeSelect.addEventListener('change', (e) => {
+        sound.playClick();
+        const val = e.target.value;
+        if (this.controls) this.controls.missileSalvoMode = val;
+        try { localStorage.setItem('voxel_missile_salvo_mode', val); } catch (e) {}
+        this.showNotification(`🚀 Modo de Salva: ${salvoModeSelect.options[salvoModeSelect.selectedIndex].text}`);
+      });
+    }
+
+    if (salvoDelaySlider) {
+      salvoDelaySlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (this.controls) this.controls.missileSalvoDelay = val;
+        if (salvoDelayLabel) salvoDelayLabel.textContent = `${val.toFixed(2)} seg`;
+        try { localStorage.setItem('voxel_missile_salvo_delay', val); } catch (e) {}
+      });
+    }
+
     const autoFireToggle = document.getElementById('weapons-autofire-toggle');
     const sliderRifle = document.getElementById('weapon-cadence-rifle');
     const sliderBazooka = document.getElementById('weapon-cadence-bazooka');
@@ -2972,20 +3026,62 @@ export class UIManager {
       // Only render other connected online players on radar. In solo mode, keep clean radar without confusing dots!
       const isOnline = Boolean(this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode);
 
-      // Other connected players
-      if (this.multiplayer && this.multiplayer.players) {
-        for (const [id, pl] of this.multiplayer.players.entries()) {
-          if (id === this.multiplayer.myId || !pl.position) continue;
-          const dx = pl.position[0] - pos.x;
-          const dz = pl.position[2] - pos.z;
+      // Other connected players (tracked via live remoteAvatars & playerDirectory)
+      if (this.multiplayer) {
+        const renderPlayerDot = (pId, pxCoord, pzCoord, pName) => {
+          if (pId === this.multiplayer.myId) return;
+          const dx = pxCoord - pos.x;
+          const dz = pzCoord - pos.z;
           const px = cx + (dx / range) * (cx - 6);
           const py = cy + (dz / range) * (cy - 6);
           const distFromCenter = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
           if (distFromCenter <= cx - 5) {
+            // Pulse outer halo
+            ctx.strokeStyle = 'rgba(34, 197, 94, 0.45)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(px, py, 5, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Player emerald dot
             ctx.fillStyle = '#22c55e';
             ctx.beginPath();
-            ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+            ctx.arc(px, py, 3, 0, Math.PI * 2);
             ctx.fill();
+
+            // Name label
+            if (pName) {
+              ctx.fillStyle = '#ffffff';
+              ctx.font = 'bold 8px monospace';
+              ctx.textAlign = 'center';
+              ctx.fillText(pName.slice(0, 8), px, py - 4);
+            }
+          }
+        };
+
+        const renderedIds = new Set();
+        if (this.multiplayer.remoteAvatars && this.multiplayer.remoteAvatars.size > 0) {
+          for (const [id, avatar] of this.multiplayer.remoteAvatars.entries()) {
+            if (!avatar) continue;
+            let ax = null, az = null;
+            if (avatar.mesh && avatar.mesh.position) {
+              ax = avatar.mesh.position.x;
+              az = avatar.mesh.position.z;
+            } else if (Array.isArray(avatar.currentPos)) {
+              ax = avatar.currentPos[0];
+              az = avatar.currentPos[2];
+            }
+            if (ax !== null && az !== null) {
+              renderedIds.add(id);
+              renderPlayerDot(id, ax, az, avatar.name || 'Jugador');
+            }
+          }
+        }
+
+        if (this.multiplayer.playerDirectory) {
+          for (const [id, entry] of this.multiplayer.playerDirectory.entries()) {
+            if (renderedIds.has(id) || !entry || !Array.isArray(entry.pos)) continue;
+            renderPlayerDot(id, entry.pos[0], entry.pos[2], entry.name || 'Jugador');
           }
         }
       }
@@ -3075,7 +3171,23 @@ export class UIManager {
           this.showNotification('⚠️ Elige un ID único para la sala.');
           return;
         }
-        if (this.multiplayer && typeof this.multiplayer.switchRoom === 'function') {
+        if (this.multiplayer) {
+          if (!this.multiplayer.connected || this.multiplayer.isOfflineMode) {
+            this.showNotification('🌐 Conectando al servidor multijugador...');
+            this.multiplayer.isOfflineMode = false;
+            const host = window.location.host;
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            this.multiplayer.connect(`${proto}//${host}`);
+            const check = setInterval(() => {
+              if (this.multiplayer.connected) {
+                clearInterval(check);
+                this.multiplayer.switchRoom(roomId, pin, roomName);
+                this.showNotification(`✨ Sala creada: ${roomName}`);
+              }
+            }, 120);
+            toggleRooms(false);
+            return;
+          }
           this.multiplayer.switchRoom(roomId, pin, roomName);
           this.showNotification(`✨ Sala creada: ${roomName}`);
           toggleRooms(false);
@@ -3135,8 +3247,8 @@ export class UIManager {
   initQuickBuildDock() {
     const sideToggleBtn = document.getElementById('btn-toggle-quick-build');
     const dock = document.getElementById('quick-build-dock');
-    const btnFill = document.getElementById('qbuild-btn-fill');
-    const btnPaint = document.getElementById('qbuild-btn-paint');
+    const btnTorch = document.getElementById('qbuild-btn-torch');
+    const btnFlatten = document.getElementById('qbuild-btn-flatten');
     const btnDome = document.getElementById('qbuild-btn-dome');
     const btnUndo = document.getElementById('qbuild-btn-undo');
     const btnCatalog = document.getElementById('qbuild-btn-catalog');
@@ -3155,24 +3267,20 @@ export class UIManager {
       });
     }
 
-    if (btnFill) {
-      btnFill.addEventListener('click', () => {
+    if (btnTorch) {
+      btnTorch.addEventListener('click', () => {
         sound.playClick();
         if (this.sandboxManager) {
-          const active = this.sandboxManager.toggleFillMode(this.getSelectedBlock() || 1);
-          btnFill.classList.toggle('active', active);
-          if (btnPaint) btnPaint.classList.remove('active');
+          this.sandboxManager.placeInstantTorch();
         }
       });
     }
 
-    if (btnPaint) {
-      btnPaint.addEventListener('click', () => {
+    if (btnFlatten) {
+      btnFlatten.addEventListener('click', () => {
         sound.playClick();
         if (this.sandboxManager) {
-          const active = this.sandboxManager.togglePaintMode();
-          btnPaint.classList.toggle('active', active);
-          if (btnFill) btnFill.classList.remove('active');
+          this.sandboxManager.flattenGround3x3();
         }
       });
     }
@@ -3210,29 +3318,20 @@ export class UIManager {
   }
 
   initTacticalTraversal() {
-    const btnJetpack = document.getElementById('btn-jetpack');
-    const mobJetpack = document.getElementById('mobile-btn-jetpack');
     const btnGrapple = document.getElementById('btn-grapple');
     const mobGrapple = document.getElementById('mobile-btn-grapple');
     const btnWeather = document.getElementById('btn-cycle-weather');
+    const btnWeaponSalvo = document.getElementById('btn-weapon-salvo');
 
-    const triggerJetpack = () => {
-      sound.playClick();
-      if (this.physics) {
-        this.physics.isFlying = !this.physics.isFlying;
-        if (this.physics.velocity) {
-          this.physics.velocity.y = 12.0;
+    if (btnWeaponSalvo) {
+      btnWeaponSalvo.addEventListener('click', () => {
+        sound.playClick();
+        if (this.controls && typeof this.controls.cycleMissileSalvo === 'function') {
+          const count = this.controls.cycleMissileSalvo();
+          this.showNotification(`🚀 Salva de Misiles: x${count} misiles por disparo`);
         }
-        const particles = this.controls?.particleManager || this.multiplayer?.particles;
-        if (particles && typeof particles.spawnSmoke === 'function') {
-          particles.spawnSmoke(this.physics.pos.x, this.physics.pos.y - 0.5, this.physics.pos.z, 15);
-        }
-        this.showNotification(`🚀 Jetpack ${this.physics.isFlying ? 'ACTIVADO: Modo Vuelo' : 'DESACTIVADO'}`);
-      }
-    };
-
-    if (btnJetpack) btnJetpack.addEventListener('click', triggerJetpack);
-    if (mobJetpack) mobJetpack.addEventListener('click', triggerJetpack);
+      });
+    }
 
     const triggerGrapple = () => {
       if (sound && typeof sound.playClick === 'function') sound.playClick();
@@ -3288,13 +3387,7 @@ export class UIManager {
         triggerGrapple();
       }, { passive: false });
     }
-    if (mobJetpack) {
-      mobJetpack.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        triggerJetpack();
-      }, { passive: false });
-    }
+
 
     let weatherStep = 0;
     if (btnWeather) {

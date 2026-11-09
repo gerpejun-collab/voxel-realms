@@ -1419,7 +1419,7 @@ body.mobile-mode .desktop-only {
 /* ==========================================================================
    MOBILE LANDSCAPE OPTIMIZATION & RESPONSIVE ERGONOMICS
    ========================================================================== */
-@media (max-width: 1024px) and (orientation: landscape), (orientation: landscape) and (max-height: 600px), (hover: none) and (pointer: coarse) and (orientation: landscape) {
+@media (max-width: 1024px) and (orientation: landscape), (orientation: landscape) and (max-height: 600px), (hover: none) and (pointer: coarse) and (orientation: landscape), (max-width: 860px) {
   /* Prevent browser gestures, pull-to-refresh & pinch zoom */
   html, body {
     margin: 0;
@@ -1430,23 +1430,106 @@ body.mobile-mode .desktop-only {
     overscroll-behavior: none;
   }
 
+  /* Hide word labels on top HUD pills on mobile for a clean, non-collapsed interface */
+  .hud-pill-txt {
+    display: none !important;
+  }
+
   /* Compact HUD Top Info */
   #hud-top-bar {
-    top: 8px;
-    left: 8px;
+    top: 6px;
+    left: 6px;
+    max-width: 48vw;
+    z-index: 20;
+  }
+
+  #hud-corner-badge {
+    padding: 3px 6px;
+    font-size: 10px;
+    gap: 4px;
   }
 
   #hud-coords {
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: 0px;
+    font-size: 10px;
+    max-width: 170px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* Top Right Quick Action Pills */
   #hud-quick-actions {
-    top: 8px;
-    right: 8px;
-    gap: 6px;
+    top: 6px;
+    right: 6px;
+    gap: 4px;
+    z-index: 30;
+  }
+
+  .hud-action-pill {
+    padding: 6px 8px;
+    min-width: 34px;
+    height: 34px;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  }
+
+  /* Weapons HUD Bar Compact Layout on Mobile */
+  #weapons-hud-controls {
+    top: 46px;
+    right: 6px;
+    gap: 4px;
+    max-width: 180px;
+  }
+
+  .weapon-selector-bar {
+    padding: 2px;
+    gap: 2px;
+  }
+
+  .weapon-tab-btn {
+    padding: 4px;
+    font-size: 8px;
+  }
+
+  .weapon-tab-btn .wtab-label {
+    display: none; /* Hide text label on mobile, icon tells the weapon! */
+  }
+
+  .weapon-tab-btn .wtab-icon {
+    font-size: 16px;
+  }
+
+  .weapon-hud-btn {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .weapon-hud-btn .weapon-btn-label {
+    display: none; /* Icon-only compact weapon actions */
+  }
+
+  .weapon-hud-btn .weapon-btn-icon {
+    font-size: 15px;
+    margin: 0 auto;
+  }
+
+  /* Hide text labels inside mobile action fan buttons so icons stand out cleanly without clutter */
+  .mobile-action-btn .btn-label {
+    display: none !important;
+  }
+
+  .mobile-action-btn .btn-icon {
+    font-size: 24px !important;
+  }
+
+  /* Selected Block Toast */
+  #selected-block-label {
+    top: 48px;
+    font-size: 11px;
+    padding: 4px 12px;
   }
 
   .hud-action-pill {
@@ -3416,6 +3499,24 @@ body.mobile-mode .desktop-only {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.75);
   pointer-events: auto;
   max-width: 95vw;
+}
+
+@media (max-width: 768px) {
+  .sandbox-tool-banner {
+    top: 48px;
+    padding: 4px 8px;
+    gap: 6px;
+    max-width: 98vw;
+  }
+
+  .sandbox-tool-badge {
+    display: none;
+  }
+
+  .sandbox-act-btn {
+    padding: 4px 6px !important;
+    font-size: 10px !important;
+  }
 }
 
 .sandbox-tool-banner.hidden {

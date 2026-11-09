@@ -874,7 +874,13 @@ export class UIManager {
       btnToggleWeapons.addEventListener('click', () => {
         sound.playClick();
         this.weaponsEnabled = !this.weaponsEnabled;
-        btnToggleWeapons.textContent = this.weaponsEnabled ? '🔫 Armas: ON' : '⛏️ Minería: OFF';
+        const iconSpan = btnToggleWeapons.querySelector('.hud-pill-icon');
+        const txtSpan = btnToggleWeapons.querySelector('.hud-pill-txt');
+        if (iconSpan) iconSpan.textContent = this.weaponsEnabled ? '🔫' : '⛏️';
+        if (txtSpan) txtSpan.textContent = this.weaponsEnabled ? ' Armas: ON' : ' Minería: OFF';
+        if (!iconSpan && !txtSpan) {
+          btnToggleWeapons.textContent = this.weaponsEnabled ? '🔫 Armas: ON' : '⛏️ Minería: OFF';
+        }
         btnToggleWeapons.classList.toggle('active', this.weaponsEnabled);
 
         const weaponsToggleBtn = document.getElementById('weapons-mode-toggle');
@@ -1592,7 +1598,13 @@ export class UIManager {
         weaponsToggleBtn.classList.toggle('active', this.weaponsEnabled);
         const quickWeaponsBtn = document.getElementById('btn-toggle-weapons');
         if (quickWeaponsBtn) {
-          quickWeaponsBtn.textContent = this.weaponsEnabled ? '🔫 Armas: ON' : '⛏️ Minería: OFF';
+          const iconSpan = quickWeaponsBtn.querySelector('.hud-pill-icon');
+          const txtSpan = quickWeaponsBtn.querySelector('.hud-pill-txt');
+          if (iconSpan) iconSpan.textContent = this.weaponsEnabled ? '🔫' : '⛏️';
+          if (txtSpan) txtSpan.textContent = this.weaponsEnabled ? ' Armas: ON' : ' Minería: OFF';
+          if (!iconSpan && !txtSpan) {
+            quickWeaponsBtn.textContent = this.weaponsEnabled ? '🔫 Armas: ON' : '⛏️ Minería: OFF';
+          }
           quickWeaponsBtn.classList.toggle('active', this.weaponsEnabled);
         }
         if (this.controls && typeof this.controls.setWeaponsMode === 'function') {

@@ -984,14 +984,20 @@ export class Controls {
     this.isFiringHeld = true;
     if (this.weaponsMode) {
       this.triggerShoot();
-      if (this.autoFireEnabled && !this.autoFireTimer) {
+      if (!this.autoFireTimer) {
         const interval = Math.max(50, this.fireRates[this.activeWeapon] || 120);
         this.autoFireTimer = setInterval(() => {
           if (!this.isFiringHeld || !this.weaponsMode) {
             this.stopAutoFire();
             return;
           }
-          this.triggerShoot();
+          if (this.activeWeapon === 'bazooka' && this.missileSalvoCount > 1) {
+            if (!this.isSalvoRunning) {
+              this.fireMissileSalvo();
+            }
+          } else {
+            this.triggerShoot(true);
+          }
         }, interval);
       }
     }
@@ -1041,6 +1047,19 @@ export class Controls {
 
     if (mode === 'pairs') {
       let launched = 0;
+      // Launch first pair immediately with zero delay
+      const s1 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(-0.05, 0, 0) : null;
+      this.triggerShoot(true, s1);
+      launched++;
+      if (launched < count) {
+        const s2 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(0.05, 0, 0) : null;
+        this.triggerShoot(true, s2);
+        launched++;
+      }
+      if (launched >= count) {
+        this.isSalvoRunning = false;
+        return;
+      }
       const interval = setInterval(() => {
         if (!this.weaponsMode || launched >= count) {
           clearInterval(interval);
@@ -1048,12 +1067,16 @@ export class Controls {
           return;
         }
         const s1 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(-0.05, 0, 0) : null;
-        const s2 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(0.05, 0, 0) : null;
         this.triggerShoot(true, s1);
         launched++;
         if (launched < count) {
+          const s2 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(0.05, 0, 0) : null;
           this.triggerShoot(true, s2);
           launched++;
+        }
+        if (launched >= count) {
+          clearInterval(interval);
+          this.isSalvoRunning = false;
         }
       }, delayMs);
       return;
@@ -1061,6 +1084,17 @@ export class Controls {
 
     // Default 'sequential' (one by one with cadence)
     let launched = 0;
+    // Launch first rocket immediately with zero initial delay
+    const initialSpread = (typeof THREE !== 'undefined' && THREE.Vector3)
+      ? new THREE.Vector3((Math.random() - 0.5) * 0.04, (Math.random() - 0.5) * 0.04, (Math.random() - 0.5) * 0.04)
+      : null;
+    this.triggerShoot(true, initialSpread);
+    launched++;
+    if (launched >= count) {
+      this.isSalvoRunning = false;
+      return;
+    }
+
     const interval = setInterval(() => {
       if (!this.weaponsMode || launched >= count) {
         clearInterval(interval);
@@ -1072,6 +1106,10 @@ export class Controls {
         : null;
       this.triggerShoot(true, spread);
       launched++;
+      if (launched >= count) {
+        clearInterval(interval);
+        this.isSalvoRunning = false;
+      }
     }, delayMs);
   }
 
@@ -1687,7 +1725,17 @@ export class Controls {
       btnWeaponShoot.addEventListener('touchstart', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.triggerShoot();
+        this.startAutoFire();
+      }, { passive: false });
+      btnWeaponShoot.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.stopAutoFire();
+      }, { passive: false });
+      btnWeaponShoot.addEventListener('touchcancel', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.stopAutoFire();
       }, { passive: false });
     }
 

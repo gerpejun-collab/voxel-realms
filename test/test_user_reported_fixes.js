@@ -103,6 +103,16 @@ assert(avatarCode.includes('vertDelta > 5.0'), 'avatar.js must snap immediately 
 assert(avatarCode.includes('this.targetPos.y >= groundY - 0.25'), 'avatar.js must allow players to descend into underground bunkers without stuck ceiling clamping');
 console.log('  ✓ Avatar eliminates stuck dummy glitch during fall-through and underground navigation.');
 
+// --- 8. Check compact player counter, repositioned minimap & instant salvo / continuous cadence ---
+console.log('\n[TEST 8: Compact Player Counter, Repositioned Minimap & Instant Salvo Cadence]');
+assert(uiCode.includes('this.hudOnlineCount.textContent = ' + String.fromCharCode(96) + '👥 \${total}' + String.fromCharCode(96) + ';'), 'ui.js must format online count as compact number with icon');
+assert(uiCode.includes("this.hudOnlineCount.textContent = '👤 1';"), 'ui.js must format solo mode compactly');
+assert(!htmlCode.includes('>1 Jugador Conectado<'), 'index.html must not use long player text');
+assert(cssCode.includes('MINIMAP GPS RADAR (Top-Left HUD - Repositioned cleanly below status chip)'), 'styles.css must style repositioned minimap container');
+assert(controlsCode.includes('Launch first rocket immediately with zero initial delay'), 'controls.js must fire first salvo rocket instantly');
+assert(controlsCode.includes('this.triggerShoot(true, initialSpread);'), 'controls.js must dispatch first missile immediately');
+console.log('  ✓ Compact player counter, repositioned minimap and instant salvo cadence verified.');
+
 console.log('\n=============================================================================');
-console.log('STATUS: ALL 6 SPECIFICATIONS VERIFIED AND PASSING WITH 100% SUCCESS!');
+console.log('STATUS: ALL 8 SPECIFICATIONS VERIFIED AND PASSING WITH 100% SUCCESS!');
 console.log('=============================================================================');

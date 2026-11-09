@@ -399,11 +399,11 @@ export class UIManager {
     }
     if (this.hudOnlineCount) {
       if (this.multiplayer && this.multiplayer.isOfflineMode) {
-        this.hudOnlineCount.textContent = '🛠️ Modo Offline (Solo)';
+        this.hudOnlineCount.textContent = '👤 1';
         return;
       }
       const total = typeof count === 'number' ? count : (1 + (this.multiplayer?.remoteAvatars?.size || 0));
-      this.hudOnlineCount.textContent = total === 1 ? '1 Jugador Conectado' : `${total} Jugadores Conectados`;
+      this.hudOnlineCount.textContent = `👥 ${total}`;
     }
   }
 
@@ -1678,9 +1678,29 @@ export class UIManager {
     }
     const btnShoot = document.getElementById('btn-weapon-shoot');
     if (btnShoot) {
-      btnShoot.addEventListener('click', () => {
-        this.controls.triggerShoot();
+      btnShoot.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (this.controls) this.controls.startAutoFire();
       });
+      window.addEventListener('mouseup', () => {
+        if (this.controls) this.controls.stopAutoFire();
+      });
+      btnShoot.addEventListener('mouseleave', () => {
+        if (this.controls) this.controls.stopAutoFire();
+      });
+      btnShoot.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.controls) this.controls.startAutoFire();
+      }, { passive: false });
+      btnShoot.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.controls) this.controls.stopAutoFire();
+      }, { passive: false });
+      btnShoot.addEventListener('touchcancel', () => {
+        if (this.controls) this.controls.stopAutoFire();
+      }, { passive: false });
     }
     const btnTnt = document.getElementById('btn-weapon-tnt');
     if (btnTnt) {
@@ -1703,14 +1723,24 @@ export class UIManager {
 
     const scopeBtnShoot = document.getElementById('scope-btn-shoot');
     if (scopeBtnShoot) {
-      const onScopeShoot = (e) => {
+      scopeBtnShoot.addEventListener('mousedown', (e) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
-        if (this.controls && typeof this.controls.triggerShoot === 'function') {
-          this.controls.triggerShoot(true);
-        }
-      };
-      scopeBtnShoot.addEventListener('click', onScopeShoot);
-      scopeBtnShoot.addEventListener('touchstart', onScopeShoot, { passive: false });
+        if (this.controls) this.controls.startAutoFire();
+      });
+      window.addEventListener('mouseup', () => {
+        if (this.controls) this.controls.stopAutoFire();
+      });
+      scopeBtnShoot.addEventListener('touchstart', (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (this.controls) this.controls.startAutoFire();
+      }, { passive: false });
+      scopeBtnShoot.addEventListener('touchend', (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (this.controls) this.controls.stopAutoFire();
+      }, { passive: false });
+      scopeBtnShoot.addEventListener('touchcancel', () => {
+        if (this.controls) this.controls.stopAutoFire();
+      }, { passive: false });
     }
 
     const scopeBtnExit = document.getElementById('scope-btn-exit');
@@ -1955,9 +1985,16 @@ export class UIManager {
     if (sliderBazooka) {
       sliderBazooka.addEventListener('input', (e) => {
         const val = parseInt(e.target.value, 10);
-        if (this.controls) this.controls.fireRates.bazooka = val;
+        if (this.controls) {
+          this.controls.fireRates.bazooka = val;
+          this.controls.autoFireEnabled = true;
+        }
+        if (autoFireToggle) autoFireToggle.checked = true;
         if (labelBazooka) labelBazooka.textContent = `${val} ms`;
-        try { localStorage.setItem('voxel_weapon_rate_bazooka', val); } catch (e) {}
+        try {
+          localStorage.setItem('voxel_weapon_rate_bazooka', val);
+          localStorage.setItem('voxel_weapons_autofire', 'true');
+        } catch (e) {}
       });
     }
 
@@ -3027,7 +3064,7 @@ export class UIManager {
       const isOnline = Boolean(this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode);
 
       // Other connected players (tracked via live remoteAvatars & playerDirectory)
-      if (this.multiplayer) {
+      if (isOnline && this.multiplayer) {
         const renderPlayerDot = (pId, pxCoord, pzCoord, pName) => {
           if (pId === this.multiplayer.myId) return;
           const dx = pxCoord - pos.x;

@@ -1848,6 +1848,74 @@ export class UIManager {
       });
     }
 
+    // Weapons Auto-Fire & Cadence Config
+    const autoFireToggle = document.getElementById('weapons-autofire-toggle');
+    const sliderRifle = document.getElementById('weapon-cadence-rifle');
+    const sliderBazooka = document.getElementById('weapon-cadence-bazooka');
+    const sliderPlasma = document.getElementById('weapon-cadence-plasma');
+    const labelRifle = document.getElementById('cadence-rifle-val');
+    const labelBazooka = document.getElementById('cadence-bazooka-val');
+    const labelPlasma = document.getElementById('cadence-plasma-val');
+
+    // Load saved preferences
+    try {
+      const savedAutoFire = localStorage.getItem('voxel_weapons_autofire') === 'true';
+      const savedRifle = parseInt(localStorage.getItem('voxel_weapon_rate_rifle'), 10) || 120;
+      const savedBazooka = parseInt(localStorage.getItem('voxel_weapon_rate_bazooka'), 10) || 650;
+      const savedPlasma = parseInt(localStorage.getItem('voxel_weapon_rate_plasma'), 10) || 180;
+
+      if (autoFireToggle) autoFireToggle.checked = savedAutoFire;
+      if (this.controls) {
+        this.controls.autoFireEnabled = savedAutoFire;
+        this.controls.fireRates.rifle = savedRifle;
+        this.controls.fireRates.bazooka = savedBazooka;
+        this.controls.fireRates.plasma = savedPlasma;
+      }
+      if (sliderRifle) sliderRifle.value = savedRifle;
+      if (sliderBazooka) sliderBazooka.value = savedBazooka;
+      if (sliderPlasma) sliderPlasma.value = savedPlasma;
+      if (labelRifle) labelRifle.textContent = `${savedRifle} ms (${(1000 / savedRifle).toFixed(1)} disp/s)`;
+      if (labelBazooka) labelBazooka.textContent = `${savedBazooka} ms`;
+      if (labelPlasma) labelPlasma.textContent = `${savedPlasma} ms`;
+    } catch (e) {}
+
+    if (autoFireToggle) {
+      autoFireToggle.addEventListener('change', (e) => {
+        sound.playClick();
+        const enabled = e.target.checked;
+        if (this.controls) this.controls.autoFireEnabled = enabled;
+        try { localStorage.setItem('voxel_weapons_autofire', enabled); } catch (e) {}
+        this.showNotification(`⚡ Ráfaga Automática: ${enabled ? 'ACTIVADA (mantén pulsado)' : 'DESACTIVADA'}`);
+      });
+    }
+
+    if (sliderRifle) {
+      sliderRifle.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (this.controls) this.controls.fireRates.rifle = val;
+        if (labelRifle) labelRifle.textContent = `${val} ms (${(1000 / val).toFixed(1)} disp/s)`;
+        try { localStorage.setItem('voxel_weapon_rate_rifle', val); } catch (e) {}
+      });
+    }
+
+    if (sliderBazooka) {
+      sliderBazooka.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (this.controls) this.controls.fireRates.bazooka = val;
+        if (labelBazooka) labelBazooka.textContent = `${val} ms`;
+        try { localStorage.setItem('voxel_weapon_rate_bazooka', val); } catch (e) {}
+      });
+    }
+
+    if (sliderPlasma) {
+      sliderPlasma.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (this.controls) this.controls.fireRates.plasma = val;
+        if (labelPlasma) labelPlasma.textContent = `${val} ms`;
+        try { localStorage.setItem('voxel_weapon_rate_plasma', val); } catch (e) {}
+      });
+    }
+
     // Pointer lock listener to toggle pause menu & desktop click prompt
     this.controls.onLockChange = (isLocked) => {
       const isInGame = this.lobbyOverlay.classList.contains('hidden');
@@ -2901,31 +2969,8 @@ export class UIManager {
       ctx.moveTo(2, cy); ctx.lineTo(w - 2, cy);
       ctx.stroke();
 
-      // Known monuments & sectors
-      const landmarks = [
-        { name: 'Spawn', x: 0, z: 0, color: '#fbbf24' },
-        { name: 'Eiffel', x: 250, z: -250, color: '#60a5fa' },
-        { name: 'Pagoda', x: 250, z: 250, color: '#f87171' },
-        { name: 'NY', x: -250, z: -250, color: '#a78bfa' },
-        { name: 'Circuito', x: 400, z: 400, color: '#f43f5e' },
-        { name: 'Pradera', x: 500, z: 0, color: '#4ade80' },
-        { name: 'Bunker', x: -500, z: 200, color: '#eab308' }
-      ];
-
-      for (let i = 0; i < landmarks.length; i++) {
-        const lm = landmarks[i];
-        const dx = lm.x - pos.x;
-        const dz = lm.z - pos.z;
-        const px = cx + (dx / range) * (cx - 6);
-        const py = cy + (dz / range) * (cy - 6);
-        const distFromCenter = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
-        if (distFromCenter <= cx - 5) {
-          ctx.fillStyle = lm.color;
-          ctx.beginPath();
-          ctx.arc(px, py, 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      // Only render other connected online players on radar. In solo mode, keep clean radar without confusing dots!
+      const isOnline = Boolean(this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode);
 
       // Other connected players
       if (this.multiplayer && this.multiplayer.players) {
@@ -3190,36 +3235,66 @@ export class UIManager {
     if (mobJetpack) mobJetpack.addEventListener('click', triggerJetpack);
 
     const triggerGrapple = () => {
-      sound.playClick();
+      if (sound && typeof sound.playClick === 'function') sound.playClick();
       if (this.controls && this.physics) {
-        const target = this.controls.getTargetBlock();
-        if (target) {
-          const px = this.physics.pos.x;
-          const py = this.physics.pos.y;
-          const pz = this.physics.pos.z;
+        // High-reach raycast up to 150 blocks away
+        const target = (typeof this.controls.performLongRaycast === 'function')
+          ? this.controls.performLongRaycast(150.0)
+          : this.controls.getTargetBlock();
+
+        const px = this.physics.pos.x;
+        const py = this.physics.pos.y;
+        const pz = this.physics.pos.z;
+
+        if (target && typeof target.x === 'number') {
           const dx = target.x - px;
           const dy = target.y - py;
           const dz = target.z - pz;
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (dist > 0.1) {
-            const speed = 22.0;
+          if (dist > 0.5) {
+            const speed = 25.0;
             this.physics.velocity.x = (dx / dist) * speed;
-            this.physics.velocity.y = Math.max(10.0, (dy / dist) * speed + 5.0);
+            this.physics.velocity.y = Math.max(12.0, (dy / dist) * speed + 6.0);
             this.physics.velocity.z = (dz / dist) * speed;
+            this.physics.onGround = false;
             const particles = this.controls?.particleManager || this.multiplayer?.particles;
             if (particles && typeof particles.spawnSmoke === 'function') {
-              particles.spawnSmoke(target.x, target.y, target.z, 10);
+              particles.spawnSmoke(target.x, target.y, target.z, 15);
             }
-            this.showNotification('🪝 ¡Gancho enganchado! Impulsándote a gran velocidad.');
+            this.showNotification(`🪝 ¡Gancho enganchado a ${Math.round(dist)}m! Impulsándote a gran velocidad.`);
           }
         } else {
-          this.showNotification('⚠️ Apunta a un bloque o edificio para disparar el gancho.');
+          // If no solid block was in range, vault forward in camera view direction (Spider-Man leap)
+          let fwd = { x: 0, y: 0.5, z: -1 };
+          if (this.controls.camera && typeof this.controls.camera.getForwardVector === 'function') {
+            fwd = this.controls.camera.getForwardVector();
+          }
+          const boost = 22.0;
+          this.physics.velocity.x = fwd.x * boost;
+          this.physics.velocity.y = Math.max(14.0, fwd.y * boost + 8.0);
+          this.physics.velocity.z = fwd.z * boost;
+          this.physics.onGround = false;
+          this.showNotification('🪝 ¡Impulso de gancho propulsado al aire!');
         }
       }
     };
 
     if (btnGrapple) btnGrapple.addEventListener('click', triggerGrapple);
-    if (mobGrapple) mobGrapple.addEventListener('click', triggerGrapple);
+    if (mobGrapple) {
+      mobGrapple.addEventListener('click', triggerGrapple);
+      mobGrapple.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerGrapple();
+      }, { passive: false });
+    }
+    if (mobJetpack) {
+      mobJetpack.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerJetpack();
+      }, { passive: false });
+    }
 
     let weatherStep = 0;
     if (btnWeather) {

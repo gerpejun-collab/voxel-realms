@@ -222,7 +222,7 @@ class VoxelRealmsApp {
         return;
       }
       if (this.sandboxManager && this.sandboxManager.fillModeActive) {
-        this.sandboxManager.handleFillTap(target.x, target.y, target.z, 0);
+        this.sandboxManager.handleFillTap(target.x, target.y, target.z, this.ui.getSelectedBlock() || BLOCKS.DIRT);
         return;
       }
       if (this.sandboxManager && (this.sandboxManager.activeToolType === 'cloner_select_a' || this.sandboxManager.activeToolType === 'cloner_select_b')) {

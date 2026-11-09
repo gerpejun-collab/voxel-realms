@@ -239,6 +239,20 @@ export class MultiplayerClient {
         }
         break;
 
+      case 'room_list_response':
+        if (typeof this.onRoomList === 'function') {
+          this.onRoomList(data.rooms || []);
+        }
+        break;
+
+      case 'switch_room_confirm':
+        this.currentRoomId = data.roomId || 'main';
+        this.currentRoomName = data.roomName || 'Sala Principal';
+        if (typeof this.onRoomSwitch === 'function') {
+          this.onRoomSwitch(data);
+        }
+        break;
+
       case 'init':
         this.myId = data.id;
         this.timeOfDay = data.timeOfDay ?? 0.32;
@@ -993,6 +1007,14 @@ export class MultiplayerClient {
 
   sendMissileDetonate(data) {
     this.send('missile_detonate', data);
+  }
+
+  requestRoomList() {
+    this.send('room_list', {});
+  }
+
+  switchRoom(roomId, pin = null, roomName = null) {
+    this.send('switch_room', { roomId, pin, roomName });
   }
 
   update(dt) {

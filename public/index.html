@@ -262,28 +262,33 @@
       </div>
 
       <!-- Right Touch Action Fan Arc (#mobile-action-buttons) -->
-      <div id="mobile-action-buttons" class="action-fan-arc">
-        <button id="mobile-btn-jetpack" class="mobile-action-btn jetpack-btn mc-action-btn" title="Impulso Jetpack (Vuelo)">
-          <span class="btn-icon">🚀</span>
-          <span class="btn-label">JETPACK</span>
-        </button>
-        <button id="mobile-btn-grapple" class="mobile-action-btn grapple-btn mc-action-btn" title="Gancho de Agarre">
+      <!-- Dedicated Right Floating Mobility Dock (Gancho & Jetpack - Ergonómico y Separado) -->
+      <div id="mobile-mobility-dock" class="mobile-mobility-dock">
+        <button id="mobile-btn-grapple" class="mobile-action-btn grapple-btn mc-action-btn glass-action-btn" type="button" title="Gancho de Agarre a Edificios (G)">
           <span class="btn-icon">🪝</span>
           <span class="btn-label">GANCHO</span>
         </button>
-        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn" title="Alternar Correr">
+        <button id="mobile-btn-jetpack" class="mobile-action-btn jetpack-btn mc-action-btn glass-action-btn" type="button" title="Impulso Jetpack (Vuelo)">
+          <span class="btn-icon">🚀</span>
+          <span class="btn-label">JETPACK</span>
+        </button>
+      </div>
+
+      <!-- Right Touch Action 2x2 Cluster (#mobile-action-buttons) (Glassmorphism con Blur) -->
+      <div id="mobile-action-buttons" class="action-fan-arc">
+        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn glass-action-btn" title="Alternar Correr">
           <span class="btn-icon">⚡</span>
           <span class="btn-label">CORRER</span>
         </button>
-        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn" title="Romper Bloque / Disparar">
+        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn glass-action-btn" title="Romper Bloque / Disparar">
           <span class="btn-icon">⛏️</span>
           <span class="btn-label">ROMPER</span>
         </button>
-        <button id="mobile-btn-place" class="mobile-action-btn place-btn mc-action-btn" title="Colocar Bloque">
+        <button id="mobile-btn-place" class="mobile-action-btn place-btn mc-action-btn glass-action-btn" title="Colocar Bloque">
           <span class="btn-icon">🧱</span>
           <span class="btn-label">COLOCAR</span>
         </button>
-        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn mc-action-btn" title="Saltar">
+        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn mc-action-btn glass-action-btn" title="Saltar">
           <span class="btn-icon">⏫</span>
           <span class="btn-label">SALTAR</span>
         </button>
@@ -666,6 +671,38 @@
           <button id="weapons-mode-toggle" class="mc-btn special-toggle-btn weapons-toggle-btn" type="button">
             🔫 Modo Armas y TNT: <span id="weapons-mode-state">OFF</span>
           </button>
+        </div>
+
+        <!-- Configuración de Ráfagas y Cadencia de Armas -->
+        <div id="weapons-config-panel" class="settings-group weapons-config-card">
+          <div class="weapons-config-header">
+            <span class="weapons-config-icon">🔫</span>
+            <span class="weapons-config-title">Configuración de Ráfagas y Armas</span>
+          </div>
+
+          <div class="weapons-autofire-row">
+            <label class="autofire-toggle-label" for="weapons-autofire-toggle">
+              <input type="checkbox" id="weapons-autofire-toggle" class="mc-checkbox">
+              <span>⚡ Modo Ráfaga Automática (Disparo continuo al mantener pulsado)</span>
+            </label>
+          </div>
+
+          <div class="weapons-sliders-grid">
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-cadence-rifle">Cadencia Fusil: <strong id="cadence-rifle-val">120 ms (8.3 disp/s)</strong></label>
+              <input type="range" id="weapon-cadence-rifle" class="mc-range" min="60" max="350" step="10" value="120">
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-cadence-bazooka">Velocidad Bazooka: <strong id="cadence-bazooka-val">650 ms</strong></label>
+              <input type="range" id="weapon-cadence-bazooka" class="mc-range" min="300" max="1500" step="50" value="650">
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-cadence-plasma">Cadencia Plasma/Láser: <strong id="cadence-plasma-val">180 ms</strong></label>
+              <input type="range" id="weapon-cadence-plasma" class="mc-range" min="80" max="500" step="20" value="180">
+            </div>
+          </div>
         </div>
 
         <div class="settings-columns">

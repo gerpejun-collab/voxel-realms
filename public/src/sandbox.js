@@ -488,6 +488,131 @@ export class SandboxManager {
   /**
    * Undo the last prefab stamp or multi-block brush operation
    */
+  /**
+   * Toggle 3D Cuboid Box Fill Mode (Select Corner A then Corner B)
+   */
+  toggleFillMode(blockType = 1) {
+    this.fillModeActive = !this.fillModeActive;
+    this.paintModeActive = false;
+    this.fillPointA = null;
+    if (this.ui) {
+      if (this.fillModeActive) {
+        this.ui.showNotification('📐 Varita de Relleno 3D ACTIVA: Toca el Bloque 1 (Esquina A)');
+      } else {
+        this.ui.showNotification('❌ Modo Relleno desactivado');
+      }
+    }
+    return this.fillModeActive;
+  }
+
+  handleFillTap(x, y, z, blockType = null) {
+    if (!this.fillModeActive) return false;
+    const finalBlockType = (blockType !== null && blockType !== undefined && blockType > 0)
+      ? blockType
+      : (this.ui?.getSelectedBlock() || 1);
+
+    if (!this.fillPointA) {
+      this.fillPointA = [Math.round(x), Math.round(y), Math.round(z)];
+      if (this.ui) {
+        this.ui.showNotification(`📍 Esquina A fijada en (${this.fillPointA[0]}, ${this.fillPointA[1]}, ${this.fillPointA[2]}). Ahora toca la Esquina B.`);
+      }
+      return true;
+    }
+
+    const [x1, y1, z1] = this.fillPointA;
+    const x2 = Math.round(x);
+    const y2 = Math.round(y);
+    const z2 = Math.round(z);
+
+    const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+    const minY = Math.max(1, Math.min(y1, y2)), maxY = Math.min(120, Math.max(y1, y2));
+    const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+
+    const totalBlocks = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (totalBlocks > 12000) {
+      if (this.ui) this.ui.showNotification('⚠️ Volumen demasiado grande (máximo 12.000 bloques por relleno).');
+      this.fillPointA = null;
+      return true;
+    }
+
+    const deltas = [];
+    for (let bx = minX; bx <= maxX; bx++) {
+      for (let by = minY; by <= maxY; by++) {
+        for (let bz = minZ; bz <= maxZ; bz++) {
+          deltas.push([bx, by, bz, finalBlockType]);
+        }
+      }
+    }
+
+    const count = this.applyDeltasWithUndo(deltas, 'Relleno Cubo 3D');
+    if (this.ui) {
+      this.ui.showNotification(`✨ ¡Relleno 3D completado! (${count} bloques colocados)`);
+    }
+    this.fillPointA = null;
+    return true;
+  }
+
+  /**
+   * Toggle Voxel Texture / Color Painter Mode
+   */
+  togglePaintMode() {
+    this.paintModeActive = !this.paintModeActive;
+    this.fillModeActive = false;
+    this.fillPointA = null;
+    if (this.ui) {
+      if (this.paintModeActive) {
+        this.ui.showNotification('🎨 Pincel Pintor ACTIVO: Toca cualquier bloque para cambiar su material');
+      } else {
+        this.ui.showNotification('❌ Modo Pintor desactivado');
+      }
+    }
+    return this.paintModeActive;
+  }
+
+  handlePaintTap(x, y, z, blockType = null) {
+    if (!this.paintModeActive) return false;
+    const finalBlockType = (blockType !== null && blockType !== undefined && blockType > 0)
+      ? blockType
+      : (this.ui?.getSelectedBlock() || 1);
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    this.applyDeltasWithUndo([[rx, ry, rz, finalBlockType]], 'Pintar Bloque');
+    if (this.ui) this.ui.showNotification(`🎨 Bloque pintado en (${rx}, ${ry}, ${rz})`);
+    return true;
+  }
+
+  /**
+   * Generate instant glass/stone dome at target point
+   */
+  generateQuickDome(centerX, centerY, centerZ, radius = 6, blockType = 9) {
+    const cx = Math.round(centerX);
+    const cy = Math.round(centerY);
+    const cz = Math.round(centerZ);
+    const deltas = [];
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = 0; dy <= radius; dy++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+          const distSq = dx * dx + dy * dy + dz * dz;
+          if (distSq <= radius * radius && distSq >= (radius - 1.25) * (radius - 1.25)) {
+            deltas.push([cx + dx, cy + dy, cz + dz, blockType]);
+          }
+        }
+      }
+    }
+
+    const count = this.applyDeltasWithUndo(deltas, 'Cúpula Hemisférica');
+    if (this.ui) {
+      this.ui.showNotification(`⭕ Cúpula generada con éxito (${count} bloques)`);
+    }
+    return count;
+  }
+
+  undo() {
+    return this.undoLastAction();
+  }
+
   undoLastAction() {
     if (this.undoStack.length === 0 || !this.world) {
       if (this.ui) this.ui.showNotification('ℹ️ No hay acciones recientes para deshacer.');

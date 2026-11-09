@@ -239,6 +239,16 @@ class RoomManager {
     }
   }
 
+  cleanupEmptyRoom(roomId) {
+    const permanent = ['main', 'sandbox', 'pvp_arena'];
+    if (!roomId || permanent.includes(roomId)) return;
+    const room = this.rooms.get(roomId);
+    if (room && room.clients.size === 0) {
+      this.rooms.delete(roomId);
+      this.roomMetadata.delete(roomId);
+    }
+  }
+
   handleRoomList(ws) {
     const list = [];
     for (const [id, meta] of this.roomMetadata.entries()) {
@@ -285,6 +295,7 @@ class RoomManager {
       currentRoom.clients.delete(ws);
       currentRoom.gameState.removePlayer(oldPlayerId);
       this.broadcast(currentRoom, MSG.PLAYER_LEFT, { id: oldPlayerId });
+      this.cleanupEmptyRoom(currentRoomId);
     }
 
     // Join new room
@@ -945,6 +956,7 @@ class RoomManager {
             lastPos: player.pos ? [...player.pos] : null
           });
         }
+        this.cleanupEmptyRoom(meta.roomId);
       }
     }
 

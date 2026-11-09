@@ -456,6 +456,16 @@ export class Controls {
     this.recoilProgress = 0;
     this.tntPowerLevel = 1;
 
+    // Automatic Continuous Burst Fire & Cadence Settings
+    this.autoFireEnabled = false;
+    this.fireRates = {
+      rifle: 120,   // ms per shot (~8.3 shots/sec)
+      bazooka: 650, // ms per rocket
+      plasma: 180   // ms per plasma bolt
+    };
+    this.autoFireTimer = null;
+    this.isFiringHeld = false;
+
     // Callbacks
     this.onBreakBlock = null;
     this.onPlaceBlock = null;
@@ -944,6 +954,52 @@ export class Controls {
     return this.setAiming(!this.isAiming);
   }
 
+  getTargetBlock() {
+    return this.targetedVoxel;
+  }
+
+  performLongRaycast(maxDistance = 150.0) {
+    const eye = (this.camera && this.camera.position)
+      ? this.camera.position
+      : ((this.physics && typeof this.physics.getEyePosition === 'function')
+        ? this.physics.getEyePosition()
+        : (this.physics ? this.physics.pos : null));
+    const dir = this.camera ? this.camera.getForwardVector() : null;
+    if (!eye || !dir) return this.targetedVoxel;
+
+    const savedReach = this.reachDistance;
+    this.reachDistance = maxDistance;
+    const hit = this.raycastVoxel(eye, dir);
+    this.reachDistance = savedReach;
+    this.raycastVoxel();
+    return hit;
+  }
+
+  startAutoFire() {
+    this.isFiringHeld = true;
+    if (this.weaponsMode) {
+      this.triggerShoot();
+      if (this.autoFireEnabled && !this.autoFireTimer) {
+        const interval = Math.max(50, this.fireRates[this.activeWeapon] || 120);
+        this.autoFireTimer = setInterval(() => {
+          if (!this.isFiringHeld || !this.weaponsMode) {
+            this.stopAutoFire();
+            return;
+          }
+          this.triggerShoot();
+        }, interval);
+      }
+    }
+  }
+
+  stopAutoFire() {
+    this.isFiringHeld = false;
+    if (this.autoFireTimer) {
+      clearInterval(this.autoFireTimer);
+      this.autoFireTimer = null;
+    }
+  }
+
   triggerShoot(force = false) {
     if (!this.weaponsMode) return null;
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -1224,7 +1280,7 @@ export class Controls {
 
       if (e.button === 0) {
         if (this.weaponsMode) {
-          this.triggerShoot();
+          this.startAutoFire();
         } else {
           this.triggerBreak();
         }
@@ -1242,6 +1298,9 @@ export class Controls {
     });
 
     window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) {
+        this.stopAutoFire();
+      }
       if (e.button === 2 && this.weaponsMode) {
         const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const duration = now - (this.aimMouseDownTime || 0);
@@ -1475,10 +1534,18 @@ export class Controls {
         e.preventDefault();
         e.stopPropagation();
         if (this.weaponsMode) {
-          this.triggerShoot();
+          this.startAutoFire();
         } else {
           this.triggerBreak();
         }
+      }, { passive: false });
+      btnBreak.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.stopAutoFire();
+      }, { passive: false });
+      btnBreak.addEventListener('touchcancel', () => {
+        this.stopAutoFire();
       }, { passive: false });
     }
 

@@ -21,9 +21,13 @@ const MSG = {
   MISSILE_DETONATE: 'missile_detonate',
   BUNKER_LAUNCH_SALVO: 'bunker_launch_salvo',
   BUNKER_MANUAL_INTERCEPT: 'bunker_manual_intercept',
+  ROOM_LIST: 'room_list',
+  SWITCH_ROOM: 'switch_room',
 
   // Server -> Client
   INIT: 'init',
+  ROOM_LIST_RESPONSE: 'room_list_response',
+  SWITCH_ROOM_CONFIRM: 'switch_room_confirm',
   PLAYER_JOINED: 'player_joined',
   PLAYER_LEFT: 'player_left',
   PLAYERS_UPDATE: 'players_update',

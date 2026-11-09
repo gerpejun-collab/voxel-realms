@@ -1475,6 +1475,37 @@ export class UIManager {
       btnCarExit.addEventListener('touchstart', handleCarExit);
       btnCarExit.addEventListener('click', handleCarExit);
     }
+
+    // Mobile Driving Controls: Left/Right Steer & Gas/Brake Pedals
+    const btnDriveLeft = document.getElementById('mobile-drive-left');
+    const btnDriveRight = document.getElementById('mobile-drive-right');
+    const btnDriveGas = document.getElementById('mobile-drive-gas');
+    const btnDriveBrake = document.getElementById('mobile-drive-brake');
+
+    const bindDriveKey = (btn, key) => {
+      if (!btn) return;
+      const start = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        btn.classList.add('active-press');
+        if (this.controls && this.controls.keys) this.controls.keys[key] = true;
+      };
+      const stop = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        btn.classList.remove('active-press');
+        if (this.controls && this.controls.keys) this.controls.keys[key] = false;
+      };
+      btn.addEventListener('touchstart', start, { passive: false });
+      btn.addEventListener('touchend', stop, { passive: false });
+      btn.addEventListener('touchcancel', stop, { passive: false });
+      btn.addEventListener('mousedown', start);
+      btn.addEventListener('mouseup', stop);
+      btn.addEventListener('mouseleave', stop);
+    };
+
+    bindDriveKey(btnDriveLeft, 'KeyA');
+    bindDriveKey(btnDriveRight, 'KeyD');
+    bindDriveKey(btnDriveGas, 'KeyW');
+    bindDriveKey(btnDriveBrake, 'KeyS');
   }
 
   initPauseMenu() {
@@ -2166,6 +2197,11 @@ export class UIManager {
     }
 
     // Update coordinates & sector (WITHOUT duplicate FPS)
+    // Live GPS Minimap Render
+    if (pos) {
+      this.drawMinimap(pos);
+    }
+
     const coordsElem = document.getElementById('hud-coords');
     if (coordsElem && pos) {
       const bx = Math.floor(pos.x);
@@ -2253,6 +2289,11 @@ export class UIManager {
     const mobileCarBtn = document.getElementById('mobile-btn-car');
 
     const isDriving = !!(this.vehicleManager && this.vehicleManager.isDriving());
+    const mobileDrivingControls = document.getElementById('mobile-driving-controls');
+    const virtualJoystick = document.getElementById('virtual-joystick');
+    const mobileActionButtons = document.getElementById('mobile-action-buttons');
+    const weaponsHud = document.getElementById('weapons-hud-controls');
+
     if (isDriving) {
       if (drivingHud) {
         drivingHud.classList.remove('hidden');
@@ -2265,6 +2306,18 @@ export class UIManager {
       }
       if (mobileCarBtn) {
         mobileCarBtn.classList.add('hidden');
+      }
+      if (mobileDrivingControls) {
+        mobileDrivingControls.classList.remove('hidden');
+      }
+      if (virtualJoystick) {
+        virtualJoystick.classList.add('hidden');
+      }
+      if (mobileActionButtons) {
+        mobileActionButtons.classList.add('hidden');
+      }
+      if (weaponsHud) {
+        weaponsHud.classList.add('vehicle-driving-mode');
       }
 
       const car = this.vehicleManager.activeCar;
@@ -2298,6 +2351,18 @@ export class UIManager {
       }
       if (mobileCarExitBtn) {
         mobileCarExitBtn.classList.add('hidden');
+      }
+      if (mobileDrivingControls) {
+        mobileDrivingControls.classList.add('hidden');
+      }
+      if (virtualJoystick) {
+        virtualJoystick.classList.remove('hidden');
+      }
+      if (mobileActionButtons) {
+        mobileActionButtons.classList.remove('hidden');
+      }
+      if (weaponsHud) {
+        weaponsHud.classList.remove('vehicle-driving-mode');
       }
 
       const playerPos = pos || this.physics?.pos || this.controls?.physics?.pos;

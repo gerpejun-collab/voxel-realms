@@ -72,18 +72,27 @@
         <span class="perf-sep">•</span>
         <span id="hud-coords" class="perf-coords">XYZ: 0 / 25 / 0</span>
       </div>
+      <!-- Live GPS Circular Minimap (Radar) -->
+      <div id="minimap-container" class="minimap-container">
+        <canvas id="minimap-canvas" width="90" height="90" title="Mini-Mapa GPS en Vivo"></canvas>
+        <div class="minimap-north-pin">N</div>
+      </div>
     </div>
 
     <!-- Top Right Quick Access Pill Actions -->
     <div id="hud-quick-actions">
-      <button id="btn-toggle-cam" class="hud-action-pill mc-pill desktop-only" title="Alternar Vista de Cámara (F5)"><span class="hud-pill-icon">📷</span><span class="hud-pill-txt"> Vista</span></button>
-      <button id="btn-map" class="hud-action-pill mc-pill desktop-only" title="Mapa del Mundo y Viaje Rápido (M)"><span class="hud-pill-icon">🗺️</span><span class="hud-pill-txt"> Mapa</span></button>
-      <button id="btn-open-builder" class="hud-action-pill mc-pill builder-pill" title="Estudio Constructor, Edificios, Animales y Guardar Mapa (B)"><span class="hud-pill-icon">🛠️</span><span class="hud-pill-txt"> Constructor</span></button>
+      <button id="btn-rooms" class="hud-action-pill mc-pill highlight-pill" title="Salas de Jugadores y PIN Privado"><span class="hud-pill-icon">🚪</span><span class="hud-pill-txt"> Salas</span></button>
+      <button id="btn-toggle-cam" class="hud-action-pill mc-pill" title="Alternar Vista de Cámara (F5)"><span class="hud-pill-icon">📷</span><span class="hud-pill-txt"> Vista</span></button>
+      <button id="btn-map" class="hud-action-pill mc-pill" title="Mapa del Mundo y Viaje Rápido (M)"><span class="hud-pill-icon">🗺️</span><span class="hud-pill-txt"> Mapa</span></button>
       <button id="btn-share-loc" class="hud-action-pill mc-pill desktop-only" title="Compartir mi Ubicación en el Chat"><span class="hud-pill-icon">📍</span><span class="hud-pill-txt"> Ubicación</span></button>
+      <button id="btn-open-builder" class="hud-action-pill mc-pill builder-pill" title="Estudio Constructor, Edificios, Animales y Guardar Mapa (B)"><span class="hud-pill-icon">🛠️</span><span class="hud-pill-txt"> Constructor</span></button>
+      <button id="btn-jetpack" class="hud-action-pill mc-pill jetpack-pill" title="Activar / Desactivar Jetpack Volador (J)"><span class="hud-pill-icon">🚀</span><span class="hud-pill-txt"> Jetpack</span></button>
+      <button id="btn-grapple" class="hud-action-pill mc-pill grapple-pill" title="Disparar Gancho de Agarre a Edificios (G)"><span class="hud-pill-icon">🪝</span><span class="hud-pill-txt"> Gancho</span></button>
+      <button id="btn-cycle-weather" class="hud-action-pill mc-pill weather-pill" title="Cambiar Clima y Hora (Día / Noche / Lluvia)"><span class="hud-pill-icon">☀️</span><span class="hud-pill-txt"> Clima</span></button>
       <button id="btn-toggle-weapons" class="hud-action-pill mc-pill highlight-pill" title="Alternar Modo Armas & TNT"><span class="hud-pill-icon">🔫</span><span class="hud-pill-txt"> Armas</span></button>
       <button id="hud-speed-btn" class="hud-action-pill mc-pill hud-speed-pill desktop-only" title="Velocidad (V): 1x / 2.5x / 5x Vuelo"><span class="hud-pill-icon">⚡</span><span class="hud-pill-txt"> 1x</span></button>
       <button id="btn-open-chat" class="hud-action-pill mc-pill" title="Abrir Chat (T)"><span class="hud-pill-icon">💬</span><span class="hud-pill-txt"> Chat</span></button>
-      <button id="btn-open-inv" class="hud-action-pill mc-pill desktop-only" title="Inventario de Bloques (E)"><span class="hud-pill-icon">🎒</span><span class="hud-pill-txt"> Bloques</span></button>
+      <button id="btn-open-inv" class="hud-action-pill mc-pill" title="Inventario de Bloques (E)"><span class="hud-pill-icon">🎒</span><span class="hud-pill-txt"> Bloques</span></button>
       <button id="btn-fullscreen" class="hud-action-pill mc-pill" title="Alternar Pantalla Completa"><span class="hud-pill-icon">⛶</span></button>
       <button id="btn-menu-toggle" class="hud-action-pill mc-pill highlight-pill" title="Menú de Juego y Ajustes (ESC)"><span class="hud-pill-icon">⚙️</span><span class="hud-pill-txt"> Menú</span></button>
     </div>
@@ -143,6 +152,30 @@
 
     <!-- Selected block toast label -->
     <div id="selected-block-label">Césped</div>
+
+    <!-- Ergonomic Floating Quick Build Dock (1-Tap Creation Tools) -->
+    <div id="quick-build-dock" class="quick-build-dock">
+      <button id="qbuild-btn-fill" class="qbuild-btn mc-btn" type="button" title="Varita de Relleno 3D (Toca 2 esquinas para rellenar cubo)">
+        <span class="qbuild-icon">📐</span>
+        <span class="qbuild-label">RELLENO 3D</span>
+      </button>
+      <button id="qbuild-btn-paint" class="qbuild-btn mc-btn" type="button" title="Pincel Pintor (Toca para cambiar material sin romper)">
+        <span class="qbuild-icon">🎨</span>
+        <span class="qbuild-label">PINTAR</span>
+      </button>
+      <button id="qbuild-btn-dome" class="qbuild-btn mc-btn" type="button" title="Generador Instantáneo de Cúpulas">
+        <span class="qbuild-icon">⭕</span>
+        <span class="qbuild-label">CÚPULA</span>
+      </button>
+      <button id="qbuild-btn-undo" class="qbuild-btn mc-btn" type="button" title="Deshacer última construcción (Ctrl+Z)">
+        <span class="qbuild-icon">↩️</span>
+        <span class="qbuild-label">DESHACER</span>
+      </button>
+      <button id="qbuild-btn-catalog" class="qbuild-btn mc-btn highlight-btn" type="button" title="Catálogo de Edificios, Casas y Animales">
+        <span class="qbuild-icon">🏛️</span>
+        <span class="qbuild-label">EDIFICIOS</span>
+      </button>
+    </div>
 
     <!-- Bottom Hotbar -->
     <div id="hotbar-wrapper">
@@ -224,6 +257,14 @@
 
       <!-- Right Touch Action Fan Arc (#mobile-action-buttons) -->
       <div id="mobile-action-buttons" class="action-fan-arc">
+        <button id="mobile-btn-jetpack" class="mobile-action-btn jetpack-btn mc-action-btn" title="Impulso Jetpack (Vuelo)">
+          <span class="btn-icon">🚀</span>
+          <span class="btn-label">JETPACK</span>
+        </button>
+        <button id="mobile-btn-grapple" class="mobile-action-btn grapple-btn mc-action-btn" title="Gancho de Agarre">
+          <span class="btn-icon">🪝</span>
+          <span class="btn-label">GANCHO</span>
+        </button>
         <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn" title="Alternar Correr">
           <span class="btn-icon">⚡</span>
           <span class="btn-label">CORRER</span>
@@ -830,5 +871,58 @@
 
   <!-- Main Game Script -->
   <script type="module" src="src/main.js"></script>
+  <!-- Multiplayer Rooms & PIN Private Room Modal ('R' Key / 🚪 Button) -->
+  <div id="rooms-modal" class="hidden">
+    <div class="rooms-modal-card">
+      <div class="modal-header">
+        <div>
+          <h2>🚪 Salas de Jugadores & Partidas Privadas</h2>
+          <p class="modal-desc" style="margin:2px 0 0 0;">Únete a una sala pública o crea tu sala privada protegida por código PIN de 4 dígitos</p>
+        </div>
+        <button id="close-rooms-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+
+      <!-- Current Room Indicator -->
+      <div class="current-room-banner">
+        <span>📍 Sala Actual:</span>
+        <strong id="current-room-name" class="current-room-badge">Sala Principal (Global)</strong>
+      </div>
+
+      <!-- Rooms Grid Sections -->
+      <div class="rooms-sections-container">
+        <!-- Section 1: Join by PIN -->
+        <div class="room-action-box">
+          <h3>🔒 Entrar a Sala Privada por PIN</h3>
+          <p class="room-box-desc">Si un amigo te dio un código PIN de 4 dígitos, escríbelo aquí:</p>
+          <div class="room-input-row">
+            <input type="text" id="join-room-id-input" placeholder="ID de la sala (ej: sala1)" maxlength="24" class="mc-input">
+            <input type="password" id="join-room-pin-input" placeholder="PIN (4 dígitos)" maxlength="8" class="mc-input pin-input">
+            <button id="btn-join-pin-room" class="mc-btn primary-btn" type="button">🔑 ENTRAR</button>
+          </div>
+        </div>
+
+        <!-- Section 2: Create New Room -->
+        <div class="room-action-box">
+          <h3>✨ Crear Nueva Sala</h3>
+          <p class="room-box-desc">Crea una sala pública o privada para ti y tus amigos:</p>
+          <div class="room-input-row">
+            <input type="text" id="create-room-id-input" placeholder="ID único (ej: amigos24)" maxlength="20" class="mc-input">
+            <input type="text" id="create-room-name-input" placeholder="Nombre (ej: Mi Fortaleza)" maxlength="28" class="mc-input">
+            <input type="password" id="create-room-pin-input" placeholder="PIN (opcional)" maxlength="8" class="mc-input pin-input">
+            <button id="btn-create-custom-room" class="mc-btn highlight-btn" type="button">➕ CREAR Y ENTRAR</button>
+          </div>
+        </div>
+
+        <!-- Section 3: Available Public Rooms List -->
+        <div class="room-action-box">
+          <h3>🌐 Salas Disponibles</h3>
+          <div id="rooms-list-grid" class="rooms-list-grid">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

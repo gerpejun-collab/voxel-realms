@@ -37,6 +37,11 @@ class RoomManager {
     this.pendingTntTimers = new Set();
     this.playerHitCooldowns = new Map(); // "shooterId->targetId" -> timestamp
     this.lastKnownPlayerPositions = new Map(); // playerId -> [x, y, z]
+    this.roomMetadata = new Map([
+      ['main', { id: 'main', name: 'Sala Principal (Global)', isPrivate: false, pin: null }],
+      ['sandbox', { id: 'sandbox', name: 'Sala Creativa & Construcción', isPrivate: false, pin: null }],
+      ['pvp_arena', { id: 'pvp_arena', name: 'Arena de Duelos PvP', isPrivate: false, pin: null }]
+    ]);
 
     // Start tick loop for movement broadcasts (20 updates/second)
     this.tickInterval = setInterval(() => this.tick(), 50);
@@ -223,7 +228,85 @@ class RoomManager {
       case MSG.MISSILE_DETONATE:
         this.handleMissileDetonate(ws, meta, data);
         break;
+
+      case MSG.ROOM_LIST:
+        this.handleRoomList(ws);
+        break;
+
+      case MSG.SWITCH_ROOM:
+        this.handleSwitchRoom(ws, meta, data);
+        break;
     }
+  }
+
+  handleRoomList(ws) {
+    const list = [];
+    for (const [id, meta] of this.roomMetadata.entries()) {
+      const room = this.rooms.get(id);
+      const playerCount = room ? room.clients.size : 0;
+      list.push({
+        id,
+        name: meta.name || id,
+        isPrivate: !!meta.isPrivate,
+        playerCount
+      });
+    }
+    this.send(ws, MSG.ROOM_LIST_RESPONSE, { rooms: list });
+  }
+
+  handleSwitchRoom(ws, meta, data) {
+    if (!data || !data.roomId) return;
+    const targetId = String(data.roomId).trim().slice(0, 32);
+    const pin = data.pin ? String(data.pin).trim() : null;
+    const roomName = data.roomName ? String(data.roomName).trim().slice(0, 40) : `Sala ${targetId}`;
+
+    if (!this.roomMetadata.has(targetId)) {
+      this.roomMetadata.set(targetId, {
+        id: targetId,
+        name: roomName,
+        isPrivate: !!pin,
+        pin: pin || null
+      });
+    }
+
+    const roomMeta = this.roomMetadata.get(targetId);
+    if (roomMeta && roomMeta.isPrivate && roomMeta.pin) {
+      if (pin !== roomMeta.pin) {
+        this.send(ws, MSG.ERROR, { message: 'PIN incorrecto para la sala privada.' });
+        return;
+      }
+    }
+
+    // Leave current room
+    const currentRoomId = meta.roomId || 'main';
+    const currentRoom = this.rooms.get(currentRoomId);
+    if (currentRoom) {
+      const oldPlayerId = meta.id;
+      currentRoom.clients.delete(ws);
+      currentRoom.gameState.removePlayer(oldPlayerId);
+      this.broadcast(currentRoom, MSG.PLAYER_LEFT, { id: oldPlayerId });
+    }
+
+    // Join new room
+    meta.roomId = targetId;
+    const newRoom = this.getOrCreateRoom(targetId);
+    const cleanName = meta.playerName || 'Explorador';
+    const player = newRoom.gameState.addPlayer(meta.id, cleanName);
+    newRoom.clients.set(ws, meta.id);
+
+    const initData = {
+      id: meta.id,
+      player,
+      roomId: targetId,
+      roomName: roomMeta ? roomMeta.name : targetId,
+      players: newRoom.gameState.getPlayersSnapshot(),
+      worldSeed: newRoom.gameState.worldSeed,
+      blockDeltas: newRoom.gameState.getBlockDeltas(),
+      timeOfDay: 0.32
+    };
+    this.send(ws, MSG.INIT, initData);
+    this.send(ws, MSG.SWITCH_ROOM_CONFIRM, { roomId: targetId, roomName: roomMeta ? roomMeta.name : targetId });
+    this.broadcast(newRoom, MSG.PLAYER_JOINED, player, ws);
   }
 
   handleJoin(ws, meta, data) {
@@ -274,6 +357,7 @@ class RoomManager {
     player.adminEmail = normAdminEmail;
 
     meta.roomId = roomId;
+    meta.playerName = cleanName;
     meta.isAdmin = isAdmin;
     meta.adminEmail = normAdminEmail;
     room.clients.set(ws, meta.id);

@@ -3779,3 +3779,270 @@ body.mobile-mode .desktop-only {
 
 
 
+
+/* ==========================================================================
+   MINIMAP GPS RADAR (Top-Left HUD)
+   ========================================================================== */
+.minimap-container {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid rgba(56, 189, 248, 0.7);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(56, 189, 248, 0.2);
+  overflow: hidden;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#minimap-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+}
+
+.minimap-north-pin {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 900;
+  color: #38bdf8;
+  text-shadow: 0 0 4px #0284c7;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   ERGONOMIC FLOATING QUICK BUILD DOCK (1-Tap Creation Bar)
+   ========================================================================== */
+.quick-build-dock {
+  position: absolute;
+  bottom: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 24;
+  pointer-events: auto;
+}
+
+.qbuild-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.qbuild-btn:hover {
+  background: rgba(51, 65, 85, 0.95);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.qbuild-btn.active {
+  background: rgba(14, 165, 233, 0.85);
+  border-color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+}
+
+.qbuild-btn.highlight-btn {
+  background: rgba(234, 88, 12, 0.85);
+  border-color: #fb923c;
+}
+
+.qbuild-icon {
+  font-size: 14px;
+}
+
+@media (max-width: 1024px) {
+  .quick-build-dock {
+    bottom: 56px;
+    padding: 3px 6px;
+    gap: 4px;
+  }
+  .qbuild-btn {
+    padding: 5px 8px;
+    font-size: 9px;
+  }
+  .qbuild-label {
+    display: none;
+  }
+  .qbuild-icon {
+    font-size: 16px;
+  }
+}
+
+/* ==========================================================================
+   MULTIPLAYER ROOMS & PIN MODAL
+   ========================================================================== */
+#rooms-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+#rooms-modal.hidden {
+  display: none !important;
+}
+
+.rooms-modal-card {
+  width: 90%;
+  max-width: 680px;
+  max-height: 85vh;
+  background: #18191f;
+  border: 2px solid #3e414c;
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #f1f5f9;
+}
+
+.current-room-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(30, 41, 59, 0.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+}
+
+.current-room-badge {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.rooms-sections-container {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.room-action-box {
+  background: rgba(30, 41, 59, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.room-action-box h3 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #f8fafc;
+}
+
+.room-box-desc {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.room-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.room-input-row .mc-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 7px 10px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #f8fafc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.room-input-row .pin-input {
+  max-width: 110px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+.rooms-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.room-item-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform 0.15s ease;
+}
+
+.room-item-card:hover {
+  transform: translateY(-2px);
+  border-color: #38bdf8;
+}
+
+.room-item-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.room-item-players {
+  font-size: 10px;
+  color: #38bdf8;
+}
+
+/* Jetpack & Grapple Action Buttons */
+.mobile-action-btn.jetpack-btn {
+  background: rgba(234, 88, 12, 0.85) !important;
+  border: 2px solid rgba(251, 146, 60, 0.85) !important;
+}
+
+.mobile-action-btn.grapple-btn {
+  background: rgba(14, 165, 233, 0.85) !important;
+  border: 2px solid rgba(56, 189, 248, 0.85) !important;
+}

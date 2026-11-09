@@ -217,6 +217,14 @@ class VoxelRealmsApp {
   setupInteractions() {
     // Left Click: Destroy Block (or apply active Sandbox Eraser / Cloner corner selection)
     this.controls.onBreakBlock = (target) => {
+      if (this.sandboxManager && this.sandboxManager.paintModeActive) {
+        this.sandboxManager.handlePaintTap(target.x, target.y, target.z, this.ui.getSelectedBlock() || BLOCKS.DIRT);
+        return;
+      }
+      if (this.sandboxManager && this.sandboxManager.fillModeActive) {
+        this.sandboxManager.handleFillTap(target.x, target.y, target.z, 0);
+        return;
+      }
       if (this.sandboxManager && (this.sandboxManager.activeToolType === 'cloner_select_a' || this.sandboxManager.activeToolType === 'cloner_select_b')) {
         this.sandboxManager.handleToolAction(target, 0);
         return;
@@ -231,6 +239,14 @@ class VoxelRealmsApp {
     // Right Click / COLOCAR Button: Place Selected Block or Execute Active Builder Tool (Prefab, Multi-Block Brush, Cloner, Animal NPC)
     this.controls.onPlaceBlock = (placePos) => {
       const selectedBlockId = this.ui.getSelectedBlock() || BLOCKS.DIRT;
+      if (this.sandboxManager && this.sandboxManager.fillModeActive) {
+        this.sandboxManager.handleFillTap(placePos.x, placePos.y, placePos.z, selectedBlockId);
+        return;
+      }
+      if (this.sandboxManager && this.sandboxManager.paintModeActive) {
+        this.sandboxManager.handlePaintTap(placePos.x, placePos.y, placePos.z, selectedBlockId);
+        return;
+      }
       if (this.sandboxManager && this.sandboxManager.activeToolType !== 'none') {
         const handled = this.sandboxManager.handleToolAction(placePos, selectedBlockId);
         if (handled) return;

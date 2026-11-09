@@ -225,6 +225,20 @@ export class MultiplayerClient {
     const { type, data } = msg;
 
     switch (type) {
+      case 'room_list_response':
+        if (typeof this.onRoomList === 'function') {
+          this.onRoomList(data.rooms || []);
+        }
+        break;
+
+      case 'switch_room_confirm':
+        this.currentRoomId = data.roomId || 'main';
+        this.currentRoomName = data.roomName || 'Sala Principal';
+        if (typeof this.onRoomSwitch === 'function') {
+          this.onRoomSwitch(data);
+        }
+        break;
+
       case 'init':
         this.myId = data.id;
         this.timeOfDay = data.timeOfDay ?? 0.32;

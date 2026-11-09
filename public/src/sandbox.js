@@ -188,6 +188,11 @@ export class SandboxManager {
     this.clipboardName = '';
     this.clipboardSize = [0, 0, 0];
 
+    // Ergonomic 1-Tap Quick Building Tools (Fill & Paint)
+    this.fillModeActive = false;
+    this.fillPointA = null;
+    this.paintModeActive = false;
+
     // Undo stack for batch operations (up to 15 steps)
     this.undoStack = [];
 

@@ -1014,22 +1014,38 @@ export class Controls {
     }
   }
 
-  cycleMissileSalvo() {
-    const steps = [1, 5, 20, 50, 100, 200];
-    const idx = steps.indexOf(this.missileSalvoCount);
-    const next = (idx === -1 || idx === steps.length - 1) ? steps[0] : steps[idx + 1];
-    this.missileSalvoCount = next;
-    if (next > 1) {
+  setSalvoCount(count) {
+    const val = Math.min(200, Math.max(1, parseInt(count, 10) || 1));
+    this.missileSalvoCount = val;
+    if (val > 1 && this.activeWeapon !== 'bazooka') {
       this.setWeapon('bazooka');
     }
     const badge = document.getElementById('weapon-salvo-hud-label');
-    if (badge) badge.textContent = `x${next}`;
+    if (badge) badge.textContent = `x${val}`;
     const slider = document.getElementById('weapon-salvo-count');
-    if (slider) slider.value = next;
+    if (slider && parseInt(slider.value, 10) !== val) slider.value = val;
     const label = document.getElementById('salvo-count-val');
-    if (label) label.textContent = `${next} misil${next > 1 ? 'es' : ''}`;
-    try { localStorage.setItem('voxel_missile_salvo_count', next); } catch (e) {}
-    return next;
+    if (label) label.textContent = `${val} misil${val > 1 ? 'es' : ''}`;
+    const radarBadge = document.getElementById('radar-salvo-count-label');
+    if (radarBadge) radarBadge.textContent = `x${val}`;
+    const radarTargetBtns = document.querySelectorAll('.radar-launch-btn');
+    radarTargetBtns.forEach(btn => {
+      btn.textContent = `🚀 Lanzar (${val}x)`;
+    });
+    try { localStorage.setItem('voxel_missile_salvo_count', val); } catch (e) {}
+    return val;
+  }
+
+  cycleMissileSalvo() {
+    const steps = [1, 5, 20, 50, 100, 200];
+    let next = steps[0];
+    for (const s of steps) {
+      if (s > (this.missileSalvoCount || 1)) {
+        next = s;
+        break;
+      }
+    }
+    return this.setSalvoCount(next);
   }
 
   fireMissileSalvo() {

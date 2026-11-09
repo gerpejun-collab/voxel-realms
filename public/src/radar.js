@@ -5,6 +5,18 @@
 // resilient re-selection without DOM clobbering, and responsive mobile layout.
 
 export class TacticalRadar {
+  getSalvoCount() {
+    let count = 1;
+    if (this.multiplayer?.controls?.missileSalvoCount) {
+      count = this.multiplayer.controls.missileSalvoCount;
+    } else {
+      try {
+        count = parseInt(localStorage.getItem('voxel_missile_salvo_count'), 10) || 1;
+      } catch (e) {}
+    }
+    return Math.min(200, Math.max(1, count));
+  }
+
   constructor(multiplayer, missileManager) {
     this.multiplayer = multiplayer;
     this.missileManager = missileManager;
@@ -51,6 +63,7 @@ export class TacticalRadar {
           <strong>RADAR TÁCTICO MILITAR (ADMIN)</strong>
         </div>
         <div class="radar-controls">
+          <button id="radar-btn-salvo" class="mc-btn radar-ctrl-btn radar-salvo-btn" type="button" title="Salva de Misiles a lanzar (Haz clic para alternar: 1x / 5x / 20x / 50x / 100x / 200x)">🚀 SALVA: <strong id="radar-salvo-count-label">x1</strong></button>
           <button id="radar-btn-minimize" class="mc-btn radar-ctrl-btn" title="Minimizar">➖</button>
           <button id="radar-btn-close" class="mc-btn radar-ctrl-btn" title="Cerrar">&times;</button>
         </div>
@@ -112,6 +125,14 @@ export class TacticalRadar {
     if (btnClose) {
       btnClose.addEventListener('click', () => this.toggle(false));
     }
+    const btnSalvo = container.querySelector('#radar-btn-salvo');
+    if (btnSalvo) {
+      btnSalvo.addEventListener('click', () => {
+        if (this.multiplayer?.controls && typeof this.multiplayer.controls.cycleMissileSalvo === 'function') {
+          this.multiplayer.controls.cycleMissileSalvo();
+        }
+      });
+    }
     const btnExpand = pill.querySelector('#radar-pill-expand');
     if (btnExpand) {
       btnExpand.addEventListener('click', () => this.toggleMinimize(false));
@@ -128,8 +149,9 @@ export class TacticalRadar {
           e.stopPropagation();
           const targetId = launchBtn.dataset.targetId;
           this.selectedTargetId = targetId;
+          const salvoCount = this.getSalvoCount();
           if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
-            this.multiplayer.sendAdminLaunchMissile(targetId);
+            this.multiplayer.sendAdminLaunchMissile(targetId, null, null, null, salvoCount);
           }
           launchBtn.classList.add('launch-flash');
           setTimeout(() => launchBtn?.classList.remove('launch-flash'), 350);
@@ -197,11 +219,12 @@ export class TacticalRadar {
     if (!playerDir || playerDir.size <= 1) return;
 
     let launchedCount = 0;
+    const salvoCount = this.getSalvoCount();
     for (const p of playerDir.values()) {
       if (p.id === this.multiplayer.myId) continue;
-      launchedCount++;
+      launchedCount += salvoCount;
       if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
-        this.multiplayer.sendAdminLaunchMissile(p.id);
+        this.multiplayer.sendAdminLaunchMissile(p.id, null, null, null, salvoCount);
       }
     }
 
@@ -494,7 +517,7 @@ export class TacticalRadar {
             </div>
           </div>
           <button class="mc-btn radar-launch-btn" data-target-id="${p.id}" data-target-name="${p.name || 'Player'}">
-            🚀 Lanzar
+            🚀 Lanzar (${this.getSalvoCount()}x)
           </button>
         </div>
       `;

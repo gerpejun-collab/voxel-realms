@@ -1016,7 +1016,8 @@ class RoomManager {
     );
     // Silo salvos are exclusive to the main admin (jsieiragerpe)
     const isSilo = Boolean(data.isSiloLaunch) && isLauncherMainAdmin;
-    const missileCount = isSilo && data.count ? Math.min(SILO_COUNT, Math.max(1, Math.floor(Number(data.count) || 1))) : 1;
+    const clientCount = Math.min(200, Math.max(1, Math.floor(Number(data.count) || Number(data.salvoCount) || 1)));
+    const missileCount = isSilo ? Math.min(SILO_COUNT, Math.max(1, clientCount)) : clientCount;
     const missilePower = isSilo ? 8 : 4; // 2X power for silo missiles!
     const flameColor = Number.isFinite(data.flameColor) ? data.flameColor : 0xff6600;
     const launchBatch = Date.now() + '_' + Math.floor(Math.random() * 10000);
@@ -1040,7 +1041,10 @@ class RoomManager {
         const livePlayer = room.gameState.getPlayer(data.targetPlayerId);
         if (livePlayer && Array.isArray(livePlayer.pos)) spawnTargetPos = [...livePlayer.pos];
       } else if (missileCount > 1) {
-        mStart[0] += (i === 0 ? -0.8 : 0.8);
+        const spreadAngle = (i / missileCount) * Math.PI * 2;
+        const spreadRadius = Math.min(3.5, 0.4 + (i * 0.05));
+        mStart[0] += Math.cos(spreadAngle) * spreadRadius;
+        mStart[2] += Math.sin(spreadAngle) * spreadRadius;
       }
 
       this.broadcast(room, MSG.MISSILE_SPAWN, {
@@ -1067,6 +1071,20 @@ class RoomManager {
         if (delayMs === 0) {
           spawnOne(i);
         } else {
+          const timer = setTimeout(() => {
+            if (this.rooms.get(meta.roomId) === room) spawnOne(i);
+          }, delayMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }
+      }
+    } else if (missileCount > 1) {
+      // Rapid stream for salvo barrages (1 to 200 missiles)
+      const streamInterval = missileCount >= 100 ? 35 : (missileCount >= 20 ? 65 : 120);
+      for (let i = 0; i < missileCount; i++) {
+        if (i === 0) {
+          spawnOne(0);
+        } else {
+          const delayMs = i * streamInterval;
           const timer = setTimeout(() => {
             if (this.rooms.get(meta.roomId) === room) spawnOne(i);
           }, delayMs);

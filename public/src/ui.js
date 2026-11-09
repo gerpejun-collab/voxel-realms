@@ -1892,13 +1892,10 @@ export class UIManager {
       const savedSalvoDelay = parseFloat(localStorage.getItem('voxel_missile_salvo_delay')) || 0.25;
 
       if (this.controls) {
-        this.controls.missileSalvoCount = savedSalvoCount;
+        this.controls.setSalvoCount(savedSalvoCount);
         this.controls.missileSalvoMode = savedSalvoMode;
         this.controls.missileSalvoDelay = savedSalvoDelay;
       }
-      if (salvoCountSlider) salvoCountSlider.value = savedSalvoCount;
-      if (salvoCountLabel) salvoCountLabel.textContent = `${savedSalvoCount} misil${savedSalvoCount > 1 ? 'es' : ''}`;
-      if (salvoHudBadge) salvoHudBadge.textContent = `x${savedSalvoCount}`;
       if (salvoModeSelect) salvoModeSelect.value = savedSalvoMode;
       if (salvoDelaySlider) salvoDelaySlider.value = savedSalvoDelay;
       if (salvoDelayLabel) salvoDelayLabel.textContent = `${savedSalvoDelay.toFixed(2)} seg`;
@@ -1907,15 +1904,9 @@ export class UIManager {
     if (salvoCountSlider) {
       salvoCountSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value, 10);
-        if (this.controls) {
-          this.controls.missileSalvoCount = val;
-          if (val > 1) {
-            this.controls.setWeapon('bazooka');
-          }
+        if (this.controls && typeof this.controls.setSalvoCount === 'function') {
+          this.controls.setSalvoCount(val);
         }
-        if (salvoCountLabel) salvoCountLabel.textContent = `${val} misil${val > 1 ? 'es' : ''}`;
-        if (salvoHudBadge) salvoHudBadge.textContent = `x${val}`;
-        try { localStorage.setItem('voxel_missile_salvo_count', val); } catch (e) {}
       });
     }
 

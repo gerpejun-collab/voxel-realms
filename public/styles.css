@@ -4046,3 +4046,92 @@ body.mobile-mode .desktop-only {
   background: rgba(14, 165, 233, 0.85) !important;
   border: 2px solid rgba(56, 189, 248, 0.85) !important;
 }
+
+
+/* ==========================================================================
+   QUICK BUILD FLOATING SIDE BUTTON & COLLAPSIBLE DOCK (Glassmorphism Blur)
+   ========================================================================== */
+.quick-build-side-toggle {
+  position: absolute;
+  left: 12px;
+  bottom: 84px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(15, 23, 42, 0.75) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5) !important;
+  color: #f8fafc !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  z-index: 28 !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  pointer-events: auto !important;
+}
+
+.quick-build-side-toggle:hover {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: #38bdf8 !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4) !important;
+}
+
+.quick-build-side-toggle.active {
+  background: rgba(14, 165, 233, 0.85) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.6) !important;
+}
+
+/* Collapsible Quick Build Dock: default collapsed = hidden, zero obstruction! */
+.quick-build-dock {
+  position: absolute;
+  bottom: 66px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0) scale(1);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(15, 23, 42, 0.82) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6) !important;
+  z-index: 24;
+  pointer-events: auto;
+  opacity: 1;
+  transition: opacity 0.25s ease, transform 0.25s ease !important;
+}
+
+.quick-build-dock.collapsed {
+  opacity: 0 !important;
+  transform: translateX(-50%) translateY(24px) scale(0.9) !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 1024px) {
+  .quick-build-side-toggle {
+    left: 8px;
+    bottom: 74px;
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+    border-radius: 50% !important;
+    padding: 0 !important;
+  }
+  .quick-build-side-toggle .side-toggle-label {
+    display: none !important;
+  }
+  .quick-build-dock {
+    bottom: 56px;
+    padding: 3px 6px;
+    gap: 4px;
+  }
+}

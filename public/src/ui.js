@@ -904,6 +904,10 @@ export class UIManager {
       });
     }
 
+    this.initRoomsModal();
+    this.initQuickBuildDock();
+    this.initTacticalTraversal();
+
     const btnFullscreen = document.getElementById('btn-fullscreen');
     if (btnFullscreen) {
       btnFullscreen.addEventListener('click', () => {
@@ -2198,8 +2202,8 @@ export class UIManager {
 
     // Update coordinates & sector (WITHOUT duplicate FPS)
     // Live GPS Minimap Render
-    if (pos) {
-      this.drawMinimap(pos);
+    if (pos && typeof this.drawMinimap === 'function') {
+      try { this.drawMinimap(pos); } catch (e) {}
     }
 
     const coordsElem = document.getElementById('hud-coords');
@@ -2860,4 +2864,395 @@ export class UIManager {
       }
     });
   }
+
+  drawMinimap(pos) {
+    try {
+      const canvas = document.getElementById('minimap-canvas');
+      if (!canvas || !pos) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const w = canvas.width;
+      const h = canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const range = 700;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Dark semi-transparent radar circle
+      ctx.beginPath();
+      ctx.arc(cx, cy, cx - 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.fill();
+
+      // Radar circular grid rings
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, (cx - 2) * 0.45, 0, Math.PI * 2);
+      ctx.arc(cx, cy, (cx - 2) * 0.82, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Crosshair axes
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+      ctx.beginPath();
+      ctx.moveTo(cx, 2); ctx.lineTo(cx, h - 2);
+      ctx.moveTo(2, cy); ctx.lineTo(w - 2, cy);
+      ctx.stroke();
+
+      // Known monuments & sectors
+      const landmarks = [
+        { name: 'Spawn', x: 0, z: 0, color: '#fbbf24' },
+        { name: 'Eiffel', x: 250, z: -250, color: '#60a5fa' },
+        { name: 'Pagoda', x: 250, z: 250, color: '#f87171' },
+        { name: 'NY', x: -250, z: -250, color: '#a78bfa' },
+        { name: 'Circuito', x: 400, z: 400, color: '#f43f5e' },
+        { name: 'Pradera', x: 500, z: 0, color: '#4ade80' },
+        { name: 'Bunker', x: -500, z: 200, color: '#eab308' }
+      ];
+
+      for (let i = 0; i < landmarks.length; i++) {
+        const lm = landmarks[i];
+        const dx = lm.x - pos.x;
+        const dz = lm.z - pos.z;
+        const px = cx + (dx / range) * (cx - 6);
+        const py = cy + (dz / range) * (cy - 6);
+        const distFromCenter = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+        if (distFromCenter <= cx - 5) {
+          ctx.fillStyle = lm.color;
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Other connected players
+      if (this.multiplayer && this.multiplayer.players) {
+        for (const [id, pl] of this.multiplayer.players.entries()) {
+          if (id === this.multiplayer.myId || !pl.position) continue;
+          const dx = pl.position[0] - pos.x;
+          const dz = pl.position[2] - pos.z;
+          const px = cx + (dx / range) * (cx - 6);
+          const py = cy + (dz / range) * (cy - 6);
+          const distFromCenter = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+          if (distFromCenter <= cx - 5) {
+            ctx.fillStyle = '#22c55e';
+            ctx.beginPath();
+            ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // Center player indicator (Cyan arrow pointing in look direction)
+      let yaw = 0;
+      if (this.controls && this.controls.camera) {
+        yaw = this.controls.camera.rotation.y || 0;
+      }
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-yaw);
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.moveTo(0, -6);
+      ctx.lineTo(4, 4);
+      ctx.lineTo(0, 2);
+      ctx.lineTo(-4, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } catch (e) {
+      // Keep render loop robust
+    }
+  }
+
+  initRoomsModal() {
+    const btnRooms = document.getElementById('btn-rooms');
+    const roomsModal = document.getElementById('rooms-modal');
+    const closeRoomsBtn = document.getElementById('close-rooms-btn');
+    const btnJoinPin = document.getElementById('btn-join-pin-room');
+    const btnCreateRoom = document.getElementById('btn-create-custom-room');
+    const currentRoomNameElem = document.getElementById('current-room-name');
+    const roomsListGrid = document.getElementById('rooms-list-grid');
+
+    const toggleRooms = (open) => {
+      if (roomsModal) roomsModal.classList.toggle('hidden', !open);
+      if (open && this.multiplayer && typeof this.multiplayer.requestRoomList === 'function') {
+        this.multiplayer.requestRoomList();
+      }
+    };
+
+    if (btnRooms) {
+      btnRooms.addEventListener('click', () => {
+        sound.playClick();
+        toggleRooms(true);
+      });
+    }
+
+    if (closeRoomsBtn) {
+      closeRoomsBtn.addEventListener('click', () => {
+        sound.playClick();
+        toggleRooms(false);
+      });
+    }
+
+    if (btnJoinPin) {
+      btnJoinPin.addEventListener('click', () => {
+        sound.playClick();
+        const idInput = document.getElementById('join-room-id-input');
+        const pinInput = document.getElementById('join-room-pin-input');
+        const roomId = idInput ? idInput.value.trim() : '';
+        const pin = pinInput ? pinInput.value.trim() : '';
+        if (!roomId) {
+          this.showNotification('⚠️ Escribe el ID de la sala.');
+          return;
+        }
+        if (this.multiplayer && typeof this.multiplayer.switchRoom === 'function') {
+          this.multiplayer.switchRoom(roomId, pin);
+          this.showNotification(`🔄 Conectando a sala: ${roomId}...`);
+          toggleRooms(false);
+        }
+      });
+    }
+
+    if (btnCreateRoom) {
+      btnCreateRoom.addEventListener('click', () => {
+        sound.playClick();
+        const idInput = document.getElementById('create-room-id-input');
+        const nameInput = document.getElementById('create-room-name-input');
+        const pinInput = document.getElementById('create-room-pin-input');
+        const roomId = idInput ? idInput.value.trim().toLowerCase() : '';
+        const roomName = nameInput ? nameInput.value.trim() : roomId;
+        const pin = pinInput ? pinInput.value.trim() : null;
+
+        if (!roomId) {
+          this.showNotification('⚠️ Elige un ID único para la sala.');
+          return;
+        }
+        if (this.multiplayer && typeof this.multiplayer.switchRoom === 'function') {
+          this.multiplayer.switchRoom(roomId, pin, roomName);
+          this.showNotification(`✨ Sala creada: ${roomName}`);
+          toggleRooms(false);
+        }
+      });
+    }
+
+    if (this.multiplayer) {
+      this.multiplayer.onRoomSwitch = (data) => {
+        if (currentRoomNameElem) {
+          currentRoomNameElem.textContent = data.roomName || data.roomId || 'Sala Principal';
+        }
+        this.showNotification(`🚪 Entraste a la sala: ${data.roomName || data.roomId}`);
+      };
+
+      this.multiplayer.onRoomList = (rooms) => {
+        if (!roomsListGrid) return;
+        roomsListGrid.innerHTML = '';
+        if (!rooms || rooms.length === 0) {
+          roomsListGrid.innerHTML = '<div style="font-size:11px;color:#94a3b8;">No hay salas activas. Crea una nueva arriba.</div>';
+          return;
+        }
+        for (const r of rooms) {
+          const card = document.createElement('div');
+          card.className = 'room-item-card';
+          card.innerHTML = `
+            <div class="room-item-title">
+              <span>${r.isPrivate ? '🔒' : '🌐'} ${r.name}</span>
+            </div>
+            <div class="room-item-players">${r.playerCount} jugador(es)</div>
+            <button class="mc-btn primary-btn join-room-btn" style="padding:4px 8px;font-size:10px;margin-top:4px;" data-id="${r.id}" data-private="${r.isPrivate}">
+              ${r.isPrivate ? '🔑 Entrar con PIN' : 'Entrar'}
+            </button>
+          `;
+          const joinBtn = card.querySelector('.join-room-btn');
+          if (joinBtn) {
+            joinBtn.addEventListener('click', () => {
+              sound.playClick();
+              if (r.isPrivate) {
+                const pin = prompt(`Introduce el PIN de 4 dígitos para la sala "${r.name}":`);
+                if (pin !== null && this.multiplayer) {
+                  this.multiplayer.switchRoom(r.id, pin.trim());
+                  toggleRooms(false);
+                }
+              } else if (this.multiplayer) {
+                this.multiplayer.switchRoom(r.id);
+                toggleRooms(false);
+              }
+            });
+          }
+          roomsListGrid.appendChild(card);
+        }
+      };
+    }
+  }
+
+  initQuickBuildDock() {
+    const sideToggleBtn = document.getElementById('btn-toggle-quick-build');
+    const dock = document.getElementById('quick-build-dock');
+    const btnFill = document.getElementById('qbuild-btn-fill');
+    const btnPaint = document.getElementById('qbuild-btn-paint');
+    const btnDome = document.getElementById('qbuild-btn-dome');
+    const btnUndo = document.getElementById('qbuild-btn-undo');
+    const btnCatalog = document.getElementById('qbuild-btn-catalog');
+
+    if (sideToggleBtn && dock) {
+      sideToggleBtn.addEventListener('click', () => {
+        sound.playClick();
+        const isCollapsed = dock.classList.contains('collapsed');
+        if (isCollapsed) {
+          dock.classList.remove('collapsed');
+          sideToggleBtn.classList.add('active');
+        } else {
+          dock.classList.add('collapsed');
+          sideToggleBtn.classList.remove('active');
+        }
+      });
+    }
+
+    if (btnFill) {
+      btnFill.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          const active = this.sandboxManager.toggleFillMode(this.getSelectedBlock() || 1);
+          btnFill.classList.toggle('active', active);
+          if (btnPaint) btnPaint.classList.remove('active');
+        }
+      });
+    }
+
+    if (btnPaint) {
+      btnPaint.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          const active = this.sandboxManager.togglePaintMode();
+          btnPaint.classList.toggle('active', active);
+          if (btnFill) btnFill.classList.remove('active');
+        }
+      });
+    }
+
+    if (btnDome) {
+      btnDome.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager && this.controls) {
+          const target = this.controls.getTargetBlock();
+          if (target) {
+            this.sandboxManager.generateQuickDome(target.x, target.y + 1, target.z, 6, 9);
+          } else {
+            const p = this.physics ? this.physics.pos : { x: 0, y: 25, z: 0 };
+            this.sandboxManager.generateQuickDome(p.x, p.y + 1, p.z, 6, 9);
+          }
+        }
+      });
+    }
+
+    if (btnUndo) {
+      btnUndo.addEventListener('click', () => {
+        sound.playClick();
+        if (this.sandboxManager) {
+          this.sandboxManager.undo();
+        }
+      });
+    }
+
+    if (btnCatalog) {
+      btnCatalog.addEventListener('click', () => {
+        sound.playClick();
+        this.toggleBuilderModal(true);
+      });
+    }
+  }
+
+  initTacticalTraversal() {
+    const btnJetpack = document.getElementById('btn-jetpack');
+    const mobJetpack = document.getElementById('mobile-btn-jetpack');
+    const btnGrapple = document.getElementById('btn-grapple');
+    const mobGrapple = document.getElementById('mobile-btn-grapple');
+    const btnWeather = document.getElementById('btn-cycle-weather');
+
+    const triggerJetpack = () => {
+      sound.playClick();
+      if (this.physics) {
+        this.physics.isFlying = !this.physics.isFlying;
+        if (this.physics.velocity) {
+          this.physics.velocity.y = 12.0;
+        }
+        const particles = this.controls?.particleManager || this.multiplayer?.particles;
+        if (particles && typeof particles.spawnSmoke === 'function') {
+          particles.spawnSmoke(this.physics.pos.x, this.physics.pos.y - 0.5, this.physics.pos.z, 15);
+        }
+        this.showNotification(`🚀 Jetpack ${this.physics.isFlying ? 'ACTIVADO: Modo Vuelo' : 'DESACTIVADO'}`);
+      }
+    };
+
+    if (btnJetpack) btnJetpack.addEventListener('click', triggerJetpack);
+    if (mobJetpack) mobJetpack.addEventListener('click', triggerJetpack);
+
+    const triggerGrapple = () => {
+      sound.playClick();
+      if (this.controls && this.physics) {
+        const target = this.controls.getTargetBlock();
+        if (target) {
+          const px = this.physics.pos.x;
+          const py = this.physics.pos.y;
+          const pz = this.physics.pos.z;
+          const dx = target.x - px;
+          const dy = target.y - py;
+          const dz = target.z - pz;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist > 0.1) {
+            const speed = 22.0;
+            this.physics.velocity.x = (dx / dist) * speed;
+            this.physics.velocity.y = Math.max(10.0, (dy / dist) * speed + 5.0);
+            this.physics.velocity.z = (dz / dist) * speed;
+            const particles = this.controls?.particleManager || this.multiplayer?.particles;
+            if (particles && typeof particles.spawnSmoke === 'function') {
+              particles.spawnSmoke(target.x, target.y, target.z, 10);
+            }
+            this.showNotification('🪝 ¡Gancho enganchado! Impulsándote a gran velocidad.');
+          }
+        } else {
+          this.showNotification('⚠️ Apunta a un bloque o edificio para disparar el gancho.');
+        }
+      }
+    };
+
+    if (btnGrapple) btnGrapple.addEventListener('click', triggerGrapple);
+    if (mobGrapple) mobGrapple.addEventListener('click', triggerGrapple);
+
+    let weatherStep = 0;
+    if (btnWeather) {
+      btnWeather.addEventListener('click', () => {
+        sound.playClick();
+        weatherStep = (weatherStep + 1) % 4;
+        const iconSpan = btnWeather.querySelector('.hud-pill-icon');
+        const txtSpan = btnWeather.querySelector('.hud-pill-txt');
+
+        const scene = this.sceneManager?.scene || (this.controls && this.controls.camera && this.controls.camera.parent);
+        if (weatherStep === 0) {
+          if (iconSpan) iconSpan.textContent = '☀️';
+          if (txtSpan) txtSpan.textContent = ' Día';
+          this.showNotification('☀️ Clima: Día Soleado Despejado');
+          if (scene && THREE) scene.background = new THREE.Color(0x87ceeb);
+        } else if (weatherStep === 1) {
+          if (iconSpan) iconSpan.textContent = '🌅';
+          if (txtSpan) txtSpan.textContent = ' Ocaso';
+          this.showNotification('🌅 Clima: Atardecer Dorado');
+          if (scene && THREE) scene.background = new THREE.Color(0xfa8072);
+        } else if (weatherStep === 2) {
+          if (iconSpan) iconSpan.textContent = '🌙';
+          if (txtSpan) txtSpan.textContent = ' Noche';
+          this.showNotification('🌙 Clima: Noche Estrellada');
+          if (scene && THREE) scene.background = new THREE.Color(0x0a0e1a);
+        } else {
+          if (iconSpan) iconSpan.textContent = '🌧️';
+          if (txtSpan) txtSpan.textContent = ' Lluvia';
+          this.showNotification('🌧️ Clima: Tormenta con Niebla');
+          if (scene && THREE) scene.background = new THREE.Color(0x4a5568);
+        }
+      });
+    }
+  }
+
 }

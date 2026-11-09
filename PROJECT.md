@@ -40,6 +40,13 @@
 | 13 | Infinite Sniper Mode & Touch Scope Buttons | Infinite raycast range in ADS sniper mode hitting animals and TNT at any distance; overlay touch buttons `#scope-btn-shoot` ("Disparar") and `#scope-btn-exit` ("Quitar la mira") directly on `#rifle-scope-overlay`. | M4 | Survey 3 |
 | 14 | Automated E2E Test Suite Expansion | Comprehensive test suite in `test/test.js` validating all R1-R6 requirements, server stability, map persistence, solid collisions, mobile controls, admin system, exact TNT, sniper mode, and 100% passing tests. | M-TEST | Survey 3 |
 | 15 | Adversarial Hardening & Forensic Integrity Audit | Adversarial stress testing across edge cases, concurrency, and empirical physics validation, followed by independent forensic integrity audit. | M-FINAL | Survey 1, 2, 3 |
+| 16 | Mobile UI Layout Redistribution & Touch Clearance | Eliminate overlap between weapon/item bar (bow, firecracker, pistol) and bottom buttons across all mobile and desktop viewports; elevate hotbar and reposition weapon drawer above action fan; enforce 48×48px minimum touch targets and 60% clear central viewport cone. | M-UI | Original Request R1 & Agent 1, 2 |
+| 17 | Definitive 50-Feature Master Improvement Plan | Deliver comprehensive master architectural plan (`IMPROVEMENT_PLAN_50.md`) spanning 50 substantial, visible, and transformative features (10 Multiplayer M1–M10, 10 Single-player S1–S10, 10 Map W1–W10, 10 Building B1–B10, 10 Novel Gameplay N1–N10) optimized for mobile comfort with automated verification. | M-50 | Original Request R2 & Agent 9 |
+| 18 | Mobile Multiplayer Rooms & Security Expansion | 4-digit PIN protected private rooms, visual lobby browser with real-time ping badges, Hermite client entity interpolation, 30/60Hz adaptive tickrate, proximity 3D audio, and kinematic speedhack guard. | M-50 | Agent 3 |
+| 19 | Offline Single-Player Persistence & Dynamic Ecology | IndexedDB 5-slot world save manager with WebGL canvas thumbnails, 24-minute celestial diurnal cycle with Rayleigh scattering, hunger/stamina vitals, dynamic weather with ground wetness, and emergency blur autosave. | M-50 | Agent 4 |
+| 20 | Procedural Multi-Biome Terrain & Cartography Expansion | 5 continental Whittaker biomes (Temperate, Desert, Alpine, Volcanic, Archipelago), real-time HUD minimap with orientation cone, fullscreen interactive atlas with pinch-zoom, 3D screen-clamped beacons, and dynamic fluid cellular automaton. | M-50 | Agent 5 |
+| 21 | Advanced Creative Building Studio & CAD Brush Engine | Multiblock 3D bounding box fill/replace brush, infinite history bounded undo/redo engine with dedicated touch buttons, 3D blueprint capture & instant stamp tool, bilateral symmetry plane mirror, and ergonomic 12-wedge radial material wheel. | M-50 | Agent 6 |
+| 22 | Novel High-Impact Gameplay Mechanics (Jetpack, Grapple, 4x4) | Tactical fuel-powered jetpack with vertical boost & hover lock, dynamic physics grappling hook & zip-line, 4x4 all-terrain rover with independent spring-damper suspension, deployable recon drone with night vision, and gliding wings. | M-50 | Agent 7 |
 
 ---
 
@@ -50,8 +57,10 @@
 | M2 | Client Startup Performance, Progressive World Streaming & 60 FPS Traffic Optimization | `public/src/world.js`, `public/src/main.js`, `public/src/animals.js` | none | DONE (worker_m2 verified) |
 | M3 | Vehicle Driving Reconstruction, Mobile Controls, Seated Avatar, Solid Collision & Plaza Cleanup | `public/src/vehicle.js`, `public/src/physics.js`, `public/src/avatar.js`, `public/src/controls.js`, `public/src/ui.js`, `public/index.html`, `public/styles.css` | none | DONE (worker_m3 verified) |
 | M4 | Secret Admin UI, Exact TNT Placement & Infinite Sniper Mode | `public/index.html`, `public/styles.css`, `public/src/ui.js`, `public/src/controls.js`, `public/src/world.js` | M1 | IN_PROGRESS (worker_m4) |
-| M-TEST | Suite de Pruebas Automatizadas E2E y Regresión | `test/test.js`, `TEST_INFRA.md`, `TEST_READY.md` | M1, M2, M3, M4 | IN_PROGRESS (e2e_test_writer) |
-| M-FINAL | Verificación E2E 100%, Desafío Adversarial y Auditoría Forense | Global codebase, test suites, verification artifacts | M1, M2, M3, M4, M-TEST | PLANNED |
+| M-UI | Mobile UI Redistribution & Ergonomic Touch Optimization | `public/index.html`, `public/styles.css`, `public/src/ui.js`, `public/src/controls.js` | M3 | IN_PROGRESS (agent_1_ui_layout_fix) |
+| M-50 | Definitive 50-Feature Master Improvement Architecture | `IMPROVEMENT_PLAN_50.md`, `PROJECT.md`, `.agents/teamwork/` | M1, M2, M3, M4, M-UI | DONE (agent_9_plan_synthesizer) |
+| M-TEST | Suite de Pruebas Automatizadas E2E y Regresión | `test/test.js`, `TEST_INFRA.md`, `TEST_READY.md` | M1, M2, M3, M4, M-UI, M-50 | IN_PROGRESS (e2e_test_writer) |
+| M-FINAL | Verificación E2E 100%, Desafío Adversarial y Auditoría Forense | Global codebase, test suites, verification artifacts | M1, M2, M3, M4, M-UI, M-50, M-TEST | PLANNED |
 
 
 ---

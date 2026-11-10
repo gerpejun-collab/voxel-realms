@@ -93,38 +93,7 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new VoxelAndroidBridge(this), "VoxelAndroid");
         webView.addJavascriptInterface(new VoxelAndroidBridge(this), "Android");
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
-                if (MainActivity.this.filePathCallback != null) {
-                    MainActivity.this.filePathCallback.onReceiveValue(null);
-                }
-                MainActivity.this.filePathCallback = filePathCallback;
-                try {
-                    Intent intent = fileChooserParams.createIntent();
-                    startActivityForResult(intent, 2001);
-                    return true;
-                } catch (Exception e) {
-                    try {
-                        Intent fallbackIntent = new Intent(Intent.ACTION_GET_CONTENT);
-                        fallbackIntent.addCategory(Intent.CATEGORY_OPENABLE);
-                        if (fileChooserParams != null && fileChooserParams.getAcceptTypes() != null && fileChooserParams.getAcceptTypes().length > 0 && !fileChooserParams.getAcceptTypes()[0].isEmpty()) {
-                            fallbackIntent.setType(fileChooserParams.getAcceptTypes()[0]);
-                        } else {
-                            fallbackIntent.setType("*/*");
-                        }
-                        if (fileChooserParams != null && fileChooserParams.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
-                            fallbackIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-                        }
-                        startActivityForResult(Intent.createChooser(fallbackIntent, "Seleccionar archivo"), 2001);
-                        return true;
-                    } catch (Exception ex) {
-                        MainActivity.this.filePathCallback = null;
-                        return false;
-                    }
-                }
-            }
-        });
+        webView.setWebChromeClient(new GameWebChromeClient(this));
         webView.setWebViewClient(new GameWebViewClient(this));
     }
 
@@ -300,11 +269,68 @@ class LoadUrlTask implements Runnable {
     }
 }
 
+class RequestPermissionsTask implements Runnable {
+    private final MainActivity activity;
+
+    RequestPermissionsTask(MainActivity activity) {
+        this.activity = activity;
+    }
+
+    @Override
+    public void run() {
+        activity.requestStoragePermissionsFromSystem();
+    }
+}
+
+class GameWebChromeClient extends WebChromeClient {
+    private final MainActivity activity;
+
+    GameWebChromeClient(MainActivity activity) {
+        this.activity = activity;
+    }
+
+    @Override
+    public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+        if (activity.filePathCallback != null) {
+            activity.filePathCallback.onReceiveValue(null);
+        }
+        activity.filePathCallback = filePathCallback;
+        try {
+            Intent intent = fileChooserParams.createIntent();
+            activity.startActivityForResult(intent, 2001);
+            return true;
+        } catch (Exception e) {
+            try {
+                Intent fallbackIntent = new Intent(Intent.ACTION_GET_CONTENT);
+                fallbackIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                if (fileChooserParams != null && fileChooserParams.getAcceptTypes() != null && fileChooserParams.getAcceptTypes().length > 0 && !fileChooserParams.getAcceptTypes()[0].isEmpty()) {
+                    fallbackIntent.setType(fileChooserParams.getAcceptTypes()[0]);
+                } else {
+                    fallbackIntent.setType("*/*");
+                }
+                if (fileChooserParams != null && fileChooserParams.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                    fallbackIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
+                activity.startActivityForResult(Intent.createChooser(fallbackIntent, "Seleccionar archivo"), 2001);
+                return true;
+            } catch (Exception ex) {
+                activity.filePathCallback = null;
+                return false;
+            }
+        }
+    }
+}
+
 class VoxelAndroidBridge {
     private final MainActivity activity;
 
     VoxelAndroidBridge(MainActivity activity) {
         this.activity = activity;
+    }
+
+    @JavascriptInterface
+    public String getAppVersion() {
+        return "v2";
     }
 
     @JavascriptInterface
@@ -316,11 +342,6 @@ class VoxelAndroidBridge {
 
     @JavascriptInterface
     public void requestStoragePermission() {
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                activity.requestStoragePermissionsFromSystem();
-            }
-        });
+        activity.runOnUiThread(new RequestPermissionsTask(activity));
     }
 }

@@ -24,6 +24,9 @@ export class MultiplayerClient {
     this.playerDirectory = new Map(); // id -> { id, name, pos, joinedAt }
     this.pendingModifications = new Map(); // "x,y,z" -> originalBlock (for rollback on rejection)
     this.timeOfDay = 0.32; // Perpetual bright sunny day
+    this.currentRoomId = 'main';
+    this.currentRoomPin = null;
+    this.currentRoomName = 'Sala Principal';
 
     // Throttled movement packets
     this.lastSendTime = 0;
@@ -137,6 +140,15 @@ export class MultiplayerClient {
     if (options && typeof options.adminKey === 'string') {
       this.adminKey = options.adminKey;
     }
+    if (options && options.roomId) {
+      this.currentRoomId = options.roomId;
+    }
+    if (options && options.pin !== undefined) {
+      this.currentRoomPin = options.pin;
+    }
+    if (options && options.roomName) {
+      this.currentRoomName = options.roomName;
+    }
     this.kickedByAdminReset = false;
 
     // Build WebSocket URL matching current host and secure protocol
@@ -156,10 +168,16 @@ export class MultiplayerClient {
       this.reconnectAttempts = 0;
       if (this.onConnected) this.onConnected();
 
-      // Send join request (including stealth admin credentials if present)
+      // Send join request (including stealth admin credentials and room parameters if present)
       const joinPayload = { name: this.myName };
       if (this.myEmail) joinPayload.email = this.myEmail;
       if (this.adminKey) joinPayload.adminKey = this.adminKey;
+      const targetRoomId = (options && options.roomId) || (this.currentRoomId !== 'main' ? this.currentRoomId : null);
+      const targetPin = (options && options.pin) || this.currentRoomPin || null;
+      const targetRoomName = (options && options.roomName) || (this.currentRoomId !== 'main' ? this.currentRoomName : null);
+      if (targetRoomId) joinPayload.roomId = targetRoomId;
+      if (targetPin) joinPayload.pin = targetPin;
+      if (targetRoomName) joinPayload.roomName = targetRoomName;
       this.send('join', joinPayload);
     };
 
@@ -208,7 +226,13 @@ export class MultiplayerClient {
       const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
       setTimeout(() => {
         if (!this.connected && !this.kickedByAdminReset && !this.isOfflineMode) {
-          this.connect(this.myName, { email: this.myEmail, adminKey: this.adminKey });
+          this.connect(this.myName, {
+            email: this.myEmail,
+            adminKey: this.adminKey,
+            roomId: this.currentRoomId,
+            pin: this.currentRoomPin,
+            roomName: this.currentRoomName
+          });
         }
       }, delay);
     }
@@ -234,25 +258,14 @@ export class MultiplayerClient {
       case 'switch_room_confirm':
         this.currentRoomId = data.roomId || 'main';
         this.currentRoomName = data.roomName || 'Sala Principal';
-        if (typeof this.onRoomSwitch === 'function') {
-          this.onRoomSwitch(data);
-        }
-        break;
-
-      case 'room_list_response':
-        if (typeof this.onRoomList === 'function') {
-          this.onRoomList(data.rooms || []);
-        }
-        break;
-
-      case 'switch_room_confirm':
-        this.currentRoomId = data.roomId || 'main';
-        this.currentRoomName = data.roomName || 'Sala Principal';
         for (const avatar of this.remoteAvatars.values()) {
           avatar.remove();
         }
         this.remoteAvatars.clear();
         this.playerDirectory.clear();
+        if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
+          this.billboardManager.clear();
+        }
         if (this.world) {
           if (this.world.blockDeltas) this.world.blockDeltas.clear();
           if (typeof this.world.reloadAllChunks === 'function') {
@@ -264,12 +277,46 @@ export class MultiplayerClient {
         }
         break;
 
+      case 'block_modify_batch':
+        if (data && Array.isArray(data.deltas) && data.deltas.length > 0 && this.world) {
+          if (typeof this.world.applyBlockDeltasBatch === 'function') {
+            this.world.applyBlockDeltasBatch(data.deltas);
+          } else {
+            for (const [x, y, z, bt] of data.deltas) {
+              if (typeof this.world.applyBlockDelta === 'function') {
+                this.world.applyBlockDelta(x, y, z, bt);
+              }
+            }
+          }
+        }
+        break;
+
+      case 'billboard_create':
+        if (data && this.billboardManager && typeof this.billboardManager.createBillboardFromNetwork === 'function') {
+          this.billboardManager.createBillboardFromNetwork(data);
+        }
+        break;
+
+      case 'billboard_remove':
+        if (data && data.id && this.billboardManager && typeof this.billboardManager.removeBillboard === 'function') {
+          this.billboardManager.removeBillboard(data.id);
+        }
+        break;
+
       case 'init':
+        this.currentRoomId = data.roomId || (data.room && data.room.id) || this.currentRoomId || 'main';
+        this.currentRoomName = data.roomName || (data.room && data.room.name) || (this.currentRoomId === 'main' ? 'Sala Principal' : `Sala ${this.currentRoomId}`);
         for (const avatar of this.remoteAvatars.values()) {
           avatar.remove();
         }
         this.remoteAvatars.clear();
         this.playerDirectory.clear();
+        if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
+          this.billboardManager.clear();
+        }
+        if (typeof this.onRoomSwitch === 'function') {
+          this.onRoomSwitch({ roomId: this.currentRoomId, roomName: this.currentRoomName, room: data.room });
+        }
         this.myId = data.id;
         this.timeOfDay = data.timeOfDay ?? 0.32;
         if (data.isAdmin || (data.player && data.player.isAdmin)) {
@@ -339,6 +386,9 @@ export class MultiplayerClient {
         }
         if (this.onPlayerInit) {
           this.onPlayerInit(data);
+        }
+        if (Array.isArray(data.billboards) && this.billboardManager && typeof this.billboardManager.syncBillboardsFromServer === 'function') {
+          this.billboardManager.syncBillboardsFromServer(data.billboards);
         }
         if (this.onNotification) {
           this.onNotification(`Bienvenido a Voxel Realms, ${this.myName}!`);
@@ -462,6 +512,9 @@ export class MultiplayerClient {
         }
         this.remoteAvatars.clear();
         this.playerDirectory.clear();
+        if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
+          this.billboardManager.clear();
+        }
         if (this.world && typeof this.world.resetToInitialTerrain === 'function') {
           this.world.resetToInitialTerrain();
         }
@@ -1019,7 +1072,7 @@ export class MultiplayerClient {
         salvoCount = parseInt(localStorage.getItem('voxel_missile_salvo_count'), 10) || 1;
       } catch (e) {}
     }
-    salvoCount = Math.min(200, Math.max(1, salvoCount));
+    salvoCount = Math.min(30, Math.max(1, salvoCount));
 
     const salvoMode = mode || this.controls?.missileSalvoMode || (typeof localStorage !== 'undefined' ? localStorage.getItem('voxel_missile_salvo_mode') : null) || 'sequential';
     const salvoDelay = (typeof delay === 'number') ? delay : (this.controls?.missileSalvoDelay || (typeof localStorage !== 'undefined' ? parseFloat(localStorage.getItem('voxel_missile_salvo_delay')) : null) || 0.25);
@@ -1107,7 +1160,39 @@ export class MultiplayerClient {
   }
 
   switchRoom(roomId, pin = null, roomName = null) {
+    this.currentRoomId = roomId;
+    this.currentRoomPin = pin;
+    this.currentRoomName = roomName || (roomId === 'main' ? 'Sala Principal' : `Sala ${roomId}`);
+    if (!this.connected || this.isOfflineMode) {
+      this.isOfflineMode = false;
+      this.connect(this.myName || 'Player', { roomId, pin, roomName });
+      return;
+    }
     this.send('switch_room', { roomId, pin, roomName });
+  }
+
+  sendBlockModifyBatch(deltas) {
+    if (!this.connected || this.isOfflineMode || !Array.isArray(deltas) || deltas.length === 0) return;
+    const chunkSize = 400;
+    for (let i = 0; i < deltas.length; i += chunkSize) {
+      const chunk = deltas.slice(i, i + chunkSize);
+      this.send('block_modify_batch', { deltas: chunk });
+    }
+  }
+
+  sendAnimalSpawn(species, x, y, z) {
+    if (!this.connected || this.isOfflineMode) return;
+    this.send('animal_spawn', { species, x, y, z });
+  }
+
+  sendBillboardCreate(data) {
+    if (!this.connected || this.isOfflineMode) return;
+    this.send('billboard_create', data);
+  }
+
+  sendBillboardRemove(id) {
+    if (!this.connected || this.isOfflineMode || !id) return;
+    this.send('billboard_remove', { id });
   }
 
   update(dt) {

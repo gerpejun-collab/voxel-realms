@@ -6,6 +6,14 @@ import { sound } from './audio.js';
 
 export const PREFAB_CATALOG = [
   {
+    id: 'giant_billboard',
+    category: 'buildings',
+    name: 'Cartel Gigante / Pantalla de Anuncios',
+    icon: '📺',
+    size: '15×12×3',
+    desc: 'Colosal pantalla LED publicitaria con soporte y fotos animadas en ciclo dinámico'
+  },
+  {
     id: 'eiffel_tower',
     category: 'buildings',
     name: 'Torre Eiffel (París)',
@@ -300,8 +308,12 @@ export class SandboxManager {
         if (window.Android && typeof window.Android.requestStoragePermission === 'function') {
           window.Android.requestStoragePermission();
         }
+        if (window.VoxelAndroid && typeof window.VoxelAndroid.requestStoragePermission === 'function') {
+          window.VoxelAndroid.requestStoragePermission();
+        }
         if (window.AndroidBridge && typeof window.AndroidBridge.requestPermissions === 'function') {
           window.AndroidBridge.requestPermissions([
+            'android.permission.READ_MEDIA_IMAGES',
             'android.permission.READ_EXTERNAL_STORAGE',
             'android.permission.WRITE_EXTERNAL_STORAGE'
           ]);
@@ -475,10 +487,14 @@ export class SandboxManager {
 
     this.world.applyBlockDeltasBatch(validDeltas);
 
-    // If online and batch is small enough, also replicate via multiplayer
-    if (this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode && validDeltas.length <= 250) {
-      for (const [rx, ry, rz, bt] of validDeltas) {
-        this.multiplayer.send('block_modify', { x: rx, y: ry, z: rz, blockType: bt });
+    // If online, replicate all placed blocks to the multiplayer server via batch modify!
+    if (this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode) {
+      if (typeof this.multiplayer.sendBlockModifyBatch === 'function') {
+        this.multiplayer.sendBlockModifyBatch(validDeltas);
+      } else {
+        for (const [rx, ry, rz, bt] of validDeltas) {
+          this.multiplayer.send('block_modify', { x: rx, y: ry, z: rz, blockType: bt });
+        }
       }
     }
 
@@ -651,6 +667,21 @@ export class SandboxManager {
     }
     const last = this.undoStack.pop();
     this.world.applyBlockDeltasBatch(last.deltas);
+    if (last.billboardId) {
+      if (this.billboardManager && typeof this.billboardManager.removeBillboard === 'function') {
+        this.billboardManager.removeBillboard(last.billboardId);
+      }
+      if (this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode) {
+        if (typeof this.multiplayer.sendBillboardRemove === 'function') {
+          this.multiplayer.sendBillboardRemove(last.billboardId);
+        }
+      }
+    }
+    if (this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode) {
+      if (typeof this.multiplayer.sendBlockModifyBatch === 'function') {
+        this.multiplayer.sendBlockModifyBatch(last.deltas);
+      }
+    }
     if (sound && typeof sound.playClick === 'function') sound.playClick(0.9);
     if (this.ui) {
       this.ui.showNotification(`↩️ Deshecho: ${last.label} (${last.deltas.length} bloques restaurados)`);
@@ -782,17 +813,26 @@ export class SandboxManager {
       return 0;
     }
 
+    const isOnline = Boolean(this.multiplayer && this.multiplayer.connected && !this.multiplayer.isOfflineMode);
+
     if (type === 'pack_mixed') {
       const speciesList = ['sheep', 'cow', 'pig', 'horse', 'wolf', 'chicken'];
       let spawned = 0;
-      for (let i = 0; i < speciesList.length; i++) {
-        const angle = (i / speciesList.length) * Math.PI * 2;
-        const ax = x + Math.cos(angle) * 2.5;
-        const az = z + Math.sin(angle) * 2.5;
-        if (!this.isRestrictedZone(ax, y, az)) {
-          const ay = this.world ? this.world.getHeightAt(Math.floor(ax), Math.floor(az)) + 1 : y;
-          this.animalManager.spawnCustomAnimal(speciesList[i], ax, ay, az);
-          spawned++;
+      if (isOnline) {
+        if (typeof this.multiplayer.sendAnimalSpawn === 'function') {
+          this.multiplayer.sendAnimalSpawn('pack_mixed', x, y, z);
+        }
+        spawned = 6;
+      } else {
+        for (let i = 0; i < speciesList.length; i++) {
+          const angle = (i / speciesList.length) * Math.PI * 2;
+          const ax = x + Math.cos(angle) * 2.5;
+          const az = z + Math.sin(angle) * 2.5;
+          if (!this.isRestrictedZone(ax, y, az)) {
+            const ay = this.world ? this.world.getHeightAt(Math.floor(ax), Math.floor(az)) + 1 : y;
+            this.animalManager.spawnCustomAnimal(speciesList[i], ax, ay, az);
+            spawned++;
+          }
         }
       }
       if (sound && typeof sound.playClick === 'function') sound.playClick(1.15);
@@ -801,7 +841,14 @@ export class SandboxManager {
     }
 
     const ay = this.world ? Math.max(y, this.world.getHeightAt(Math.floor(x), Math.floor(z)) + 1) : y;
-    this.animalManager.spawnCustomAnimal(type, x + 0.5, ay, z + 0.5);
+    if (isOnline) {
+      if (typeof this.multiplayer.sendAnimalSpawn === 'function') {
+        this.multiplayer.sendAnimalSpawn(type, x + 0.5, ay, z + 0.5);
+      }
+    } else {
+      this.animalManager.spawnCustomAnimal(type, x + 0.5, ay, z + 0.5);
+    }
+
     if (sound && typeof sound.playClick === 'function') sound.playClick(1.15);
     const info = ANIMAL_SPAWN_CATALOG.find(a => a.id === type);
     if (this.ui) {
@@ -1018,7 +1065,30 @@ export class SandboxManager {
       worldDeltas.push([ox + rx, oy + dy, oz + rz, blk]);
     }
 
-    return this.applyDeltasWithUndo(worldDeltas, `Prefab ${prefabId}`);
+    const count = this.applyDeltasWithUndo(worldDeltas, `Prefab ${prefabId}`);
+
+    if (prefabId === 'giant_billboard' && this.billboardManager) {
+      const photos = (this.ui && typeof this.ui.getUploadedPhotos === 'function')
+        ? this.ui.getUploadedPhotos()
+        : (this.billboardManager.localPhotos || []);
+      const billboardData = {
+        id: `bb_${Math.round(ox)}_${Math.round(oy)}_${Math.round(oz)}`,
+        x: ox,
+        y: oy,
+        z: oz,
+        rotation: rot,
+        photos: Array.isArray(photos) ? photos : []
+      };
+      this.billboardManager.createBillboard(billboardData, false);
+      if (this.undoStack.length > 0) {
+        this.undoStack[this.undoStack.length - 1].billboardId = billboardData.id;
+      }
+      if (this.multiplayer && typeof this.multiplayer.sendBillboardCreate === 'function') {
+        this.multiplayer.sendBillboardCreate(billboardData);
+      }
+    }
+
+    return count;
   }
 
   /**
@@ -1031,6 +1101,65 @@ export class SandboxManager {
     };
 
     switch (prefabId) {
+      case 'giant_billboard': {
+        // Colossal 15x12x3 outdoor advertising billboard structure:
+        // Support columns, cross-bracing truss, metallic frame, dark backing, and screen mount
+        const IRON = BLOCKS.IRON_ORE;
+        const STONE = BLOCKS.COBBLESTONE;
+        const OBSIDIAN = BLOCKS.STONE;
+        const GLASS = BLOCKS.GLASS || BLOCKS.ICE || BLOCKS.IRON_ORE;
+        const GOLD = BLOCKS.GOLD_ORE;
+
+        // Two heavy steel support pillars at x = -5 and x = +5 (height y = 0..5, z = 0..1)
+        for (const sx of [-5, 5]) {
+          for (let y = 0; y <= 5; y++) {
+            set(sx, y, 0, IRON);
+            set(sx + 1, y, 0, IRON);
+            set(sx, y, 1, STONE);
+            set(sx + 1, y, 1, STONE);
+          }
+          // Concrete foundation base
+          for (let dx = -1; dx <= 2; dx++) {
+            for (let dz = -1; dz <= 2; dz++) {
+              set(sx + dx, 0, dz, STONE);
+            }
+          }
+        }
+
+        // Horizontal truss / catwalk connecting the pillars (y = 5, x = -6..6, z = 0..1)
+        for (let x = -6; x <= 6; x++) {
+          set(x, 5, 0, IRON);
+          set(x, 5, 1, IRON);
+          if (Math.abs(x) === 6 || x === 0) {
+            set(x, 5, -1, GOLD); // Warning beacon / spotlight mount
+          }
+        }
+
+        // Billboard Screen Frame (y = 6..11, x = -7..7, z = 0..1)
+        // Backing (z = 1) is solid dark stone/obsidian
+        // Frame border (top, bottom, left, right) is iron / gold trim
+        // Screen surface (z = 0) is glass / screen backing blocks
+        for (let y = 6; y <= 11; y++) {
+          for (let x = -7; x <= 7; x++) {
+            // Structural backing wall
+            set(x, y, 1, OBSIDIAN);
+
+            const isBorder = (x === -7 || x === 7 || y === 6 || y === 11);
+            if (isBorder) {
+              set(x, y, 0, (Math.abs(x) === 7 && (y === 6 || y === 11)) ? GOLD : IRON);
+            } else {
+              set(x, y, 0, GLASS);
+            }
+          }
+        }
+
+        // Crown spotlights on top of billboard (y = 12, x in [-5, 0, 5], z = 0)
+        for (const sx of [-5, 0, 5]) {
+          set(sx, 12, 0, GOLD);
+        }
+        break;
+      }
+
       case 'eiffel_tower': {
         // 32-block tall replica of the Paris Eiffel Tower with 4 arched legs, 3 observation decks, lattice spire & gold beacon
         const IRON = BLOCKS.IRON_ORE;

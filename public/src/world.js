@@ -291,6 +291,10 @@ export class World {
     this.chunks.clear();
   }
 
+  reloadAllChunks() {
+    return this.resetToInitialTerrain();
+  }
+
   queueRemesh(chunk) {
     if (chunk) {
       chunk.isDirty = true;

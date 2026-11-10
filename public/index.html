@@ -136,7 +136,7 @@
         <span class="weapon-btn-icon" id="weapon-shoot-icon">🔫</span>
         <span class="weapon-btn-label" id="weapon-shoot-label">DISPARAR</span>
       </button>
-      <button id="btn-weapon-salvo" class="weapon-hud-btn mc-btn salvo-badge-btn" type="button" title="Salva de Misiles: 1x / 5x / 20x / 50x / 200x">
+      <button id="btn-weapon-salvo" class="weapon-hud-btn mc-btn salvo-badge-btn" type="button" title="Salva de Misiles: 1x / 5x / 10x / 15x / 20x / 30x">
         <span class="weapon-btn-icon">🚀</span>
         <span id="weapon-salvo-hud-label" class="weapon-btn-label">x1</span>
       </button>
@@ -619,8 +619,9 @@
     <div class="android-perm-card">
       <div class="android-perm-icon">📁📱</div>
       <h3>Permiso de Acceso a Archivos (Android)</h3>
-      <p>¿Permitir que <strong>Voxel Realms</strong> acceda a los archivos y almacenamiento de tu dispositivo para poder <strong>guardar (descargar)</strong> y <strong>cargar (subir)</strong> tus mapas personalizados <code>.vrealm.json</code> en Modo Offline?</p>
+      <p>¿Permitir que <strong>Voxel Realms</strong> acceda a los archivos, fotos y almacenamiento de tu dispositivo para poder <strong>guardar y cargar mapas</strong> <code>.vrealm.json</code> y <strong>subir fotos para carteles gigantes</strong>?</p>
       <div class="android-perm-perms-list">
+        <span>• READ_MEDIA_IMAGES (Subir fotos y anuncios a carteles)</span>
         <span>• READ_EXTERNAL_STORAGE (Leer mapas guardados)</span>
         <span>• WRITE_EXTERNAL_STORAGE (Guardar tu mapa offline)</span>
       </div>
@@ -698,16 +699,16 @@
             </div>
           </div>
 
-          <!-- Nueva Función Avanzada: Ráfagas y Salvas de Misiles (1 a 200) -->
+          <!-- Nueva Función Avanzada: Ráfagas y Salvas de Misiles (1 a 30) -->
           <div class="weapons-salvo-config">
             <div class="weapons-config-header" style="margin-top: 12px;">
               <span class="weapons-config-icon">🚀</span>
-              <span class="weapons-config-title">Salvas de Misiles (1 a 200 por disparo)</span>
+              <span class="weapons-config-title">Salvas de Misiles (1 a 30 por disparo)</span>
             </div>
 
             <div class="settings-group mc-slider-group">
               <label for="weapon-salvo-count">Cantidad de Misiles por Disparo: <strong id="salvo-count-val">1 misil</strong></label>
-              <input type="range" id="weapon-salvo-count" class="mc-range" min="1" max="200" step="1" value="1">
+              <input type="range" id="weapon-salvo-count" class="mc-range" min="1" max="30" step="1" value="1">
             </div>
 
             <div class="settings-group">
@@ -759,6 +760,21 @@
             <option value="ultra">Ultra (Máximo Realismo)</option>
             <option value="boost">🚀 Modo BOOST (Ultra Distancia + Máximo FPS)</option>
           </select>
+        </div>
+
+        <!-- Photo Upload for Giant Billboard Ads -->
+        <div class="settings-group photo-upload-card" id="photos-upload-config">
+          <div class="photo-upload-header">
+            <span class="photo-upload-title">📸 Subir Fotos / Anuncios (Cartel Gigante)</span>
+            <span class="photo-upload-badge" id="photo-upload-count">0 fotos</span>
+          </div>
+          <p class="photo-upload-desc">Sube fotos de tu galería para proyectarlas en el <strong>Cartel Gigante</strong> de la ciudad. Si subes varias fotos, cambiarán automáticamente cada pocos segundos.</p>
+          <div class="photo-upload-actions">
+            <button id="btn-select-photos" type="button" class="mc-btn photo-upload-btn">📁 Seleccionar Fotos</button>
+            <input type="file" id="billboard-photo-input" accept="image/*" multiple style="display:none;">
+            <button id="btn-clear-photos" type="button" class="mc-btn photo-clear-btn" title="Eliminar fotos subidas">🗑️ Vaciar Fotos</button>
+          </div>
+          <div id="photo-preview-grid" class="photo-preview-grid"></div>
         </div>
 
         <div class="pause-menu-grid">

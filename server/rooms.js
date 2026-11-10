@@ -6,6 +6,10 @@ const {
   sanitizeName,
   sanitizeChat,
   isValidBlockModify,
+  isValidBlockModifyBatch,
+  isValidAnimalSpawn,
+  isValidBillboardCreate,
+  isValidBillboardRemove,
   isValidMove,
   validateTeleportPacket,
   isValidWeaponShoot,
@@ -47,13 +51,36 @@ class RoomManager {
     this.tickInterval = setInterval(() => this.tick(), 50);
   }
 
-  getOrCreateRoom(roomId = 'main') {
+  getOrCreateRoom(roomId = 'main', name = null, pin = null) {
     if (!this.rooms.has(roomId)) {
+      const meta = this.roomMetadata.get(roomId);
+      const roomName = name || meta?.name || (roomId === 'main' ? 'Lobby Principal' : `Sala ${roomId}`);
+      const roomPin = (pin !== null && pin !== undefined) ? pin : (meta?.pin || null);
+      const isPrivate = Boolean(roomPin) || (meta ? Boolean(meta.isPrivate) : false);
+
       this.rooms.set(roomId, {
         id: roomId,
+        name: roomName,
+        pin: roomPin,
+        isPrivate: isPrivate,
         gameState: new GameState(this.defaultSeed, this.maxPlayers),
         clients: new Map() // ws -> playerId
       });
+      if (!this.roomMetadata.has(roomId)) {
+        this.roomMetadata.set(roomId, {
+          id: roomId,
+          name: roomName,
+          isPrivate: isPrivate,
+          pin: roomPin
+        });
+      }
+    } else {
+      const room = this.rooms.get(roomId);
+      if (name && (!room.name || room.name === roomId)) room.name = name;
+      if (pin && !room.pin) {
+        room.pin = pin;
+        room.isPrivate = true;
+      }
     }
     return this.rooms.get(roomId);
   }
@@ -236,6 +263,22 @@ class RoomManager {
       case MSG.SWITCH_ROOM:
         this.handleSwitchRoom(ws, meta, data);
         break;
+
+      case MSG.BLOCK_MODIFY_BATCH:
+        this.handleBlockModifyBatch(ws, meta, data);
+        break;
+
+      case MSG.ANIMAL_SPAWN:
+        this.handleAnimalSpawn(ws, meta, data);
+        break;
+
+      case MSG.BILLBOARD_CREATE:
+        this.handleBillboardCreate(ws, meta, data);
+        break;
+
+      case MSG.BILLBOARD_REMOVE:
+        this.handleBillboardRemove(ws, meta, data);
+        break;
     }
   }
 
@@ -244,8 +287,35 @@ class RoomManager {
     if (!roomId || permanent.includes(roomId)) return;
     const room = this.rooms.get(roomId);
     if (room && room.clients.size === 0) {
+      if (room.gameState && room.gameState.animalTimers) {
+        for (const timer of room.gameState.animalTimers.values()) {
+          clearTimeout(timer);
+        }
+        room.gameState.animalTimers.clear();
+      }
       this.rooms.delete(roomId);
       this.roomMetadata.delete(roomId);
+      this.broadcastRoomList();
+    }
+  }
+
+  broadcastRoomList() {
+    const list = [];
+    for (const [id, meta] of this.roomMetadata.entries()) {
+      const room = this.rooms.get(id);
+      const playerCount = room ? room.clients.size : 0;
+      list.push({
+        id,
+        name: meta.name || id,
+        isPrivate: !!meta.isPrivate,
+        playerCount
+      });
+    }
+    const payload = JSON.stringify({ type: MSG.ROOM_LIST_RESPONSE, data: { rooms: list } });
+    for (const clientWs of this.socketMeta.keys()) {
+      if (clientWs && clientWs.readyState === 1) {
+        try { clientWs.send(payload); } catch (_) {}
+      }
     }
   }
 
@@ -287,6 +357,8 @@ class RoomManager {
       }
     }
 
+    if (meta.roomId === targetId) return;
+
     // Leave current room
     const currentRoomId = meta.roomId || 'main';
     const currentRoom = this.rooms.get(currentRoomId);
@@ -303,17 +375,35 @@ class RoomManager {
     const newRoom = this.getOrCreateRoom(targetId);
     const cleanName = meta.playerName || 'Explorador';
     const player = newRoom.gameState.addPlayer(meta.id, cleanName);
+    player.isAdmin = Boolean(meta.isAdmin);
+    player.adminEmail = meta.adminEmail || null;
     newRoom.clients.set(ws, meta.id);
 
+    // 1. Confirm room switch so client clears previous avatars/chunks
+    this.send(ws, MSG.SWITCH_ROOM_CONFIRM, { roomId: targetId, roomName: roomMeta ? roomMeta.name : targetId });
+
+    // 2. Send initial state for the new room (deltas, players, animals, billboards)
     const initialState = newRoom.gameState.getInitialState(meta.id);
     this.send(ws, MSG.INIT, {
       id: meta.id,
       player,
       roomId: targetId,
       roomName: roomMeta ? roomMeta.name : targetId,
+      room: {
+        id: targetId,
+        name: roomMeta ? roomMeta.name : targetId,
+        isPrivate: roomMeta ? Boolean(roomMeta.isPrivate) : Boolean(newRoom.isPrivate)
+      },
+      isAdmin: Boolean(meta.isAdmin),
+      adminEmail: meta.adminEmail || null,
       ...initialState
     });
-    this.send(ws, MSG.SWITCH_ROOM_CONFIRM, { roomId: targetId, roomName: roomMeta ? roomMeta.name : targetId });
+
+    if (meta.isAdmin) {
+      this.sendAdminState(ws, newRoom);
+    }
+
+    // 3. Notify other players in the new room
     this.broadcast(newRoom, MSG.PLAYER_JOINED, {
       id: player.id,
       name: player.name,
@@ -323,10 +413,38 @@ class RoomManager {
       weaponsEnabled: !!player.weaponsEnabled,
       joinedAt: player.joinedAt
     }, ws);
+
+    // 4. Broadcast updated room list to all clients
+    this.broadcastRoomList();
   }
 
   handleJoin(ws, meta, data) {
-    const roomId = 'main';
+    let roomId = 'main';
+    const reqRoom = data?.roomId ? String(data.roomId).trim().slice(0, 32) : null;
+    const reqPin = data?.pin ? String(data.pin).trim() : null;
+    const reqRoomName = data?.roomName ? String(data.roomName).trim().slice(0, 40) : null;
+
+    if (reqRoom) {
+      if (this.roomMetadata.has(reqRoom)) {
+        const existingMeta = this.roomMetadata.get(reqRoom);
+        if (existingMeta && existingMeta.isPrivate && existingMeta.pin) {
+          if (reqPin !== existingMeta.pin) {
+            this.send(ws, MSG.ERROR, { message: 'PIN incorrecto para la sala privada.' });
+            return;
+          }
+        }
+        roomId = reqRoom;
+      } else {
+        roomId = reqRoom;
+        this.roomMetadata.set(roomId, {
+          id: roomId,
+          name: reqRoomName || `Sala ${roomId}`,
+          isPrivate: !!reqPin,
+          pin: reqPin || null
+        });
+      }
+    }
+
     const room = this.getOrCreateRoom(roomId);
 
     const rawEmail = (typeof data?.email === 'string') ? data.email.trim() : '';
@@ -379,14 +497,28 @@ class RoomManager {
     room.clients.set(ws, meta.id);
 
     // Send initial world state & existing players to the new player
+    const roomMeta = this.roomMetadata.get(roomId);
+    if (roomId !== 'main') {
+      this.send(ws, MSG.SWITCH_ROOM_CONFIRM, { roomId, roomName: roomMeta ? roomMeta.name : roomId });
+    }
+
     const initialState = room.gameState.getInitialState(meta.id);
     this.send(ws, MSG.INIT, {
       id: meta.id,
       player,
+      roomId,
+      roomName: roomMeta ? roomMeta.name : roomId,
+      room: {
+        id: roomId,
+        name: roomMeta ? roomMeta.name : roomId,
+        isPrivate: roomMeta ? Boolean(roomMeta.isPrivate) : Boolean(room.isPrivate)
+      },
       isAdmin,
       adminEmail: normAdminEmail,
       ...initialState
     });
+
+    this.broadcastRoomList();
 
     if (isAdmin) {
       this.sendAdminState(ws, room);
@@ -807,6 +939,94 @@ class RoomManager {
     }
   }
 
+  handleBlockModifyBatch(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidBlockModifyBatch(data)) return;
+
+    const validDeltas = [];
+    for (const [x, y, z, blockType] of data.deltas) {
+      const rx = Math.round(x);
+      const ry = Math.round(y);
+      const rz = Math.round(z);
+      if (ry < 0 || ry >= 128) continue;
+      if (!Number.isInteger(blockType) || blockType < 0 || blockType > 50) continue;
+      // Military Base & Bunker Protected Perimeter Shield: block edits prohibited unless main admin
+      if ((isInsideAirBase(rx, ry, rz) || isInsideBunker(rx, ry, rz)) && meta.adminEmail !== ADMIN_EMAIL) {
+        continue;
+      }
+      const key = `${rx},${ry},${rz}`;
+      room.gameState.blockDeltas.set(key, blockType);
+      validDeltas.push([rx, ry, rz, blockType]);
+    }
+
+    if (validDeltas.length > 0) {
+      // Broadcast validated block batch to other players in the room
+      this.broadcast(room, MSG.BLOCK_MODIFY_BATCH, { deltas: validDeltas, playerId: meta.id }, ws);
+    }
+  }
+
+  handleAnimalSpawn(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidAnimalSpawn(data)) return;
+
+    const species = data.species || data.type || 'sheep';
+    const x = Number(data.x) || 0;
+    const y = Number(data.y) || 25;
+    const z = Number(data.z) || 0;
+
+    if ((isInsideAirBase(x, y, z) || isInsideBunker(x, y, z)) && meta.adminEmail !== ADMIN_EMAIL) {
+      return;
+    }
+
+    if (species === 'pack_mixed') {
+      const list = ['sheep', 'cow', 'pig', 'horse', 'wolf', 'chicken'];
+      for (let i = 0; i < list.length; i++) {
+        const ang = (i / list.length) * Math.PI * 2;
+        const ax = x + Math.cos(ang) * 2.5;
+        const az = z + Math.sin(ang) * 2.5;
+        room.gameState.spawnAnimal(list[i], ax, y, az);
+      }
+    } else {
+      room.gameState.spawnAnimal(species, x, y, z);
+    }
+
+    this.broadcast(room, MSG.ANIMALS_UPDATE, {
+      animals: room.gameState.getAnimalsSnapshot()
+    });
+  }
+
+  handleBillboardCreate(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidBillboardCreate(data)) return;
+
+    const x = Number(data.x) || 0;
+    const y = Number(data.y) || 25;
+    const z = Number(data.z) || 0;
+
+    if ((isInsideAirBase(x, y, z) || isInsideBunker(x, y, z)) && meta.adminEmail !== ADMIN_EMAIL) {
+      return;
+    }
+
+    const billboard = room.gameState.addBillboard(data);
+    if (billboard) {
+      this.broadcast(room, MSG.BILLBOARD_CREATE, billboard, ws);
+    }
+  }
+
+  handleBillboardRemove(ws, meta, data) {
+    if (!meta.roomId) return;
+    const room = this.rooms.get(meta.roomId);
+    if (!room || !isValidBillboardRemove(data)) return;
+
+    const removed = room.gameState.removeBillboard(data.id);
+    if (removed) {
+      this.broadcast(room, MSG.BILLBOARD_REMOVE, { id: data.id }, ws);
+    }
+  }
+
   handleChat(ws, meta, data) {
     if (!meta.roomId) return;
     const room = this.rooms.get(meta.roomId);
@@ -962,6 +1182,7 @@ class RoomManager {
           });
         }
         this.cleanupEmptyRoom(meta.roomId);
+        this.broadcastRoomList();
       }
     }
 
@@ -1017,7 +1238,8 @@ class RoomManager {
     );
     // Silo salvos are exclusive to the main admin (jsieiragerpe)
     const isSilo = Boolean(data.isSiloLaunch) && isLauncherMainAdmin;
-    const clientCount = Math.min(200, Math.max(1, Math.floor(Number(data.count) || Number(data.salvoCount) || 1)));
+    const maxAllowed = isSilo ? SILO_COUNT : 30;
+    const clientCount = Math.min(maxAllowed, Math.max(1, Math.floor(Number(data.count) || Number(data.salvoCount) || 1)));
     const missileCount = isSilo ? Math.min(SILO_COUNT, Math.max(1, clientCount)) : clientCount;
     const missilePower = isSilo ? 8 : 4; // 2X power for silo missiles!
     const flameColor = Number.isFinite(data.flameColor) ? data.flameColor : 0xff6600;

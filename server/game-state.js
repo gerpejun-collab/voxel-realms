@@ -10,6 +10,7 @@ class GameState {
     this.animals = new Map(); // animalId -> { id, type, x, y, z, yaw, state }
     this.animalTimers = new Map(); // animalId -> Timeout (kept off animal objects to prevent circular JSON!)
     this.nextAnimalId = 1;
+    this.billboards = new Map(); // billboardId -> { id, x, y, z, rotation, photos }
     this.startTime = Date.now();
     this.dayDurationSeconds = 600; // 10 minute full day/night cycle
     this.animalTypes = ['sheep', 'pig', 'cow', 'chicken', 'wolf', 'horse'];
@@ -460,8 +461,50 @@ class GameState {
     }
     this.animalTimers.clear();
     this.animals.clear();
+    this.billboards.clear();
     this.nextAnimalId = 1;
     this.initAmbientAnimals();
+  }
+
+  spawnAnimal(type, x, y, z) {
+    const id = `anim_${this.nextAnimalId++}`;
+    const anim = {
+      id,
+      type: type || 'sheep',
+      x: Math.round(Number(x) * 100) / 100,
+      y: Math.round(Number(y) * 100) / 100,
+      z: Math.round(Number(z) * 100) / 100,
+      yaw: (Math.random() * Math.PI * 2),
+      state: 'walk'
+    };
+    this.animals.set(id, anim);
+    return anim;
+  }
+
+  addBillboard(data) {
+    if (!data) return null;
+    const id = data.id || `bb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const billboard = {
+      id,
+      x: Number(data.x) || 0,
+      y: Number(data.y) || 25,
+      z: Number(data.z) || 0,
+      rotation: Number(data.rotation) || 0,
+      photos: Array.isArray(data.photos) ? data.photos.slice(0, 10) : [],
+      createdAt: Date.now()
+    };
+    this.billboards.set(id, billboard);
+    return billboard;
+  }
+
+  removeBillboard(id) {
+    if (!id || !this.billboards.has(id)) return false;
+    this.billboards.delete(id);
+    return true;
+  }
+
+  getBillboardsSnapshot() {
+    return Array.from(this.billboards.values());
   }
 
   /**
@@ -578,6 +621,7 @@ class GameState {
       players: playerList,
       deltas: deltas,
       animals: this.getAnimalsSnapshot(),
+      billboards: this.getBillboardsSnapshot(),
       timeOfDay: this.getTimeOfDay()
     };
   }

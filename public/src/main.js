@@ -16,6 +16,7 @@ import { StrategicBomber } from './bomber.js';
 import { BunkerManager } from './bunker.js';
 import { TacticalRadar } from './radar.js';
 import { SandboxManager } from './sandbox.js';
+import { BillboardManager } from './billboard.js';
 import { Avatar } from './avatar.js';
 import { BLOCKS } from './blocks.js';
 import { sound } from './audio.js';
@@ -133,6 +134,18 @@ class VoxelRealmsApp {
     );
     if (typeof this.ui.setSandboxManager === 'function') {
       this.ui.setSandboxManager(this.sandboxManager);
+    }
+
+    // 7c. Initialize Giant Billboard & Advertising Screen Manager
+    this.billboardManager = new BillboardManager(this.sceneManager.scene, this.world);
+    if (this.multiplayer) {
+      this.multiplayer.billboardManager = this.billboardManager;
+    }
+    if (this.sandboxManager) {
+      this.sandboxManager.billboardManager = this.billboardManager;
+    }
+    if (this.ui) {
+      this.ui.setBillboardManager(this.billboardManager);
     }
 
     // Connect Multiplayer Animal & Vehicle Synchronizer
@@ -612,6 +625,9 @@ class VoxelRealmsApp {
     }
     if (this.bunkerManager) {
       this.bunkerManager.update(dt, this.physics.pos);
+    }
+    if (this.billboardManager) {
+      this.billboardManager.update(dt);
     }
 
     // 6. Ambient Voxel Animals, Rare NPCs & Highway Traffic

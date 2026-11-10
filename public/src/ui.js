@@ -379,6 +379,7 @@ export class UIManager {
     this.initMobileControls();
     this.initPlayerList();
     this.initBuilderStudio();
+    this.initPhotoUpload();
   }
 
   buildHighlightBox() {
@@ -391,6 +392,17 @@ export class UIManager {
 
   setVehicleManager(vm) {
     this.vehicleManager = vm;
+  }
+
+  setBillboardManager(bm) {
+    this.billboardManager = bm;
+    if (this.billboardManager && Array.isArray(this.uploadedPhotos)) {
+      this.billboardManager.saveStoredPhotos(this.uploadedPhotos);
+    }
+  }
+
+  getUploadedPhotos() {
+    return Array.isArray(this.uploadedPhotos) ? [...this.uploadedPhotos] : [];
   }
 
   updatePlayerCountBadge(count) {
@@ -3183,8 +3195,8 @@ export class UIManager {
           return;
         }
         if (this.multiplayer && typeof this.multiplayer.switchRoom === 'function') {
-          this.multiplayer.switchRoom(roomId, pin);
           this.showNotification(`🔄 Conectando a sala: ${roomId}...`);
+          this.multiplayer.switchRoom(roomId, pin);
           toggleRooms(false);
         }
       });
@@ -3204,31 +3216,19 @@ export class UIManager {
           this.showNotification('⚠️ Elige un ID único para la sala.');
           return;
         }
-        if (this.multiplayer) {
-          if (!this.multiplayer.connected || this.multiplayer.isOfflineMode) {
-            this.showNotification('🌐 Conectando al servidor multijugador...');
-            this.multiplayer.isOfflineMode = false;
-            const host = window.location.host;
-            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            this.multiplayer.connect(`${proto}//${host}`);
-            const check = setInterval(() => {
-              if (this.multiplayer.connected) {
-                clearInterval(check);
-                this.multiplayer.switchRoom(roomId, pin, roomName);
-                this.showNotification(`✨ Sala creada: ${roomName}`);
-              }
-            }, 120);
-            toggleRooms(false);
-            return;
-          }
+        if (this.multiplayer && typeof this.multiplayer.switchRoom === 'function') {
+          this.showNotification(`✨ Creando sala: ${roomName}...`);
           this.multiplayer.switchRoom(roomId, pin, roomName);
-          this.showNotification(`✨ Sala creada: ${roomName}`);
           toggleRooms(false);
         }
       });
     }
 
     if (this.multiplayer) {
+      this.multiplayer.onError = (errMsg) => {
+        this.showNotification(`⚠️ ${errMsg}`);
+      };
+
       this.multiplayer.onRoomSwitch = (data) => {
         if (currentRoomNameElem) {
           currentRoomNameElem.textContent = data.roomName || data.roomId || 'Sala Principal';
@@ -3455,6 +3455,155 @@ export class UIManager {
         }
       });
     }
+  }
+
+  /**
+   * Photo Upload & Advertising System for Giant Billboards
+   */
+  initPhotoUpload() {
+    this.uploadedPhotos = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('voxel_billboard_photos');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) this.uploadedPhotos = parsed;
+        }
+      }
+    } catch (_) {}
+
+    const fileInput = document.getElementById('billboard-photo-input');
+    const selectBtn = document.getElementById('btn-select-photos');
+    const clearBtn = document.getElementById('btn-clear-photos');
+    const previewGrid = document.getElementById('photo-preview-grid');
+    const countBadge = document.getElementById('photo-upload-count');
+
+    if (selectBtn) {
+      selectBtn.addEventListener('click', async () => {
+        sound.playClick();
+        if (this.sandboxManager && typeof this.sandboxManager.requestAndroidStoragePermissions === 'function') {
+          await this.sandboxManager.requestAndroidStoragePermissions(false);
+        }
+        if (fileInput) {
+          fileInput.value = '';
+          fileInput.click();
+        }
+      });
+    }
+
+    const updateUI = () => {
+      if (countBadge) {
+        countBadge.textContent = `${this.uploadedPhotos.length} foto${this.uploadedPhotos.length === 1 ? '' : 's'}`;
+      }
+      if (!previewGrid) return;
+      previewGrid.innerHTML = '';
+      this.uploadedPhotos.forEach((dataUrl, idx) => {
+        const item = document.createElement('div');
+        item.className = 'photo-thumb-item';
+
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.alt = `Foto ${idx + 1}`;
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'photo-thumb-remove';
+        delBtn.innerHTML = '×';
+        delBtn.title = 'Eliminar';
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.uploadedPhotos.splice(idx, 1);
+          this.savePhotos();
+          updateUI();
+        });
+
+        item.appendChild(img);
+        item.appendChild(delBtn);
+        previewGrid.appendChild(item);
+      });
+    };
+
+    this.savePhotos = () => {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('voxel_billboard_photos', JSON.stringify(this.uploadedPhotos));
+        }
+      } catch (_) {}
+      if (this.billboardManager && typeof this.billboardManager.saveStoredPhotos === 'function') {
+        this.billboardManager.saveStoredPhotos(this.uploadedPhotos);
+      }
+    };
+
+    if (fileInput) {
+      fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        for (const file of files) {
+          if (!file.type || !file.type.startsWith('image/')) continue;
+          try {
+            const dataUrl = await this.readAndResizeImage(file, 1024, 768);
+            if (dataUrl) {
+              this.uploadedPhotos.push(dataUrl);
+            }
+          } catch (err) {
+            console.error('Error processing billboard photo:', err);
+          }
+        }
+
+        // Limit to max 12 photos to protect storage
+        if (this.uploadedPhotos.length > 12) {
+          this.uploadedPhotos = this.uploadedPhotos.slice(-12);
+        }
+
+        this.savePhotos();
+        updateUI();
+        this.showNotification(`📸 ${files.length} foto(s) guardada(s) para los carteles publicitarios`);
+        fileInput.value = '';
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        if (this.uploadedPhotos.length === 0) return;
+        this.uploadedPhotos = [];
+        this.savePhotos();
+        updateUI();
+        this.showNotification('🗑️ Se han eliminado todas las fotos de anuncios');
+      });
+    }
+
+    updateUI();
+  }
+
+  readAndResizeImage(file, maxWidth = 1024, maxHeight = 768) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (readerEvent) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+          } else {
+            resolve(readerEvent.target.result);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = readerEvent.target.result;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
   }
 
 }

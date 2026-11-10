@@ -23,6 +23,10 @@ const MSG = {
   BUNKER_MANUAL_INTERCEPT: 'bunker_manual_intercept',
   ROOM_LIST: 'room_list',
   SWITCH_ROOM: 'switch_room',
+  BLOCK_MODIFY_BATCH: 'block_modify_batch',
+  ANIMAL_SPAWN: 'animal_spawn',
+  BILLBOARD_CREATE: 'billboard_create',
+  BILLBOARD_REMOVE: 'billboard_remove',
 
   // Server -> Client
   INIT: 'init',
@@ -306,6 +310,37 @@ function isValidMissileLaunch(data) {
   return hasTargetId || hasTargetPos;
 }
 
+function isValidBlockModifyBatch(data) {
+  if (!data || !Array.isArray(data.deltas) || data.deltas.length === 0 || data.deltas.length > 20000) return false;
+  return true;
+}
+
+function isValidAnimalSpawn(data) {
+  if (!data || typeof data !== 'object') return false;
+  const validSpecies = ['sheep', 'cow', 'pig', 'horse', 'wolf', 'chicken', 'pack_mixed'];
+  if (!validSpecies.includes(data.species || data.type)) return false;
+  if (typeof data.x !== 'number' || typeof data.y !== 'number' || typeof data.z !== 'number') return false;
+  return true;
+}
+
+function isValidBillboardCreate(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (typeof data.x !== 'number' || typeof data.y !== 'number' || typeof data.z !== 'number') return false;
+  if (data.photos && Array.isArray(data.photos)) {
+    if (data.photos.length > 20) return false;
+    for (const p of data.photos) {
+      if (typeof p !== 'string' || p.length > 2000000) return false;
+    }
+  }
+  return true;
+}
+
+function isValidBillboardRemove(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (typeof data.id !== 'string' || data.id.length === 0 || data.id.length > 64) return false;
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     MSG,
@@ -316,6 +351,10 @@ if (typeof module !== 'undefined' && module.exports) {
     sanitizeName,
     sanitizeChat,
     isValidBlockModify,
+    isValidBlockModifyBatch,
+    isValidAnimalSpawn,
+    isValidBillboardCreate,
+    isValidBillboardRemove,
     isValidMove,
     validateTeleportPacket,
     isValidWeaponShoot,

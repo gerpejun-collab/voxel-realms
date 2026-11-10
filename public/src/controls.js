@@ -458,7 +458,7 @@ export class Controls {
 
     // Automatic Continuous Burst Fire & Cadence Settings
     this.autoFireEnabled = false;
-    // Missile Salvo & Barrage Parameters (1 to 200 Missiles)
+    // Missile Salvo & Barrage Parameters (1 to 30 Missiles)
     this.missileSalvoCount = 1;
     this.missileSalvoMode = 'sequential'; // 'sequential' | 'pairs' | 'simultaneous'
     this.missileSalvoDelay = 0.25; // in seconds (0.2s - 1.0s)
@@ -1015,7 +1015,7 @@ export class Controls {
   }
 
   setSalvoCount(count) {
-    const val = Math.min(200, Math.max(1, parseInt(count, 10) || 1));
+    const val = Math.min(30, Math.max(1, parseInt(count, 10) || 1));
     this.missileSalvoCount = val;
 
     const badge = document.getElementById('weapon-salvo-hud-label');
@@ -1039,7 +1039,7 @@ export class Controls {
   }
 
   cycleMissileSalvo() {
-    const steps = [1, 5, 20, 50, 100, 200];
+    const steps = [1, 5, 10, 15, 20, 30];
     let next = steps[0];
     for (const s of steps) {
       if (s > (this.missileSalvoCount || 1)) {
@@ -1056,7 +1056,7 @@ export class Controls {
     if (this.activeWeapon !== 'bazooka') {
       this.setWeapon('bazooka');
     }
-    const count = Math.min(200, Math.max(1, this.missileSalvoCount || 1));
+    const count = Math.min(30, Math.max(1, this.missileSalvoCount || 1));
     const mode = this.missileSalvoMode || 'sequential';
     let delayMs = Math.round(Math.max(30, Math.min(1000, (this.missileSalvoDelay || 0.25) * 1000)));
     if (count >= 100) {

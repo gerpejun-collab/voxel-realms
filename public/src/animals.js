@@ -1807,6 +1807,10 @@ export class AnimalManager {
     }
   }
 
+  syncWithServerAnimals(serverList) {
+    return this.syncAnimalsFromServer(serverList);
+  }
+
   /**
    * Synchronize animal states from the authoritative multiplayer server
    */

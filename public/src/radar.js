@@ -14,7 +14,7 @@ export class TacticalRadar {
         count = parseInt(localStorage.getItem('voxel_missile_salvo_count'), 10) || 1;
       } catch (e) {}
     }
-    return Math.min(200, Math.max(1, count));
+    return Math.min(30, Math.max(1, count));
   }
 
   constructor(multiplayer, missileManager) {
@@ -64,7 +64,7 @@ export class TacticalRadar {
           <strong>RADAR TÁCTICO MILITAR (ADMIN)</strong>
         </div>
         <div class="radar-controls">
-          <button id="radar-btn-salvo" class="mc-btn radar-ctrl-btn radar-salvo-btn" type="button" title="Salva de Misiles a lanzar (Haz clic para alternar: 1x / 5x / 20x / 50x / 100x / 200x)">🚀 SALVA: <strong id="radar-salvo-count-label">x1</strong></button>
+          <button id="radar-btn-salvo" class="mc-btn radar-ctrl-btn radar-salvo-btn" type="button" title="Salva de Misiles a lanzar (Haz clic para alternar: 1x / 5x / 10x / 15x / 20x / 30x)">🚀 SALVA: <strong id="radar-salvo-count-label">x1</strong></button>
           <button id="radar-btn-minimize" class="mc-btn radar-ctrl-btn" title="Minimizar">➖</button>
           <button id="radar-btn-close" class="mc-btn radar-ctrl-btn" title="Cerrar">&times;</button>
         </div>

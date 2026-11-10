@@ -4,14 +4,17 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -22,6 +25,7 @@ import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
 
     WebView webView;
+    ValueCallback<Uri[]> filePathCallback;
     static final String PREFS_NAME = "VoxelRealmsPrefsV2";
     static final String KEY_SERVER_URL = "server_url_w9l3";
     // Public production server URL on Render
@@ -89,12 +93,85 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new VoxelAndroidBridge(this), "VoxelAndroid");
         webView.addJavascriptInterface(new VoxelAndroidBridge(this), "Android");
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+                if (MainActivity.this.filePathCallback != null) {
+                    MainActivity.this.filePathCallback.onReceiveValue(null);
+                }
+                MainActivity.this.filePathCallback = filePathCallback;
+                try {
+                    Intent intent = fileChooserParams.createIntent();
+                    startActivityForResult(intent, 2001);
+                    return true;
+                } catch (Exception e) {
+                    try {
+                        Intent fallbackIntent = new Intent(Intent.ACTION_GET_CONTENT);
+                        fallbackIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                        if (fileChooserParams != null && fileChooserParams.getAcceptTypes() != null && fileChooserParams.getAcceptTypes().length > 0 && !fileChooserParams.getAcceptTypes()[0].isEmpty()) {
+                            fallbackIntent.setType(fileChooserParams.getAcceptTypes()[0]);
+                        } else {
+                            fallbackIntent.setType("*/*");
+                        }
+                        if (fileChooserParams != null && fileChooserParams.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                            fallbackIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                        }
+                        startActivityForResult(Intent.createChooser(fallbackIntent, "Seleccionar archivo"), 2001);
+                        return true;
+                    } catch (Exception ex) {
+                        MainActivity.this.filePathCallback = null;
+                        return false;
+                    }
+                }
+            }
+        });
         webView.setWebViewClient(new GameWebViewClient(this));
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 2001) {
+            if (filePathCallback != null) {
+                Uri[] results = null;
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    if (data.getClipData() != null) {
+                        int count = data.getClipData().getItemCount();
+                        results = new Uri[count];
+                        for (int i = 0; i < count; i++) {
+                            results[i] = data.getClipData().getItemAt(i).getUri();
+                        }
+                    } else if (data.getData() != null) {
+                        results = new Uri[]{ data.getData() };
+                    } else if (data.getDataString() != null) {
+                        results = new Uri[]{ Uri.parse(data.getDataString()) };
+                    }
+                }
+                filePathCallback.onReceiveValue(results);
+                filePathCallback = null;
+            }
+        }
+    }
+
     public void requestStoragePermissionsFromSystem() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            java.util.List<String> perms = new java.util.ArrayList<>();
+            if (checkSelfPermission("android.permission.READ_MEDIA_IMAGES") != PackageManager.PERMISSION_GRANTED) {
+                perms.add("android.permission.READ_MEDIA_IMAGES");
+            }
+            if (checkSelfPermission("android.permission.READ_MEDIA_VIDEO") != PackageManager.PERMISSION_GRANTED) {
+                perms.add("android.permission.READ_MEDIA_VIDEO");
+            }
+            if (Build.VERSION.SDK_INT >= 34 && checkSelfPermission("android.permission.READ_MEDIA_VISUAL_USER_SELECTED") != PackageManager.PERMISSION_GRANTED) {
+                perms.add("android.permission.READ_MEDIA_VISUAL_USER_SELECTED");
+            }
+            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+            }
+            if (!perms.isEmpty()) {
+                requestPermissions(perms.toArray(new String[0]), 1001);
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
                     || checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{

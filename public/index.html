@@ -699,16 +699,49 @@
             </div>
           </div>
 
-          <!-- Nueva Función Avanzada: Ráfagas y Salvas de Misiles (1 a 30) -->
-          <div class="weapons-salvo-config">
-            <div class="weapons-config-header" style="margin-top: 12px;">
+          <!-- Ráfagas de Armas Personales: Bazooka, Fusil / Escopeta, Plasma (1 a 500 Disparos) -->
+          <div class="weapons-burst-config" style="margin-top: 14px; padding: 12px; background: rgba(0, 0, 0, 0.28); border: 2px solid #ea580c; border-radius: 4px;">
+            <div class="weapons-config-header">
+              <span class="weapons-config-icon">⚡</span>
+              <span class="weapons-config-title" style="color: #fb923c; font-weight: 800;">Ráfagas de Armas (Bazooka, Fusil, Plasma): 1 a 500</span>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-burst-count">Cantidad de Disparos por Ráfaga: <strong id="weapon-burst-val">1 disparo</strong></label>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="range" id="weapon-burst-count" class="mc-range" min="1" max="500" step="1" value="1" style="flex:1;">
+                <input type="number" id="weapon-burst-count-num" class="mc-input-num" min="1" max="500" value="1" style="width: 70px; padding: 4px 6px; background: #11141c; color: #fbbf24; border: 2px solid #475569; font-weight: bold; text-align: center;">
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <label for="weapon-burst-mode">Modo de Ráfaga de Armas:</label>
+              <select id="weapon-burst-mode" class="mc-select">
+                <option value="sequential" selected>Tandas seguidas (uno a uno con cadencia)</option>
+                <option value="pairs">De par en par (2 a 2 en ráfaga)</option>
+                <option value="simultaneous">Torrente simultáneo (ráfaga instantánea)</option>
+              </select>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-burst-delay">Intervalo entre Disparos: <strong id="weapon-burst-delay-val">0.08 seg</strong></label>
+              <input type="range" id="weapon-burst-delay" class="mc-range" min="0.02" max="0.5" step="0.01" value="0.08">
+            </div>
+          </div>
+
+          <!-- Salvas de Misiles Potentes Teledirigidos / Radar (1 a 30) -->
+          <div class="weapons-salvo-config" style="margin-top: 14px; padding: 12px; background: rgba(0, 0, 0, 0.28); border: 2px solid #dc2626; border-radius: 4px;">
+            <div class="weapons-config-header">
               <span class="weapons-config-icon">🚀</span>
-              <span class="weapons-config-title">Salvas de Misiles (1 a 30 por disparo)</span>
+              <span class="weapons-config-title" style="color: #f87171; font-weight: 800;">Salvas de Misiles Potentes (Radar y Búnker): 1 a 30</span>
             </div>
 
             <div class="settings-group mc-slider-group">
               <label for="weapon-salvo-count">Cantidad de Misiles por Disparo: <strong id="salvo-count-val">1 misil</strong></label>
-              <input type="range" id="weapon-salvo-count" class="mc-range" min="1" max="30" step="1" value="1">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="range" id="weapon-salvo-count" class="mc-range" min="1" max="30" step="1" value="1" style="flex:1;">
+                <input type="number" id="weapon-salvo-count-num" class="mc-input-num" min="1" max="30" value="1" style="width: 70px; padding: 4px 6px; background: #11141c; color: #f87171; border: 2px solid #475569; font-weight: bold; text-align: center;">
+              </div>
             </div>
 
             <div class="settings-group">

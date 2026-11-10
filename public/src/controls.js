@@ -458,7 +458,14 @@ export class Controls {
 
     // Automatic Continuous Burst Fire & Cadence Settings
     this.autoFireEnabled = false;
-    // Missile Salvo & Barrage Parameters (1 to 30 Missiles)
+    // Handheld Weapons Burst Parameters (Bazooka, Fusil / Escopeta, Plasma): 1 to 500 Disparos
+    this.weaponBurstCount = 1;
+    this.weaponBurstMode = 'sequential'; // 'sequential' | 'pairs' | 'simultaneous'
+    this.weaponBurstDelay = 0.08; // in seconds (0.02s - 0.5s)
+    this.isBurstRunning = false;
+
+    // Tactical Guided Missile Salvo Parameters (Radar, Silos, Misil Táctico): 1 to 30 Missiles
+    this.tacticalMissileSalvoCount = 1;
     this.missileSalvoCount = 1;
     this.missileSalvoMode = 'sequential'; // 'sequential' | 'pairs' | 'simultaneous'
     this.missileSalvoDelay = 0.25; // in seconds (0.2s - 1.0s)
@@ -991,10 +998,11 @@ export class Controls {
             this.stopAutoFire();
             return;
           }
-          if (this.missileSalvoCount > 1) {
-            if (this.activeWeapon !== 'bazooka') {
-              this.setWeapon('bazooka');
+          if (this.weaponBurstCount > 1) {
+            if (!this.isBurstRunning) {
+              this.fireWeaponBurst();
             }
+          } else if (this.missileSalvoCount > 1 && this.activeWeapon === 'bazooka') {
             if (!this.isSalvoRunning) {
               this.fireMissileSalvo();
             }
@@ -1012,6 +1020,156 @@ export class Controls {
       clearInterval(this.autoFireTimer);
       this.autoFireTimer = null;
     }
+  }
+
+  setWeaponBurstCount(count) {
+    const val = Math.min(500, Math.max(1, parseInt(count, 10) || 1));
+    this.weaponBurstCount = val;
+
+    const badge = document.getElementById('weapon-salvo-hud-label');
+    if (badge) badge.textContent = `x${val}`;
+    const slider = document.getElementById('weapon-burst-count');
+    if (slider && parseInt(slider.value, 10) !== val) slider.value = val;
+    const numInput = document.getElementById('weapon-burst-count-num');
+    if (numInput && parseInt(numInput.value, 10) !== val) numInput.value = val;
+    const label = document.getElementById('weapon-burst-val');
+    if (label) label.textContent = `${val} disparo${val > 1 ? 's' : ''}`;
+
+    try { localStorage.setItem('voxel_weapon_burst_count', val); } catch (e) {}
+    return val;
+  }
+
+  cycleWeaponBurst() {
+    const steps = [1, 10, 25, 50, 100, 200, 500];
+    let next = steps[0];
+    for (const s of steps) {
+      if (s > (this.weaponBurstCount || 1)) {
+        next = s;
+        break;
+      }
+    }
+    return this.setWeaponBurstCount(next);
+  }
+
+  fireWeaponBurst() {
+    if (this.isBurstRunning) return;
+    this.isBurstRunning = true;
+    const count = Math.min(500, Math.max(1, this.weaponBurstCount || 1));
+    const mode = this.weaponBurstMode || 'sequential';
+    const weapon = this.activeWeapon || 'rifle';
+
+    // Delay between successive shots in burst: scales down dynamically for large bursts (up to 500)
+    let delayMs = Math.round(Math.max(15, Math.min(500, (this.weaponBurstDelay || 0.08) * 1000)));
+    if (count >= 200) {
+      delayMs = Math.min(delayMs, 20); // 20ms stream for 200-500 shots
+    } else if (count >= 50) {
+      delayMs = Math.min(delayMs, 35); // 35ms stream for 50-200 shots
+    } else if (count >= 10) {
+      delayMs = Math.min(delayMs, 50); // 50ms stream for 10-50 shots
+    }
+
+    if (mode === 'simultaneous') {
+      const spreadFactor = (weapon === 'bazooka') ? 0.16 : 0.06;
+      const immediateCount = Math.min(count, 40);
+      for (let i = 0; i < immediateCount; i++) {
+        const spread = (typeof THREE !== 'undefined' && THREE.Vector3)
+          ? new THREE.Vector3((Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor)
+          : null;
+        this.triggerShoot(true, spread);
+      }
+      if (count <= 40) {
+        this.isBurstRunning = false;
+        return;
+      }
+      let launched = immediateCount;
+      const interval = setInterval(() => {
+        if (!this.weaponsMode || launched >= count) {
+          clearInterval(interval);
+          this.isBurstRunning = false;
+          return;
+        }
+        const burstBatch = Math.min(count - launched, 20);
+        for (let j = 0; j < burstBatch; j++) {
+          const spread = (typeof THREE !== 'undefined' && THREE.Vector3)
+            ? new THREE.Vector3((Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor)
+            : null;
+          this.triggerShoot(true, spread);
+        }
+        launched += burstBatch;
+        if (launched >= count) {
+          clearInterval(interval);
+          this.isBurstRunning = false;
+        }
+      }, 40);
+      return;
+    }
+
+    if (mode === 'pairs') {
+      let launched = 0;
+      const spreadFactor = (weapon === 'bazooka') ? 0.05 : 0.02;
+      const s1 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(-spreadFactor, 0, 0) : null;
+      this.triggerShoot(true, s1);
+      launched++;
+      if (launched < count) {
+        const s2 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(spreadFactor, 0, 0) : null;
+        this.triggerShoot(true, s2);
+        launched++;
+      }
+      if (launched >= count) {
+        this.isBurstRunning = false;
+        return;
+      }
+      const interval = setInterval(() => {
+        if (!this.weaponsMode || launched >= count) {
+          clearInterval(interval);
+          this.isBurstRunning = false;
+          return;
+        }
+        const s1 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(-spreadFactor, (Math.random() - 0.5) * 0.02, 0) : null;
+        this.triggerShoot(true, s1);
+        launched++;
+        if (launched < count) {
+          const s2 = (typeof THREE !== 'undefined' && THREE.Vector3) ? new THREE.Vector3(spreadFactor, (Math.random() - 0.5) * 0.02, 0) : null;
+          this.triggerShoot(true, s2);
+          launched++;
+        }
+        if (launched >= count) {
+          clearInterval(interval);
+          this.isBurstRunning = false;
+        }
+      }, delayMs);
+      return;
+    }
+
+    // Default 'sequential' (rapid continuous stream up to 500)
+    let launched = 0;
+    const spreadFactor = (weapon === 'bazooka') ? 0.04 : 0.015;
+    const initialSpread = (typeof THREE !== 'undefined' && THREE.Vector3)
+      ? new THREE.Vector3((Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor)
+      : null;
+    this.triggerShoot(true, initialSpread);
+    launched++;
+    if (launched >= count) {
+      this.isBurstRunning = false;
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (!this.weaponsMode || launched >= count) {
+        clearInterval(interval);
+        this.isBurstRunning = false;
+        return;
+      }
+      const spread = (typeof THREE !== 'undefined' && THREE.Vector3)
+        ? new THREE.Vector3((Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor, (Math.random() - 0.5) * spreadFactor)
+        : null;
+      this.triggerShoot(true, spread);
+      launched++;
+      if (launched >= count) {
+        clearInterval(interval);
+        this.isBurstRunning = false;
+      }
+    }, delayMs);
   }
 
   setSalvoCount(count) {
@@ -1148,11 +1306,13 @@ export class Controls {
   triggerShoot(force = false, customSpread = null) {
     if (!this.weaponsMode) return null;
 
-    // Check if Bazooka Salvo Barrage should be executed
-    if (this.missileSalvoCount > 1 && !force) {
-      if (this.activeWeapon !== 'bazooka') {
-        this.setWeapon('bazooka');
-      }
+    // Check if Handheld Weapon Burst should be executed (Bazooka, Rifle/Escopeta, Plasma: up to 500)
+    if (this.weaponBurstCount > 1 && !force) {
+      this.fireWeaponBurst();
+      return null;
+    }
+    // Backward compatibility: if missileSalvoCount > 1 and activeWeapon is bazooka
+    if (this.missileSalvoCount > 1 && this.weaponBurstCount <= 1 && !force && this.activeWeapon === 'bazooka') {
       this.fireMissileSalvo();
       return null;
     }

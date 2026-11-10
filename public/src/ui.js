@@ -1890,13 +1890,86 @@ export class UIManager {
       });
     }
 
-    // Weapons Auto-Fire, Cadence & Missile Salvo Config
+    // Weapons Auto-Fire, Cadence & Weapon Burst (1..500) & Missile Salvo (1..30) Config
+    const burstCountSlider = document.getElementById('weapon-burst-count');
+    const burstCountNum = document.getElementById('weapon-burst-count-num');
+    const burstCountLabel = document.getElementById('weapon-burst-val');
+    const burstModeSelect = document.getElementById('weapon-burst-mode');
+    const burstDelaySlider = document.getElementById('weapon-burst-delay');
+    const burstDelayLabel = document.getElementById('weapon-burst-delay-val');
+
     const salvoCountSlider = document.getElementById('weapon-salvo-count');
+    const salvoCountNum = document.getElementById('weapon-salvo-count-num');
     const salvoModeSelect = document.getElementById('weapon-salvo-mode');
     const salvoDelaySlider = document.getElementById('weapon-salvo-delay');
     const salvoCountLabel = document.getElementById('salvo-count-val');
     const salvoDelayLabel = document.getElementById('salvo-delay-val');
     const salvoHudBadge = document.getElementById('weapon-salvo-hud-label');
+
+    // 1. Load Handheld Weapon Burst (1 to 500)
+    try {
+      const savedBurstCount = parseInt(localStorage.getItem('voxel_weapon_burst_count'), 10) || 1;
+      const savedBurstMode = localStorage.getItem('voxel_weapon_burst_mode') || 'sequential';
+      const savedBurstDelay = parseFloat(localStorage.getItem('voxel_weapon_burst_delay')) || 0.08;
+
+      if (this.controls) {
+        this.controls.setWeaponBurstCount(savedBurstCount);
+        this.controls.weaponBurstMode = savedBurstMode;
+        this.controls.weaponBurstDelay = savedBurstDelay;
+      }
+      if (burstCountSlider) burstCountSlider.value = savedBurstCount;
+      if (burstCountNum) burstCountNum.value = savedBurstCount;
+      if (burstCountLabel) burstCountLabel.textContent = `${savedBurstCount} disparo${savedBurstCount > 1 ? 's' : ''}`;
+      if (burstModeSelect) burstModeSelect.value = savedBurstMode;
+      if (burstDelaySlider) burstDelaySlider.value = savedBurstDelay;
+      if (burstDelayLabel) burstDelayLabel.textContent = `${savedBurstDelay.toFixed(2)} seg`;
+    } catch (e) {}
+
+    if (burstCountSlider) {
+      burstCountSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (this.controls && typeof this.controls.setWeaponBurstCount === 'function') {
+          this.controls.setWeaponBurstCount(val);
+        }
+      });
+    }
+
+    if (burstCountNum) {
+      burstCountNum.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val) && this.controls && typeof this.controls.setWeaponBurstCount === 'function') {
+          this.controls.setWeaponBurstCount(val);
+        }
+      });
+    }
+
+    if (burstModeSelect) {
+      burstModeSelect.addEventListener('change', (e) => {
+        sound.playClick();
+        const val = e.target.value;
+        if (this.controls) this.controls.weaponBurstMode = val;
+        try { localStorage.setItem('voxel_weapon_burst_mode', val); } catch (e) {}
+        this.showNotification(`⚡ Modo Ráfaga Armas: ${burstModeSelect.options[burstModeSelect.selectedIndex].text}`);
+      });
+    }
+
+    if (burstDelaySlider) {
+      burstDelaySlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (this.controls) this.controls.weaponBurstDelay = val;
+        if (burstDelayLabel) burstDelayLabel.textContent = `${val.toFixed(2)} seg`;
+        try { localStorage.setItem('voxel_weapon_burst_delay', val); } catch (e) {}
+      });
+    }
+
+    if (salvoCountNum) {
+      salvoCountNum.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val) && this.controls && typeof this.controls.setSalvoCount === 'function') {
+          this.controls.setSalvoCount(val);
+        }
+      });
+    }
 
     try {
       const savedSalvoCount = parseInt(localStorage.getItem('voxel_missile_salvo_count'), 10) || 1;
@@ -1912,6 +1985,15 @@ export class UIManager {
       if (salvoDelaySlider) salvoDelaySlider.value = savedSalvoDelay;
       if (salvoDelayLabel) salvoDelayLabel.textContent = `${savedSalvoDelay.toFixed(2)} seg`;
     } catch (e) {}
+
+        if (salvoCountNum) {
+      salvoCountNum.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val) && this.controls && typeof this.controls.setSalvoCount === 'function') {
+          this.controls.setSalvoCount(val);
+        }
+      });
+    }
 
     if (salvoCountSlider) {
       salvoCountSlider.addEventListener('input', (e) => {
@@ -3359,10 +3441,10 @@ export class UIManager {
     if (btnWeaponSalvo) {
       btnWeaponSalvo.addEventListener('click', () => {
         sound.playClick();
-        if (this.controls && typeof this.controls.cycleMissileSalvo === 'function') {
-          const count = this.controls.cycleMissileSalvo();
-          this.controls.setWeapon('bazooka');
-          this.showNotification(`🚀 Bazooka RPG: Salva de x${count} misiles activada`);
+        if (this.controls && typeof this.controls.cycleWeaponBurst === 'function') {
+          const count = this.controls.cycleWeaponBurst();
+          const weaponName = (this.controls.activeWeapon === 'bazooka') ? 'Bazooka RPG' : ((this.controls.activeWeapon === 'plasma') ? 'Plasma Táctico' : 'Fusil/Escopeta');
+          this.showNotification(`⚡ ${weaponName}: Ráfaga de x${count} disparos activada`);
         }
       });
     }

@@ -1033,14 +1033,20 @@ body.mobile-mode .desktop-only {
    ========================================================================== */
 #hud-quick-actions {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 12px;
+  right: 12px;
   display: flex;
   align-items: center;
   gap: 5px;
-  max-width: calc(100vw - 230px);
+  max-width: calc(100vw - 280px);
+  overflow-x: auto;
+  scrollbar-width: none;
   z-index: 25;
   pointer-events: auto;
+}
+
+#hud-quick-actions::-webkit-scrollbar {
+  display: none;
 }
 
 .hud-action-pill {
@@ -1067,19 +1073,22 @@ body.mobile-mode .desktop-only {
   white-space: nowrap;
 }
 
-@media (max-width: 1440px) {
-  .hud-action-pill:not(.highlight-pill):not(.builder-pill) .hud-pill-txt {
-    display: none;
-  }
-  .hud-action-pill {
-    padding: 6px 8px;
+/* Icon-first responsive design: text visible on hover so top-bar NEVER clips on any screen resolution */
+.hud-action-pill .hud-pill-txt {
+  display: none;
+}
+
+.hud-action-pill:hover .hud-pill-txt {
+  display: inline;
+}
+
+@media (min-width: 1750px) {
+  .hud-action-pill.builder-pill .hud-pill-txt {
+    display: inline;
   }
 }
 
 @media (max-width: 1120px) {
-  .hud-action-pill .hud-pill-txt {
-    display: none;
-  }
   .hud-action-pill {
     padding: 6px 8px;
     width: 32px;
@@ -4324,4 +4333,44 @@ body.mobile-mode .desktop-only {
   font-weight: 800;
   color: #fdba74;
   text-transform: uppercase;
+}
+/* Tactical Radar Coordinate & Landmark Launch Box */
+.radar-coords-launch-box {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.radar-launch-selected-btn {
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid #f87171 !important;
+  border-radius: 4px !important;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+  transition: transform 0.1s, background 0.15s;
+  text-align: center;
+}
+
+.radar-launch-selected-btn:hover {
+  background: linear-gradient(180deg, #dc2626 0%, #991b1b 100%) !important;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.8);
+}
+
+.radar-launch-selected-btn:active {
+  transform: scale(0.96);
+}
+
+.radar-launch-selected-btn.launch-flash {
+  background: #facc15 !important;
+  color: #000000 !important;
+  transform: scale(1.05);
 }

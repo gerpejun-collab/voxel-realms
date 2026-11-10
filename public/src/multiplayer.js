@@ -1007,7 +1007,7 @@ export class MultiplayerClient {
     return this.sendAdminResetServer();
   }
 
-  sendAdminLaunchMissile(targetPlayerId, origin = null, yaw = null, launchType = null, count = null) {
+  sendAdminLaunchMissile(targetPlayerId, origin = null, yaw = null, launchType = null, count = null, targetPos = null, mode = null, delay = null) {
     const lType = launchType || ((this.physics && this.physics.pos && this.physics.pos.y > 28) ? 'air' : 'land');
     let salvoCount = 1;
     if (typeof count === 'number') {
@@ -1021,48 +1021,76 @@ export class MultiplayerClient {
     }
     salvoCount = Math.min(200, Math.max(1, salvoCount));
 
+    const salvoMode = mode || this.controls?.missileSalvoMode || (typeof localStorage !== 'undefined' ? localStorage.getItem('voxel_missile_salvo_mode') : null) || 'sequential';
+    const salvoDelay = (typeof delay === 'number') ? delay : (this.controls?.missileSalvoDelay || (typeof localStorage !== 'undefined' ? parseFloat(localStorage.getItem('voxel_missile_salvo_delay')) : null) || 0.25);
+
     if (!this.connected || this.isOfflineMode) {
       // Offline fallback: spawn missiles locally via missileManager
       if (this.missileManager && typeof this.missileManager.spawnMissile === 'function') {
-        const streamInterval = salvoCount >= 100 ? 35 : (salvoCount >= 20 ? 65 : 120);
+        const pStart = origin || (this.physics && this.physics.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : [0, 25, 0]);
+        let tgtPos = targetPos || [0, 25, 0];
+        let tgtName = 'Objetivo';
+        if (targetPlayerId && this.playerDirectory && this.playerDirectory.has(targetPlayerId)) {
+          const tp = this.playerDirectory.get(targetPlayerId);
+          if (tp && Array.isArray(tp.pos)) tgtPos = tp.pos;
+          if (tp && tp.name) tgtName = tp.name;
+        } else if (targetPos) {
+          tgtName = `Coordenadas (${Math.round(targetPos[0])}, ${Math.round(targetPos[2])})`;
+        }
+
+        // Cadena de misiles continua con intervalo visible (nunca todos de golpe)
+        const userDelay = Math.max(0.12, Math.min(1.0, Number(salvoDelay) || 0.25));
+        const streamInterval = (salvoMode === 'pairs')
+          ? Math.max(180, Math.round(userDelay * 1000))
+          : ((salvoCount >= 100) ? Math.max(85, Math.min(220, Math.round(userDelay * 650))) : Math.max(140, Math.round(userDelay * 1000)));
+
         for (let i = 0; i < salvoCount; i++) {
           const mId = 'local_msl_' + Date.now() + '_' + i;
-          const pStart = origin || (this.physics && this.physics.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : [0, 25, 0]);
           const spreadAngle = (i / salvoCount) * Math.PI * 2;
-          const spreadRadius = salvoCount > 1 ? Math.min(3.5, 0.4 + (i * 0.05)) : 0;
+          const spreadRadius = salvoCount > 1 ? Math.min(8.0, 0.4 + (i * 0.06)) : 0;
           const mPos = [pStart[0] + Math.cos(spreadAngle) * spreadRadius, pStart[1], pStart[2] + Math.sin(spreadAngle) * spreadRadius];
-          
-          let tgtPos = [0, 25, 0];
-          let tgtName = 'Objetivo';
-          if (this.playerDirectory && this.playerDirectory.has(targetPlayerId)) {
-            const tp = this.playerDirectory.get(targetPlayerId);
-            if (tp && Array.isArray(tp.pos)) tgtPos = tp.pos;
-            if (tp && tp.name) tgtName = tp.name;
-          }
 
-          const delay = (i === 0) ? 0 : (i * streamInterval);
-          setTimeout(() => {
+          const fireDelay = (salvoMode === 'pairs')
+            ? Math.floor(i / 2) * streamInterval
+            : (i * streamInterval);
+
+          if (fireDelay === 0) {
             this.missileManager.spawnMissile({
               missileId: mId,
               targetPlayerId,
-              targetName,
+              targetName: tgtName,
               targetPos: tgtPos,
               startPos: mPos,
               power: 4,
               launchType: lType
             });
-          }, delay);
+          } else {
+            setTimeout(() => {
+              this.missileManager.spawnMissile({
+                missileId: mId,
+                targetPlayerId,
+                targetName: tgtName,
+                targetPos: tgtPos,
+                startPos: mPos,
+                power: 4,
+                launchType: lType
+              });
+            }, fireDelay);
+          }
         }
       }
       return;
     }
 
     this.send('admin_launch_missile', {
-      targetPlayerId,
+      targetPlayerId: targetPlayerId || null,
+      targetPos: targetPos || null,
       origin: origin || (this.physics && this.physics.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : null),
       yaw: (typeof yaw === 'number') ? yaw : (this.controls ? this.controls.yaw : 0),
       launchType: lType,
-      count: salvoCount
+      count: salvoCount,
+      mode: salvoMode,
+      delay: salvoDelay
     });
   }
 

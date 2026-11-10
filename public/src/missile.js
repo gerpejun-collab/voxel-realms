@@ -722,8 +722,12 @@ export class MissileManager {
 
     this.missiles.set(data.missileId, missile);
 
-    if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
-      this.sound.playMissileLaunch();
+    const nowAudio = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    if (!this._lastLaunchSound || (nowAudio - this._lastLaunchSound > 85)) {
+      this._lastLaunchSound = nowAudio;
+      if (this.sound && typeof this.sound.playMissileLaunch === 'function') {
+        this.sound.playMissileLaunch();
+      }
     }
 
     return missile;

@@ -1017,17 +1017,19 @@ export class Controls {
   setSalvoCount(count) {
     const val = Math.min(200, Math.max(1, parseInt(count, 10) || 1));
     this.missileSalvoCount = val;
-    if (val > 1 && this.activeWeapon !== 'bazooka') {
-      this.setWeapon('bazooka');
-    }
+
     const badge = document.getElementById('weapon-salvo-hud-label');
     if (badge) badge.textContent = `x${val}`;
     const slider = document.getElementById('weapon-salvo-count');
     if (slider && parseInt(slider.value, 10) !== val) slider.value = val;
+    const numInput = document.getElementById('weapon-salvo-count-num');
+    if (numInput && parseInt(numInput.value, 10) !== val) numInput.value = val;
     const label = document.getElementById('salvo-count-val');
     if (label) label.textContent = `${val} misil${val > 1 ? 'es' : ''}`;
     const radarBadge = document.getElementById('radar-salvo-count-label');
     if (radarBadge) radarBadge.textContent = `x${val}`;
+    const radarSelectedBadge = document.getElementById('radar-selected-salvo-label');
+    if (radarSelectedBadge) radarSelectedBadge.textContent = `x${val}`;
     const radarTargetBtns = document.querySelectorAll('.radar-launch-btn');
     radarTargetBtns.forEach(btn => {
       btn.textContent = `🚀 Lanzar (${val}x)`;

@@ -32,19 +32,20 @@ export class TacticalRadar {
 
     // World landmark anchors for orientation
     this.landmarks = [
-      { name: 'Plaza', icon: '🏰', x: 0, z: 0 },
-      { name: 'Japón', icon: '⛩️', x: 250, z: 250 },
-      { name: 'China', icon: '🏮', x: -250, z: 250 },
-      { name: 'París', icon: '🗼', x: 250, z: -250 },
-      { name: 'NY', icon: '🗽', x: -250, z: -250 },
+      { name: 'Plaza Central', icon: '🏰', x: 0, z: 0 },
+      { name: 'Japón Imperial', icon: '⛩️', x: 250, z: 250 },
+      { name: 'China / Shanghai', icon: '🏮', x: -250, z: 250 },
+      { name: 'París / Torre Eiffel', icon: '🗼', x: 250, z: -250 },
+      { name: 'Nueva York', icon: '🗽', x: -250, z: -250 },
       { name: 'Fiordos', icon: '🏔️', x: 0, z: 500 },
-      { name: 'Playa', icon: '🏖️', x: 0, z: -500 },
-      { name: 'Fuji', icon: '🗻', x: 500, z: 500 },
-      { name: 'Circuito', icon: '🏎️', x: -500, z: -500 },
+      { name: 'Playa Paraíso', icon: '🏖️', x: 0, z: -500 },
+      { name: 'Monte Fuji', icon: '🗻', x: 500, z: 500 },
+      { name: 'Gran Circuito', icon: '🏎️', x: -500, z: -500 },
       { name: 'Base Militar', icon: '🎖️', x: -420, z: 150 },
       { name: 'Búnker', icon: '🛡️', x: -500, z: 300 }
     ];
 
+    this.customTarget = { name: 'Plaza Central (0, 0)', pos: [0, 25, 0] };
     this.createDOM();
   }
 
@@ -216,15 +217,32 @@ export class TacticalRadar {
    */
   bombardAllTargets() {
     const playerDir = this.multiplayer ? this.multiplayer.playerDirectory : null;
-    if (!playerDir || playerDir.size <= 1) return;
-
     let launchedCount = 0;
     const salvoCount = this.getSalvoCount();
-    for (const p of playerDir.values()) {
-      if (p.id === this.multiplayer.myId) continue;
-      launchedCount += salvoCount;
-      if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
-        this.multiplayer.sendAdminLaunchMissile(p.id, null, null, null, salvoCount);
+
+    const onlineTargets = [];
+    if (playerDir) {
+      for (const p of playerDir.values()) {
+        if (p.id === this.multiplayer.myId) continue;
+        onlineTargets.push(p);
+      }
+    }
+
+    if (onlineTargets.length > 0) {
+      for (const p of onlineTargets) {
+        launchedCount += salvoCount;
+        if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
+          this.multiplayer.sendAdminLaunchMissile(p.id, null, null, null, salvoCount);
+        }
+      }
+    } else {
+      // Offline / Solo mode: bombard key 5 landmarks
+      const keyLandmarks = this.landmarks.slice(0, 5);
+      for (const lm of keyLandmarks) {
+        launchedCount += salvoCount;
+        if (this.multiplayer && typeof this.multiplayer.sendAdminLaunchMissile === 'function') {
+          this.multiplayer.sendAdminLaunchMissile(null, null, null, null, salvoCount, [lm.x, 25, lm.z]);
+        }
       }
     }
 
@@ -483,9 +501,34 @@ export class TacticalRadar {
       this.targetCountElem.textContent = targetCount;
     }
 
+    const selectedSalvoLabel = this.panelElem ? this.panelElem.querySelector('#radar-selected-salvo-label') : null;
+    if (selectedSalvoLabel) selectedSalvoLabel.textContent = `x${this.getSalvoCount()}`;
+
     if (targetCount === 0) {
-      this.targetsListElem.innerHTML = `<div class="radar-empty-hint">No hay otros jugadores en la sala. Esperando exploradores...</div>`;
-      this.selectedTargetId = null;
+      let lHtml = '<div class="radar-empty-hint" style="color:#93c5fd;margin-bottom:6px;">📍 Modo Solo / Sala Libre: Selecciona un monumento o toca el radar para fijar coordenadas:</div>';
+      for (const lm of this.landmarks) {
+        const isSelected = (this.customTarget && this.customTarget.pos[0] === lm.x && this.customTarget.pos[2] === lm.z);
+        let dist = '--';
+        if (playerPos) dist = Math.round(Math.hypot(lm.x - playerPos.x, lm.z - playerPos.z)) + 'm';
+        lHtml += `
+          <div class="radar-target-card ${isSelected ? 'active-target' : ''}" data-landmark-name="${lm.icon} ${lm.name}" data-pos-x="${lm.x}" data-pos-z="${lm.z}">
+            <div class="rt-info">
+              <span style="font-size:14px;">${lm.icon}</span>
+              <div>
+                <div class="rt-name-row">
+                  <strong>${lm.name}</strong>
+                  ${isSelected ? '<span class="rt-selected-badge">FIJADO 🎯</span>' : ''}
+                </div>
+                <div class="rt-coords">(${lm.x}, 25, ${lm.z}) • ${dist}</div>
+              </div>
+            </div>
+            <button class="mc-btn radar-launch-btn" data-target-type="landmark" data-target-name="${lm.icon} ${lm.name}" data-pos-x="${lm.x}" data-pos-z="${lm.z}">
+              🚀 Lanzar (${this.getSalvoCount()}x)
+            </button>
+          </div>
+        `;
+      }
+      this.targetsListElem.innerHTML = lHtml;
       return;
     }
 

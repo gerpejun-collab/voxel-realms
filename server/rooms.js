@@ -979,21 +979,22 @@ class RoomManager {
     const launcher = room.gameState.getPlayer(meta.id);
     if (!launcher) return;
 
-    // Look up target either online or from last known positions
-    const targetPlayer = room.gameState.getPlayer(data.targetPlayerId);
+    // Look up target either online, from last known positions, or direct coordinates
+    const targetPlayer = data.targetPlayerId ? room.gameState.getPlayer(data.targetPlayerId) : null;
     let targetPos = null;
     let targetName = 'Objetivo';
 
     if (targetPlayer) {
       targetPos = [...targetPlayer.pos];
       targetName = targetPlayer.name;
-    } else if (this.lastKnownPlayerPositions.has(data.targetPlayerId)) {
+    } else if (data.targetPlayerId && this.lastKnownPlayerPositions.has(data.targetPlayerId)) {
       targetPos = [...this.lastKnownPlayerPositions.get(data.targetPlayerId)];
       targetName = 'Jugador (Desconectado)';
-    } else if (Array.isArray(data.targetPos)) {
+    } else if (Array.isArray(data.targetPos) && data.targetPos.length >= 3) {
       targetPos = [...data.targetPos];
+      targetName = data.targetName || `Coordenadas (${Math.round(targetPos[0])}, ${Math.round(targetPos[2])})`;
     } else {
-      this.send(ws, MSG.ERROR, { message: 'El jugador objetivo no está disponible.' });
+      this.send(ws, MSG.ERROR, { message: 'El jugador u objetivo no está disponible.' });
       return;
     }
 
@@ -1078,17 +1079,40 @@ class RoomManager {
         }
       }
     } else if (missileCount > 1) {
-      // Rapid stream for salvo barrages (1 to 200 missiles)
-      const streamInterval = missileCount >= 100 ? 35 : (missileCount >= 20 ? 65 : 120);
-      for (let i = 0; i < missileCount; i++) {
-        if (i === 0) {
-          spawnOne(0);
-        } else {
+      const mode = data.mode || 'sequential';
+      // Configured user delay (0.2s - 1.0s, default 0.25s)
+      const userDelay = Math.max(0.12, Math.min(1.0, Number(data.delay) || 0.25));
+
+      if (mode === 'pairs') {
+        // De par en par: 2 misiles cada intervalo de tiempo
+        const pairIntervalMs = Math.max(180, Math.round(userDelay * 1000));
+        for (let i = 0; i < missileCount; i++) {
+          const delayMs = Math.floor(i / 2) * pairIntervalMs;
+          if (delayMs === 0) {
+            spawnOne(i);
+          } else {
+            const timer = setTimeout(() => {
+              if (this.rooms.get(meta.roomId) === room) spawnOne(i);
+            }, delayMs);
+            if (timer && typeof timer.unref === 'function') timer.unref();
+          }
+        }
+      } else {
+        // Cadena de misiles continua: uno a uno con intervalo de tiempo entre ellos (nunca todos de golpe)
+        const streamInterval = (missileCount >= 100)
+          ? Math.max(85, Math.min(220, Math.round(userDelay * 650)))
+          : (missileCount >= 20 ? Math.max(110, Math.round(userDelay * 850)) : Math.max(150, Math.round(userDelay * 1000)));
+
+        for (let i = 0; i < missileCount; i++) {
           const delayMs = i * streamInterval;
-          const timer = setTimeout(() => {
-            if (this.rooms.get(meta.roomId) === room) spawnOne(i);
-          }, delayMs);
-          if (timer && typeof timer.unref === 'function') timer.unref();
+          if (delayMs === 0) {
+            spawnOne(0);
+          } else {
+            const timer = setTimeout(() => {
+              if (this.rooms.get(meta.roomId) === room) spawnOne(i);
+            }, delayMs);
+            if (timer && typeof timer.unref === 'function') timer.unref();
+          }
         }
       }
     } else {

@@ -2,6 +2,16 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+if (!vm.SourceTextModule) {
+  const { execFileSync } = require('child_process');
+  try {
+    execFileSync(process.execPath, ['--experimental-vm-modules', __filename], { stdio: 'inherit' });
+    process.exit(0);
+  } catch (err) {
+    process.exit(err.status || 1);
+  }
+}
+
 function getJsFiles(dir) {
   let results = [];
   const list = fs.readdirSync(dir);

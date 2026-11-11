@@ -1,134 +1,132 @@
-# Project: Voxel Realms Performance Optimization & Mobile Multiplayer Expansion
+# Project: Grandmaster Chess Overhaul — Mobile UI/UX, Photorealistic 3D, Robust Multiplayer & Deep-Learning RL Engine
 
 ## Architecture
-- **Client Core (`public/src/`)**:
-  - `world.js`: Voxel terrain storage, heightmaps, chunk management, progressive chunk generation (3x3 core immediate, radius 2..5 streamed 1/frame, staggered remeshing 1-2/frame), AABB road rejection, sector builders, Central Plaza & Gran Circuito.
-  - `avatar.js`: Player avatar anatomy, seated driving pose snapping (zero lerp lag, no floor clamping), remote avatar interpolation.
-  - `physics.js`: Continuous collision detection, swept-AABB, 2D OBB solid player-car collision resolution for drivable and traffic cars.
-  - `controls.js`: First-person/third-person/cockpit camera controls, infinite-range sniper raycasting, exact TNT block targeting at any distance, mobile touch driving input routing.
-  - `vehicle.js`: Drivable racing car fleet, Gran Circuito starting grid, removal of Plaza red F1 car (`car_spawn_red`), avatar seating coordinate projection, driver update guard.
-  - `animals.js`: Ambient animals, autonomous traffic (`VoxelCar` distance culling >120m, 80ms throttled obstacle checks, cached obstacle distance, player detection).
-  - `ui.js`: HUD, landmark fast-travel teleportation, secret Admin section in Settings with live player telemetry and teleportation, mobile driving touch controls overlay (`#mobile-driving-controls`), sniper overlay buttons (`#scope-btn-shoot`, `#scope-btn-exit`), server reset modal.
-  - `multiplayer.js`: Client WebSocket handling, snapshot reception, redundant chunk remesh suppression on matching block types, server reset disconnect handling.
-  - `main.js`: Game loop coordinator, event routing, startup streaming orchestration.
-- **Server Core (`server/`)**:
-  - `server.js`: HTTP/WebSocket server initialization.
-  - `game-state.js`: Room game state, `this.animalTimers = new Map()` (decoupled from entities to prevent circular JSON), sanitized `getAnimalsSnapshot()`, `player.joinedAt`, `player.isAdmin`, `resetWorld()`, persistent `blockDeltas`.
-  - `rooms.js`: Authoritative room manager, safe broadcast serialization with error handling, disconnect handling preserving `main` room and block deltas, `handleAdminAuth`, `handleAdminResetServer`, broadcasting `MSG.SERVER_RESET` ("El admin ha reiniciado el server").
-  - `protocol.js`: Packet serialization, `MSG.ADMIN_AUTH`, `MSG.ADMIN_RESET_SERVER`, `MSG.ADMIN_STATE`, `MSG.SERVER_RESET`, admin credential validation (`jsieiragerpe@gmail.com` / `ARGÓN4` / `ARGON4`).
-- **Test Suite (`test/`)**:
-  - `test.js`: Comprehensive automated end-to-end and regression test suite (`node test/test.js`).
-  - `adversarial_verify.js` & `test_adversarial_challenger.js`: Empirical stress tests and edge case verification.
+
+- **Client Presentation & UI Layer (`public/src/chess/`)**:
+  - `chess_ui.js`: Mobile-first UI orchestrator, 100dvh CSS Grid container, 48px Material 3 App Bar, symmetric player cards with live Fischer clocks, real-time vertical evaluation bar, 1-line horizontal SAN move ticker, 56px 4-tab docked Bottom Navigation Bar, modal slide-up Bottom Sheets (Play, Options, Analysis, Rooms), touch promotion sheet, and haptic feedback.
+  - `chess_view_3d.js`: Three.js photorealistic 3D board scene, dynamic aspect-ratio camera auto-framing (360x800 to 412x915), 3 camera presets, multi-touch gesture engine (1-finger drag orbit, 2-finger pinch zoom, double-tap reset), studio 3-point lighting rig with 2048x2048 soft shadows, procedural HDR environment reflections via PMREM, and decoupled remote move animation.
+  - `chess_view_2d.js`: High-DPI 2D canvas vector board fallback, procedural Web Audio synthesizer (`ChessAudio`), touch drag-and-drop piece manipulation, last-move and legal-move highlight indicators.
+  - `chess_pbr.js`: Algorithmic procedural PBR texture synthesis (Dark Walnut wood, Light Maple wood, Carrara & Black Marquina Marble) generating 512x512 Canvas textures (albedo, Sobel normal bump, roughness maps) with zero external downloaded image assets.
+  - `chess_staunton.js`: Procedural high-poly Staunton 3D piece factory using `THREE.LatheGeometry` (36 radial segments) for Pawn, Rook (crenellated parapet), Bishop (45° cross-cut mitre), Queen (8-point coronet + orb), King (regal tiered capital + cross pattée), and `THREE.ExtrudeGeometry` for the sculpted Knight horse bust with green felt base pads and clearcoat finishes.
+  - `styles.css`: 100dvh portrait CSS grid rules, safe-area padding (`env(safe-area-inset-*)`), bottom sheet transforms, 48x48px touch clearance, and fluid responsive media queries.
+
+- **Game Logic, AI & Machine Learning Layer (`public/src/chess/` & `scripts/`)**:
+  - `chess_engine.js`: Pure FIDE chess logic (move generation, castling, en passant, promotion, check, checkmate, stalemate, threefold repetition, 50-move rule, insufficient material, PGN/FEN parsing & export).
+  - `chess_nn.js`: Pure JavaScript `Float32Array` dual-headed Policy/Value Neural Network ($896$ inputs, residual hidden layers, LeakyReLU, 4096-output policy head with softmax, scalar value head in $[-1, 1]$ with tanh).
+  - `chess_zobrist.js`: 64-bit Zobrist hashing for board transposition caching and 3-fold repetition detection.
+  - `chess_mcts.js`: Monte Carlo Tree Search with PUCT formula combining neural policy priors and neural value evaluation for deep strategic search.
+  - `chess_book.js`: 1,822 position Grandmaster Opening Book covering ECO volumes A through E with temperature-controlled non-repetitive move sampling.
+  - `chess_model_weights.json`: Exported pre-trained neural network weights.
+  - `scripts/train_chess_rl.js`: Headless self-play reinforcement learning script generating self-play games, computing policy/value loss gradients via analytical backprop, and updating weights via Adam optimizer.
+
+- **Multiplayer Networking & Server Infrastructure (`server/`)**:
+  - `server.js`: HTTP/WebSocket server multiplexing voxel packets and `chess_*` packets with strict segregation.
+  - `server/chess-rooms.js`: Dedicated `ChessRoomManager` and `ChessRoom` instances supporting matchmaking queues, 4-digit PIN private rooms, live spectator broadcasting, spectator count updates, spectator command authority guards, session-token reconnection (`playerToken`, `chess_reconnect`), and authoritative Fischer clock synchronization.
+
+- **Automated Verification & Test Suites (`test/`)**:
+  - `test/test_chess_rules_extended.js`: FIDE rules, special moves, draw conditions, PGN/FEN validation.
+  - `test/test_chess_mobile_ui_layout.js`: Mobile DOM/CSS layout validation across 360x800, 375x667, 390x844, 412x915 viewports, zero horizontal overflow, bottom nav docking, bottom sheet states.
+  - `test/test_chess_3d_procedural_geometry.js`: Staunton piece vertex counts, normals, bounding boxes, procedural PBR texture generation, aspect camera projection math.
+  - `test/test_chess_multiplayer_sync.js`: PIN matchmaking, move broadcasts, spectator isolation, token reconnection, clock synchronization packets.
+  - `test/test_chess_nn.js` & `test/test_chess_rl.js`: Neural network forward/backward inference, MCTS search decisions, opening book diversity, self-play RL training loop execution.
 
 ---
 
 ## Feature Inventory
+
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Server Circular JSON Crash Fix | Decouple `setTimeout` handles into `this.animalTimers = new Map()` on `GameState`, sanitize `getAnimalsSnapshot()` to export plain DTOs, and guard `broadcast()` against JSON serialization errors in `server/rooms.js:61 & 313`. | M1 | Survey 1 |
-| 2 | Persistent Map Modifications | Maintain `blockDeltas` in the singleton `main` room across 0-player periods without clearing when empty; only clear when Admin triggers `resetWorld()`. | M1 | Survey 1 |
-| 3 | Stealth Admin Server Protocol | Server packet validation for `jsieiragerpe@gmail.com` with password `ARGÓN4` (and normalized `ARGON4`), tracking `player.joinedAt` and live XYZ coordinates, instant teleport packet handling, and server reset broadcasting `MSG.SERVER_RESET` ("El admin ha reiniciado el server") to disconnect clients. | M1 | Survey 1 |
-| 4 | Client-Server Multiplayer Remesh Guard | In `public/src/multiplayer.js`, prevent redundant synchronous chunk remeshing when block updates receive the same block type (`world.getBlock(x,y,z) === blockType`). | M1 | Survey 1 |
-| 5 | Initial Game Load Freeze Elimination | Pre-generate immediate $3\times3$ spawn core (9 chunks) synchronously (<35ms) for instant spawn at $(3, 25, 6)$; stream remaining chunks (radius 2..5) progressively at 1 chunk/frame; stagger remeshing to 1-2 chunks/frame in `World.update`; add early AABB fast-rejection in `buildRoadAndTunnelNetwork`. 100% visual fidelity preserved. | M2 | Survey 2 |
-| 6 | Traffic AI CPU Frame-Time Optimization (60 FPS) | Distance-cull traffic cars >120m from player, throttle `VoxelCar.checkObstacleAhead` to every 80-100ms with cached distance and staggered timers, and use 0.25m step size, reducing queries by 99.5% and eliminating frame stutter without lowering visual quality or removing any world features. | M2 | Survey 2 |
-| 7 | Plaza Central Red F1 Car Removal | Remove `car_spawn_red` (`GT Monza Rojo (Plaza Central)` at $(-12, 25, -12)$) from `vehicle.js:659` while preserving `car_spawn_blue` (GT Paris Azul) and all 12 Gran Circuito racing cars. | M3 | Survey 2 |
-| 8 | Mobile Touch Driving Controls | Dedicated `#mobile-driving-controls` touch overlay in `public/index.html` and `public/src/ui.js` showing Steer Left/Right, Gas, Brake/Reverse, Camera Toggle, and Exit Vehicle buttons when seated, automatically swapping with walking controls. | M3 | Survey 2 |
-| 9 | Seated Avatar Positioning & Test Guard | Snap avatar directly to seat coordinates without lerp delay or ground clamping when `action === 'driving'`; auto-hide avatar head in cockpit view; guard `typeof controls.localAvatar.update === 'function'` in `vehicle.js:837` to fix unit test TypeError. | M3 | Survey 2 |
-| 10 | Solid Player-Car Collision | 2D Oriented Bounding Box (OBB) pushout collision in `PlayerPhysics` for both `DrivableCar` and `VoxelCar` so player never walks through cars; traffic cars detect player in forward heading and brake smoothly. | M3 | Survey 2 |
-| 11 | Secret Admin System Client UI | Expand `player-name-input` `maxlength` to 32; when `jsieiragerpe@gmail.com` is entered, trigger password prompt for `ARGÓN4` with zero public hints; unlock Admin section in Settings (`#pause-menu`) featuring live player count, real-time player table (name, join time, XYZ, 1-touch teleport button), and Server Reset button; client handler for `server_reset` packet showing "El admin ha reiniciado el server" modal and returning to title screen. | M4 | Survey 3 |
-| 12 | Exact TNT Placement | Fix dual invocation in `main.js:161-163` and dual spawning in `controls.js:909-912`, remove floating spawn offset, and implement raycast targeting at any distance to place exactly 1 solid TNT cube at the targeted block surface without floating or duplicating. | M4 | Survey 3 |
-| 13 | Infinite Sniper Mode & Touch Scope Buttons | Infinite raycast range in ADS sniper mode hitting animals and TNT at any distance; overlay touch buttons `#scope-btn-shoot` ("Disparar") and `#scope-btn-exit` ("Quitar la mira") directly on `#rifle-scope-overlay`. | M4 | Survey 3 |
-| 14 | Automated E2E Test Suite Expansion | Comprehensive test suite in `test/test.js` validating all R1-R6 requirements, server stability, map persistence, solid collisions, mobile controls, admin system, exact TNT, sniper mode, and 100% passing tests. | M-TEST | Survey 3 |
-| 15 | Adversarial Hardening & Forensic Integrity Audit | Adversarial stress testing across edge cases, concurrency, and empirical physics validation, followed by independent forensic integrity audit. | M-FINAL | Survey 1, 2, 3 |
-| 16 | Mobile UI Layout Redistribution & Touch Clearance | Eliminate overlap between weapon/item bar (bow, firecracker, pistol) and bottom buttons across all mobile and desktop viewports; elevate hotbar and reposition weapon drawer above action fan; enforce 48×48px minimum touch targets and 60% clear central viewport cone. | M-UI | Original Request R1 & Agent 1, 2 |
-| 17 | Definitive 50-Feature Master Improvement Plan | Deliver comprehensive master architectural plan (`IMPROVEMENT_PLAN_50.md`) spanning 50 substantial, visible, and transformative features (10 Multiplayer M1–M10, 10 Single-player S1–S10, 10 Map W1–W10, 10 Building B1–B10, 10 Novel Gameplay N1–N10) optimized for mobile comfort with automated verification. | M-50 | Original Request R2 & Agent 9 |
-| 18 | Mobile Multiplayer Rooms & Security Expansion | 4-digit PIN protected private rooms, visual lobby browser with real-time ping badges, Hermite client entity interpolation, 30/60Hz adaptive tickrate, proximity 3D audio, and kinematic speedhack guard. | M-50 | Agent 3 |
-| 19 | Offline Single-Player Persistence & Dynamic Ecology | IndexedDB 5-slot world save manager with WebGL canvas thumbnails, 24-minute celestial diurnal cycle with Rayleigh scattering, hunger/stamina vitals, dynamic weather with ground wetness, and emergency blur autosave. | M-50 | Agent 4 |
-| 20 | Procedural Multi-Biome Terrain & Cartography Expansion | 5 continental Whittaker biomes (Temperate, Desert, Alpine, Volcanic, Archipelago), real-time HUD minimap with orientation cone, fullscreen interactive atlas with pinch-zoom, 3D screen-clamped beacons, and dynamic fluid cellular automaton. | M-50 | Agent 5 |
-| 21 | Advanced Creative Building Studio & CAD Brush Engine | Multiblock 3D bounding box fill/replace brush, infinite history bounded undo/redo engine with dedicated touch buttons, 3D blueprint capture & instant stamp tool, bilateral symmetry plane mirror, and ergonomic 12-wedge radial material wheel. | M-50 | Agent 6 |
-| 22 | Novel High-Impact Gameplay Mechanics (Jetpack, Grapple, 4x4) | Tactical fuel-powered jetpack with vertical boost & hover lock, dynamic physics grappling hook & zip-line, 4x4 all-terrain rover with independent spring-damper suspension, deployable recon drone with night vision, and gliding wings. | M-50 | Agent 7 |
+| 1 | 200-Specification Master Implementation Plan Artifact | Exactly 200 numbered modifications and technical specifications covering UI/UX, 3D graphics, multiplayer sync, and the AI pipeline. | M1 | Request R1 |
+| 2 | 100dvh Portrait Grid & Safe Area Enclosure | CSS Grid container with `env(safe-area-inset-*)` eliminating vertical scrolling and viewport bouncing on mobile. | M1 | UI/3D Survey |
+| 3 | Material 3 Compact 48px Android App Bar | Back arrow, game title, mode subtitle chip, and compact icon actions (2D/3D toggle, flip, options) without text clipping. | M1 | UI/3D Survey |
+| 4 | Symmetric Opponent & Player Info Cards | 44px player cards with avatar, status badge, live captured piece tray, material advantage diff counter (+3), and Fischer clock pill. | M1 | UI/3D Survey |
+| 5 | Real-time Vertical Evaluation Bar | 6px wide vertical eval bar adjacent to board indicating centipawn advantage (+5.0 to -5.0) via smooth sigmoid transition. | M1 | UI/3D Survey |
+| 6 | 1-Line SAN Move Ticker & Traversal Controls | Horizontal auto-scrolling SAN notation strip with `⏮`, `◀`, `▶`, `⏭`, and local undo `↩` buttons. | M1 | UI/3D Survey |
+| 7 | Docked 56px 4-Tab Bottom Navigation Bar | Fixed bottom navigation bar with Partida, Jugar, Movimientos, and Salas & Chat tabs with active indicator pills. | M1 | UI/3D Survey |
+| 8 | Native-Style Slide-Up Modal Bottom Sheets | 4 sliding bottom sheets (Play, Options, Analysis/PGN, Rooms/Chat) with touch backdrop, spring transitions, and swipe-down dismiss. | M1 | UI/3D Survey |
+| 9 | Mobile Touch Promotion Floating Sheet | Inline 52x52px circular touch buttons (Queen, Knight, Rook, Bishop) positioned directly above the promotion file. | M1 | UI/3D Survey |
+| 10 | Tactile Haptic Touch Feedback | `navigator.vibrate` haptic pulses on piece movement, captures, checks, and game over. | M1 | UI/3D Survey |
+| 11 | Procedural Dark Walnut PBR Material | Offscreen Canvas 512x512 synthesis of growth rings, micro-grain streaks, Sobel normal bump map, and clearcoat gloss. | M2 | UI/3D Survey |
+| 12 | Procedural Light Maple PBR Material | 512x512 synthesis of golden sycamore ivory base, curly flame chatoyancy, and satin finish. | M2 | UI/3D Survey |
+| 13 | Procedural Carrara & Marquina Marble PBR | Multi-octave Fractional Brownian Motion (fBm) turbulent veining with diamond polish clearcoat. | M2 | UI/3D Survey |
+| 14 | Luxury Hardwood Board Frame & Coordinate Engraving | Beveled outer frame with 45° chamfers, inlaid metallic brass stringing, and screen-printed rank/file coordinates. | M2 | UI/3D Survey |
+| 15 | Studio Pedestal & Contact Shadow Grounding Plane | Circular dark leather table pedestal and radial alpha contact shadow mesh eliminating floating board artifact. | M2 | UI/3D Survey |
+| 16 | Procedural High-Poly Staunton Lathe Geometries | `THREE.LatheGeometry` (36 radial segments) for Pawn, Rook (crenellated parapet), Bishop (45° cross-cut mitre), Queen (8-pointed coronet + orb), King (tiered regal capital + cross pattée). | M2 | UI/3D Survey |
+| 17 | Procedural Sculpted Staunton Knight Horse Bust | `THREE.ExtrudeGeometry` horse bust sculpted from 2D vector silhouette with arched neck, mane curls, muzzle, and cheek flairs. | M2 | UI/3D Survey |
+| 18 | Green Baize Felt Pads & Luxury Finishes | Underside green felt baize pad disc on every piece; aged boxwood/ivory and ebony clearcoat finishes with royal gold finials. | M2 | UI/3D Survey |
+| 19 | Procedural Studio HDR Environment Map (IBL) | `THREE.PMREMGenerator` equirectangular studio lightboxes delivering realistic metallic and clearcoat reflections. | M2 | UI/3D Survey |
+| 20 | Calibrated 3-Point Studio Lighting Rig | Key light with 2048x2048 PCF soft shadows and penumbra radius, cool fill light, and low-angle rim accent light. | M2 | UI/3D Survey |
+| 21 | Mobile Portrait Auto-Framing Camera Math | Dynamic camera distance calculated from viewport aspect ratio ($\text{dist} \propto 1/\text{aspect}$) fitting all squares and King finials within 360x800 to 412x915 viewports. | M2 | UI/3D Survey |
+| 22 | Ergonomic 3 Camera View Presets | One-tap camera angle switching: Dynamic Angled 3D (56°), Top-Down 2.5D (84°), and Cinematic Hero View (32°). | M2 | UI/3D Survey |
+| 23 | Mobile Multi-Touch Gesture Orbit Engine | 1-finger drag orbit with spherical inertia damping, 2-finger pinch zoom, 2-finger rotate, and double-tap reset. | M2 | UI/3D Survey |
+| 24 | Client-Server Packet Protocol Standardization | Align all client transmissions to `{ type, data: { ... } }` matching `server/chess-rooms.js` message types. | M3 | Net Survey |
+| 25 | Decoupled 3D Remote Move Animation | Decouple `animateRemoteMove` from local move triggers to prevent recursive move broadcast echo loops. | M3 | Net Survey |
+| 26 | 4-Digit PIN Private Rooms & Indexing | Automatic 4-digit PIN generation, `pinToRoom` server indexing map, and PIN-only room joining without requiring `roomId`. | M3 | Net Survey |
+| 27 | Robust Matchmaking Queue & AI Suggestion | FIFO matchmaking queues by time control, heartbeat cancellation on disconnect, and auto-suggest AI match after 25s wait. | M3 | Net Survey |
+| 28 | Live Spectator View & Real-Time Sync | `chess_spectate_room`, full board state push, real-time move streaming, and live spectator count broadcasting. | M3 | Net Survey |
+| 29 | Spectator Authority & Security Guard | Reject non-player sockets from draw, resign, and rematch requests; badge spectator chat messages. | M3 | Net Survey |
+| 30 | Session-Token Reconnection Architecture | Issue `playerToken` in `chess_game_start`, store in client `sessionStorage`, and handle `chess_reconnect` without forfeit or duplicate entities. | M3 | Net Survey |
+| 31 | Authoritative Clock Synchronization Protocol | 5-second periodic and 1-second low-time clock sync broadcasts with smooth client interpolation. | M3 | Net Survey |
+| 32 | Pure JS Float32Array Dual-Headed Policy/Value Neural Network | 896 input features ($8 \times 8 \times 14$ planes), residual hidden layers, LeakyReLU, 4096-output policy head (softmax), scalar value head in $[-1, 1]$ (tanh) with zero native dependencies. | M4 | AI Survey |
+| 33 | 64-Bit Zobrist Hashing Transposition Cache | Fast 64-bit Zobrist key generator for board state caching and repetition detection. | M4 | AI Survey |
+| 34 | AlphaZero-Style MCTS with PUCT Search | Monte Carlo Tree Search engine balancing neural prior probabilities and neural value estimates. | M4 | AI Survey |
+| 35 | 1,200+ Position Grandmaster Opening Book | Comprehensive opening book indexed by Zobrist/FEN covering ECO volumes A-E with temperature-controlled weighted sampling. | M4 | AI Survey |
+| 36 | Headless Self-Play Reinforcement Learning Pipeline | `scripts/train_chess_rl.js` executing self-play games, tracking outcomes, computing analytical backpropagation gradients, and updating weights via Adam optimizer. | M4 | AI Survey |
+| 37 | Pre-Trained Baseline Weights Persistence | Shipping `public/src/chess/chess_model_weights.json` for immediate high-level play without initial training delays. | M4 | AI Survey |
+| 38 | Comprehensive Automated Test Suite (Tiers 1-4) | Automated Node.js test suites validating FIDE rules, mobile UI layout, 3D procedural geometry, multiplayer networking, and AI neural engine. | M5 | Testing Track |
+| 39 | Adversarial Coverage Hardening & Forensic Integrity Audit | White-box adversarial testing (Tier 5) exposing edge cases and complete forensic audit verification. | M5 | Final Acceptance |
 
 ---
 
 ## Milestones
+
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Server Stability, Circular JSON Fix & Persistent Map Sync | `server/game-state.js`, `server/rooms.js`, `server/protocol.js`, `public/src/multiplayer.js` | none | DONE (worker_m1 verified) |
-| M2 | Client Startup Performance, Progressive World Streaming & 60 FPS Traffic Optimization | `public/src/world.js`, `public/src/main.js`, `public/src/animals.js` | none | DONE (worker_m2 verified) |
-| M3 | Vehicle Driving Reconstruction, Mobile Controls, Seated Avatar, Solid Collision & Plaza Cleanup | `public/src/vehicle.js`, `public/src/physics.js`, `public/src/avatar.js`, `public/src/controls.js`, `public/src/ui.js`, `public/index.html`, `public/styles.css` | none | DONE (worker_m3 verified) |
-| M4 | Secret Admin UI, Exact TNT Placement & Infinite Sniper Mode | `public/index.html`, `public/styles.css`, `public/src/ui.js`, `public/src/controls.js`, `public/src/world.js` | M1 | IN_PROGRESS (worker_m4) |
-| M-UI | Mobile UI Redistribution & Ergonomic Touch Optimization | `public/index.html`, `public/styles.css`, `public/src/ui.js`, `public/src/controls.js` | M3 | IN_PROGRESS (agent_1_ui_layout_fix) |
-| M-50 | Definitive 50-Feature Master Improvement Architecture | `IMPROVEMENT_PLAN_50.md`, `PROJECT.md`, `.agents/teamwork/` | M1, M2, M3, M4, M-UI | DONE (agent_9_plan_synthesizer) |
-| M-TEST | Suite de Pruebas Automatizadas E2E y Regresión | `test/test.js`, `TEST_INFRA.md`, `TEST_READY.md` | M1, M2, M3, M4, M-UI, M-50 | IN_PROGRESS (e2e_test_writer) |
-| M-FINAL | Verificación E2E 100%, Desafío Adversarial y Auditoría Forense | Global codebase, test suites, verification artifacts | M1, M2, M3, M4, M-UI, M-50, M-TEST | PLANNED |
-
+| M1 | Native Android Mobile App UI/UX & Responsive Layout | `public/src/chess/chess_ui.js`, `public/styles.css`, `public/index.html`, `CHESS_200_SPEC_PLAN.md` | none | DONE (worker_chess_ui verified) |
+| M2 | Photorealistic 3D Board Presentation & Procedural Staunton Pieces | `public/src/chess/chess_pbr.js`, `public/src/chess/chess_staunton.js`, `public/src/chess/chess_view_3d.js` | none | DONE (worker_chess_3d verified) |
+| M3 | Robust Multiplayer Synchronization, PIN Rooms & Spectator Architecture | `server/chess-rooms.js`, `public/src/chess/chess_ui.js`, `public/src/chess/chess_view_3d.js` | none | DONE (worker_chess_net verified) |
+| M4 | Deep-Learning Neural Network, MCTS Search & Self-Play RL Engine | `public/src/chess/chess_nn.js`, `public/src/chess/chess_zobrist.js`, `public/src/chess/chess_mcts.js`, `public/src/chess/chess_book.js`, `public/src/chess/chess_ai.js`, `public/src/chess/chess_model_weights.json`, `scripts/train_chess_rl.js` | none | DONE (worker_chess_ai verified) |
+| M5 | E2E Testing Track, 100% Test Pass & Adversarial Hardening | `test/test_chess_rules_extended.js`, `test/test_chess_mobile_ui_layout.js`, `test/test_chess_3d_procedural_geometry.js`, `test/test_chess_multiplayer_sync.js`, `test/test_chess_nn.js`, `TEST_INFRA.md`, `TEST_READY.md` | M1, M2, M3, M4 | DONE (Verified: 2 Reviewers APPROVE, 2 Challengers APPROVE, Forensic Auditor CLEAN) |
 
 ---
 
 ## Interface Contracts
 
-### M1: Server Stability, Persistence & Admin Protocol
-- `GameState.prototype.animalTimers`: Map storing active animal despawn timers indexed by `animalId`. Does not attach `Timeout` instances to `animal` objects.
-- `GameState.prototype.getAnimalsSnapshot()`: Returns an array of sanitized DTOs: `{ id, type, pos: [x,y,z], yaw, health, isDead, isKnockedDown }`.
-- `GameState.prototype.resetWorld()`: Clears `this.blockDeltas = new Map()`, resets world structures to default.
-- `protocol.js`:
-  - `MSG.ADMIN_AUTH = 'admin_auth'`
-  - `MSG.ADMIN_RESET_SERVER = 'admin_reset_server'`
-  - `MSG.ADMIN_STATE = 'admin_state'`
-  - `MSG.SERVER_RESET = 'server_reset'`
-  - `isValidAdminCredentials(identifier, key)`: returns true if identifier === 'jsieiragerpe@gmail.com' and key (normalized) === 'ARGON4'.
-- `RoomManager.prototype.broadcast(room, type, data, excludeWs)`: Wrapped in `try...catch` to prevent any unhandled serialization error from crashing the process.
-- `RoomManager.prototype.handleDisconnect(ws)`: Does NOT remove room or clear `blockDeltas` when player count reaches 0.
+### M1 ↔ M2: UI/UX & 3D Board View Contract
+- `ChessView3D.prototype.setAspect(width, height)`: Calculates aspect ratio, updates camera distance via aspect math, and re-renders without horizontal clipping.
+- `ChessView3D.prototype.setCameraPreset(presetName)`: Supports `'angled'`, `'topdown'`, `'cinematic'`.
+- `ChessView3D.prototype.setTheme(themeName)`: Dynamically swaps procedural PBR materials (`'walnut_maple'`, `'carrara_marquina'`).
+- `ChessView3D.prototype.animateRemoteMove(fromCoords, toCoords, fromSq, toSq)`: Smooth parabolic piece animation for remote moves without re-triggering local engine move attempts or network broadcasts.
 
-### M2: Client Startup Performance & Frame-Time Optimization
-- `World.prototype.updateStreaming(playerX, playerZ)`:
-  - Generates radius 1 ($3\times3$ chunks) synchronously on boot.
-  - Queues radius 2..5 chunks into `this.pendingChunkGenerations` and generates at most 1 chunk per frame.
-- `World.prototype.updateRemesh()`: Limits chunk meshing to `maxRemeshPerFrame = 1` (or 2 during boost mode).
-- `World.prototype.buildRoadAndTunnelNetwork(chunk)`: Evaluates fast AABB road bounding box before running 256-step road geometry loop.
-- `VoxelCar.prototype.checkObstacleAhead(lookAheadDist)`:
-  - Bypasses check if distance to player > 120m.
-  - Runs check at most every 80ms (using `_obstacleCheckTimer`), caching result in `_cachedObstacleAhead`.
-  - Uses 0.25m step size.
-  - Probes player bounding box in heading path.
+### M1 ↔ M3: UI/UX & Multiplayer Network Contract
+- All client WebSocket transmissions use standardized envelope: `{ type: string, data: object }`.
+- `chess_join_queue`: `{ type: 'chess_join_queue', data: { name, timeControl } }`.
+- `chess_create_room`: `{ type: 'chess_create_room', data: { pin, timeControl, preferredColor } }`.
+- `chess_join_room`: `{ type: 'chess_join_room', data: { pin, name } }`.
+- `chess_move`: `{ type: 'chess_move', data: { from, to, promotion } }`.
+- `chess_reconnect`: `{ type: 'chess_reconnect', data: { roomId, playerToken } }`.
 
-### M3: Vehicle Driving, Avatar Seating, Solid Collision & Plaza
-- `vehicle.js`:
-  - `car_spawn_red` deleted from `initCircuitCars()`.
-  - In `updateDriver`: `controls.localAvatar.update` guarded with `typeof ... === 'function'`.
-  - Avatar target position set to cockpit seat offset `[seatX, seatY, seatZ]`.
-- `avatar.js`:
-  - When `this.action === 'driving'`: snaps `this.group.position.copy(this.targetPos)` directly without lerp lag; bypasses ground floor clamping.
-- `physics.js`:
-  - `resolveCollision`: checks 2D OBB collision against all cars (drivable and traffic), pushing the player out by penetration depth.
-- `index.html` & `ui.js`:
-  - `#mobile-driving-controls` added with `#mobile-btn-steer-left`, `#mobile-btn-steer-right`, `#mobile-btn-gas`, `#mobile-btn-brake`, `#mobile-btn-drive-cam`, `#mobile-btn-drive-exit`.
-  - Shown when entering car, hidden when exiting car.
-
-### M4: Secret Admin UI, Exact TNT Placement & Infinite Sniper
-- `ui.js`:
-  - Input `player-name-input` allows 32 characters.
-  - If name is `jsieiragerpe@gmail.com`, displays modal for `ARGÓN4` password.
-  - On auth success: unlocks Admin section in Settings (`#admin-panel`) displaying live player table with name, join time, XYZ, 1-touch teleport button, and Server Reset button.
-  - On `server_reset` packet received: displays modal "El admin ha reiniciado el server" and disconnects back to title screen.
-- `controls.js`:
-  - Placed TNT raycasts targeted block surface at any distance and places exactly 1 solid TNT cube (`BLOCKS.TNT`).
-  - Sniper ADS raycasts infinite distance against animals and TNT blocks.
-  - Superimposes `#scope-btn-shoot` and `#scope-btn-exit` touch buttons directly on `#rifle-scope-overlay`.
+### M3 ↔ M4: Server/Client Rooms & Chess AI Engine Contract
+- `ChessAI.prototype.findBestMove(engine, options)`: Returns `{ bestMove: { from, to, promotion }, evaluation, depth, nodes, pv, bookMove }`.
+- `ChessBook.prototype.lookup(fen)`: Returns `{ move: { from, to, promotion }, name, eco }` or `null`.
+- `ChessNN.prototype.forward(boardPlanes)`: Returns `{ policy: Float32Array(4096), value: number }`.
 
 ---
 
 ## Code Layout
-- `server/game-state.js`: Animal timers decoupling, sanitized DTO snapshot, world reset, player telemetry.
-- `server/rooms.js`: Safe broadcast, persistent block deltas, admin packet handling, server reset broadcast.
-- `server/protocol.js`: Admin credentials validation, message constants.
-- `public/src/world.js`: Progressive chunk generation, AABB road rejection, staggered remeshing.
-- `public/src/animals.js`: Traffic car distance culling, obstacle raycast throttling, player detection.
-- `public/src/vehicle.js`: Removal of red F1 car, avatar seat positioning, driver update safety guard.
-- `public/src/avatar.js`: Zero-lag seated driving pose snapping.
-- `public/src/physics.js`: Solid 2D OBB player-car collision pushout.
-- `public/src/controls.js`: Infinite sniper raycast, exact TNT targeting, mobile driving input routing.
-- `public/src/ui.js`: Secret admin UI, mobile driving controls overlay, scope touch buttons, server reset modal.
-- `public/src/multiplayer.js`: Redundant chunk remesh suppression, server reset handling.
-- `public/index.html` & `public/styles.css`: HTML and CSS for admin panel, mobile driving controls, scope buttons.
-- `test/test.js`: Comprehensive automated end-to-end test suite.
+
+- `public/src/chess/chess_ui.js`: Mobile layout orchestrator, app bar, player cards, evaluation bar, move ticker, bottom navigation, bottom sheets.
+- `public/src/chess/chess_pbr.js`: Procedural canvas texture generator for walnut, maple, and marble PBR materials.
+- `public/src/chess/chess_staunton.js`: Procedural Staunton 3D piece geometries (LatheGeometry + ExtrudeGeometry).
+- `public/src/chess/chess_view_3d.js`: Three.js 3D board scene, lighting, shadows, camera presets, touch gestures.
+- `public/src/chess/chess_view_2d.js`: 2D canvas vector board and Web Audio sound synthesizer.
+- `public/src/chess/chess_engine.js`: Full FIDE rules engine.
+- `public/src/chess/chess_nn.js`: Dual-headed policy/value neural network.
+- `public/src/chess/chess_zobrist.js`: 64-bit Zobrist hashing.
+- `public/src/chess/chess_mcts.js`: MCTS search engine with PUCT formula.
+- `public/src/chess/chess_book.js`: 1,822 position Grandmaster opening book.
+- `public/src/chess/chess_model_weights.json`: Pre-trained neural network weights.
+- `scripts/train_chess_rl.js`: Headless self-play reinforcement learning training script.
+- `server/chess-rooms.js`: Multiplayer rooms, PIN matchmaking, spectator streaming, token reconnection, clock sync.
+- `public/styles.css`: CSS styles for mobile layout, bottom navigation, and bottom sheets.
+- `test/`: Automated test suites.

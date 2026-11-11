@@ -2,7 +2,8 @@
 // Dedicated Multiplayer Chess Room & Matchmaking Manager
 // Operates on a completely segregated namespace: never collides with Voxel Realms rooms.
 // Supports: Public Matchmaking Queues, Private Rooms with 4-digit PINs,
-// Fischer Clocks, Draw Offers, Resignations, Spectator Broadcasting & Live Chat.
+// Fischer Clocks, Draw Offers, Resignations, Spectator Broadcasting & Live Chat,
+// Token-Based Reconnection, and Room Garbage Collection.
 
 const { ChessEngine } = require('../public/src/chess/chess_engine');
 
@@ -12,6 +13,7 @@ const CHESS_MSG = {
   LEAVE_QUEUE: 'chess_leave_queue',
   CREATE_ROOM: 'chess_create_room',
   JOIN_ROOM: 'chess_join_room',
+  RECONNECT: 'chess_reconnect',
   MOVE: 'chess_move',
   OFFER_DRAW: 'chess_offer_draw',
   RESPOND_DRAW: 'chess_respond_draw',
@@ -30,8 +32,12 @@ const CHESS_MSG = {
   DRAW_DECLINED: 'chess_draw_declined',
   GAME_OVER: 'chess_game_over',
   SPECTATE_STATE: 'chess_spectate_state',
+  SPECTATOR_COUNT_UPDATE: 'chess_spectator_count_update',
   PUBLIC_GAMES_LIST: 'chess_public_games_list',
   CLOCK_SYNC: 'chess_clock_sync',
+  RECONNECT_SUCCESS: 'chess_reconnect_success',
+  OPPONENT_RECONNECTED: 'chess_opponent_reconnected',
+  OPPONENT_DISCONNECTED: 'chess_opponent_disconnected',
   CHAT_BROADCAST: 'chess_chat_broadcast',
   ERROR: 'chess_error'
 };
@@ -51,7 +57,8 @@ const TIME_CONTROLS = {
 class ChessRoomManager {
   constructor() {
     this.rooms = new Map(); // roomId -> ChessRoom
-    this.queues = new Map(); // timeControl -> Array of { ws, meta, joinedAt }
+    this.pinToRoom = new Map(); // 4-digit PIN -> ChessRoom
+    this.queues = new Map(); // timeControl -> Array of { ws, meta, joinedAt, aiTimer }
     this.socketMeta = new Map(); // ws -> { id, name, roomId, isSpectating }
     this.roomCounter = 1;
 
@@ -67,22 +74,55 @@ class ChessRoomManager {
   destroy() {
     if (this.clockInterval) {
       clearInterval(this.clockInterval);
+      this.clockInterval = null;
+    }
+    for (const queue of this.queues.values()) {
+      for (const item of queue) {
+        if (item.aiTimer) clearTimeout(item.aiTimer);
+      }
+      queue.length = 0;
     }
     for (const r of this.rooms.values()) {
       r.cleanup();
     }
     this.rooms.clear();
+    this.pinToRoom.clear();
     this.socketMeta.clear();
   }
 
+  /**
+   * Generates a unique 4-digit PIN code for private room discovery
+   */
+  generateUniquePin() {
+    for (let i = 0; i < 10000; i++) {
+      const pin = String(Math.floor(1000 + Math.random() * 9000));
+      if (!this.pinToRoom.has(pin)) return pin;
+    }
+    return String(Date.now()).slice(-4);
+  }
+
+  /**
+   * Standardizes outgoing packet delivery to { type, data } while preserving
+   * root-level property access for backwards compatibility.
+   */
   send(ws, type, data = {}) {
     if (!ws || ws.readyState !== 1) return; // 1 = OPEN
     try {
-      ws.send(JSON.stringify({ type, data, timestamp: Date.now() }));
+      const payload = {
+        type,
+        data,
+        ...data,
+        timestamp: Date.now()
+      };
+      ws.send(JSON.stringify(payload));
     } catch (_) {}
   }
 
+  /**
+   * Broadcasts packet to room players and spectators
+   */
   broadcast(room, type, data = {}, excludeWs = null) {
+    if (!room) return;
     const clients = [room.whiteWs, room.blackWs, ...room.spectators];
     for (const ws of clients) {
       if (ws && ws !== excludeWs) {
@@ -109,11 +149,37 @@ class ChessRoomManager {
     const meta = this.socketMeta.get(ws) || {
       id: `chess_${Math.random().toString(36).substr(2, 9)}`,
       name: 'Ajedrecista',
-      roomId: null
+      roomId: null,
+      isSpectating: false
     };
     this.socketMeta.set(ws, meta);
 
-    const { type, data } = packet;
+    // Normalize packet data envelope: supports both { type, data: { ... } } and legacy flat properties
+    const rawData = (packet.data && typeof packet.data === 'object') ? packet.data : {};
+    const data = { ...packet, ...rawData };
+    delete data.type;
+    delete data.data;
+    delete data.timestamp;
+
+    if (data.playerName && !data.name) {
+      data.name = data.playerName;
+    }
+
+    let type = packet.type;
+    // Map client aliases if necessary
+    if (type === 'chess_draw_offer') {
+      type = CHESS_MSG.OFFER_DRAW;
+    } else if (type === 'chess_draw_accept') {
+      type = CHESS_MSG.RESPOND_DRAW;
+      data.accept = true;
+    } else if (type === 'chess_draw_decline') {
+      type = CHESS_MSG.RESPOND_DRAW;
+      data.accept = false;
+    } else if (type === 'chess_list_games') {
+      type = CHESS_MSG.LIST_PUBLIC_GAMES;
+    } else if (type === 'chess_spectate') {
+      type = CHESS_MSG.SPECTATE_ROOM;
+    }
 
     switch (type) {
       case CHESS_MSG.JOIN_QUEUE:
@@ -127,6 +193,9 @@ class ChessRoomManager {
         break;
       case CHESS_MSG.JOIN_ROOM:
         this.handleJoinRoom(ws, meta, data);
+        break;
+      case CHESS_MSG.RECONNECT:
+        this.handleReconnect(ws, meta, data);
         break;
       case CHESS_MSG.MOVE:
         this.handleMove(ws, meta, data);
@@ -168,18 +237,36 @@ class ChessRoomManager {
       if (room) {
         if (room.spectators.has(ws)) {
           room.spectators.delete(ws);
-        } else if (!room.isGameOver) {
-          // If active player disconnects during game, start 60s forfeit countdown
-          const isWhite = room.whiteWs === ws;
-          room.onPlayerDisconnect(isWhite, () => {
-            // Forfeit callback
-            const winner = isWhite ? 'b' : 'w';
-            this.finishGame(room, {
-              result: 'abandonment',
-              winner,
-              reason: `Victoria por abandono de ${isWhite ? room.whiteName : room.blackName}`
-            });
+          this.broadcast(room, CHESS_MSG.SPECTATOR_COUNT_UPDATE, {
+            roomId: room.id,
+            spectatorCount: room.spectators.size
           });
+        } else if (!room.isGameOver && room.isStarted) {
+          const isWhite = room.whiteWs === ws;
+          const isBlack = room.blackWs === ws;
+          if (isWhite || isBlack) {
+            // Notify opponent about disconnection
+            const oppWs = isWhite ? room.blackWs : room.whiteWs;
+            if (oppWs && oppWs.readyState === 1) {
+              this.send(oppWs, CHESS_MSG.OPPONENT_DISCONNECTED, {
+                color: isWhite ? 'w' : 'b',
+                name: isWhite ? room.whiteName : room.blackName,
+                timeoutSec: 60
+              });
+            }
+
+            // Start 60s forfeit countdown
+            room.onPlayerDisconnect(isWhite, () => {
+              if (room.isGameOver) return;
+              const winner = isWhite ? 'b' : 'w';
+              this.finishGame(room, {
+                isGameOver: true,
+                result: 'abandonment',
+                winner,
+                reason: `Victoria por abandono de ${isWhite ? room.whiteName : room.blackName}`
+              });
+            });
+          }
         }
       }
     }
@@ -195,9 +282,18 @@ class ChessRoomManager {
     const tc = data.timeControl && TIME_CONTROLS[data.timeControl] ? data.timeControl : 'blitz_3_2';
     const queue = this.queues.get(tc);
 
-    // Look for matching opponent in queue
-    const opp = queue.shift();
-    if (opp && opp.ws !== ws && opp.ws.readyState === 1) {
+    // Look for matching opponent in queue (filter out stale or closed sockets)
+    let opp = null;
+    while (queue.length > 0) {
+      const candidate = queue.shift();
+      if (candidate.aiTimer) clearTimeout(candidate.aiTimer);
+      if (candidate.ws !== ws && candidate.ws.readyState === 1) {
+        opp = candidate;
+        break;
+      }
+    }
+
+    if (opp) {
       // Pair up!
       const roomId = `match_${this.roomCounter++}`;
       const isOppWhite = Math.random() > 0.5;
@@ -218,17 +314,36 @@ class ChessRoomManager {
         allowSpectators: true
       });
     } else {
-      queue.push({ ws, meta, joinedAt: Date.now() });
+      // Queue client and set 25-second AI suggestion timer
+      const queueEntry = { ws, meta, joinedAt: Date.now(), aiTimer: null };
+      queueEntry.aiTimer = setTimeout(() => {
+        if (ws.readyState === 1) {
+          const currentQueue = this.queues.get(tc);
+          if (currentQueue && currentQueue.some(item => item.ws === ws)) {
+            this.send(ws, CHESS_MSG.QUEUE_STATUS, {
+              status: 'suggest_ai',
+              timeControl: tc,
+              message: 'El emparejamiento está tardando. ¿Deseas jugar contra la IA?'
+            });
+          }
+        }
+      }, 25000);
+
+      queue.push(queueEntry);
       this.send(ws, CHESS_MSG.QUEUE_STATUS, { status: 'waiting', timeControl: tc });
     }
   }
 
   handleLeaveQueue(ws, meta) {
     for (const queue of this.queues.values()) {
-      const idx = queue.findIndex(item => item.ws === ws);
-      if (idx !== -1) {
-        queue.splice(idx, 1);
-        this.send(ws, CHESS_MSG.QUEUE_STATUS, { status: 'idle' });
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].ws === ws) {
+          if (queue[i].aiTimer) {
+            clearTimeout(queue[i].aiTimer);
+          }
+          queue.splice(i, 1);
+          this.send(ws, CHESS_MSG.QUEUE_STATUS, { status: 'idle' });
+        }
       }
     }
   }
@@ -237,8 +352,18 @@ class ChessRoomManager {
 
   handleCreateRoom(ws, meta, data = {}) {
     if (data.name) meta.name = data.name.slice(0, 30);
-    const roomId = data.roomId ? data.roomId.trim().toLowerCase().slice(0, 24) : `chess_${this.roomCounter++}`;
-    const pin = data.pin ? String(data.pin).slice(0, 8) : null;
+
+    const rawPin = (data.pin !== undefined && data.pin !== null) ? String(data.pin).trim() : null;
+    let pin = rawPin && rawPin.length > 0 ? rawPin.slice(0, 8) : null;
+
+    // Auto-generate 4-digit PIN if private room was requested without specific PIN
+    if (!pin && data.isPrivate) {
+      pin = this.generateUniquePin();
+    }
+
+    const roomId = data.roomId
+      ? data.roomId.trim().toLowerCase().slice(0, 24)
+      : (pin ? `room_${pin}` : `chess_${this.roomCounter++}`);
     const tc = data.timeControl && TIME_CONTROLS[data.timeControl] ? data.timeControl : 'blitz_5_3';
     const allowSpectators = data.allowSpectators !== false;
     const prefColor = data.preferredColor || 'random';
@@ -252,7 +377,7 @@ class ChessRoomManager {
       id: roomId,
       pin,
       timeControl: tc,
-      isPrivate: Boolean(pin),
+      isPrivate: Boolean(pin || data.isPrivate),
       allowSpectators,
       creatorWs: ws,
       creatorMeta: meta,
@@ -260,33 +385,67 @@ class ChessRoomManager {
     });
 
     this.rooms.set(roomId, room);
+    if (pin) {
+      this.pinToRoom.set(pin, room);
+    }
     meta.roomId = roomId;
 
-    this.send(ws, CHESS_MSG.QUEUE_STATUS, {
+    const createdPayload = {
       status: 'room_created',
       roomId,
       pin,
       timeControl: tc
-    });
+    };
+
+    this.send(ws, CHESS_MSG.QUEUE_STATUS, createdPayload);
+    // Also dispatch chess_room_created for clients listening on explicit event name
+    this.send(ws, 'chess_room_created', createdPayload);
   }
 
   handleJoinRoom(ws, meta, data = {}) {
-    if (!data || !data.roomId) {
-      this.send(ws, CHESS_MSG.ERROR, { message: 'ID de sala requerido.' });
-      return;
-    }
     if (data.name) meta.name = data.name.slice(0, 30);
 
-    const roomId = data.roomId.trim().toLowerCase();
-    const room = this.rooms.get(roomId);
+    let room = null;
+    const reqPin = (data.pin !== undefined && data.pin !== null) ? String(data.pin).trim() : null;
 
-    if (!room) {
-      this.send(ws, CHESS_MSG.ERROR, { message: `No se encontró la sala de ajedrez '${roomId}'.` });
+    if (data.roomId) {
+      const roomId = String(data.roomId).trim().toLowerCase();
+      room = this.rooms.get(roomId);
+      // Fallback: check if roomId was entered as a PIN
+      if (!room && reqPin) {
+        room = this.pinToRoom.get(reqPin);
+      }
+      if (!room && this.pinToRoom.has(roomId)) {
+        room = this.pinToRoom.get(roomId);
+      }
+    } else if (reqPin) {
+      // PIN-only room join route
+      room = this.pinToRoom.get(reqPin);
+      if (!room) {
+        this.send(ws, CHESS_MSG.ERROR, { message: 'No se encontró ninguna sala con el código PIN proporcionado.' });
+        return;
+      }
+    } else {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'ID de sala o código PIN requerido.' });
       return;
     }
 
-    if (room.pin && room.pin !== String(data.pin)) {
+    if (!room) {
+      this.send(ws, CHESS_MSG.ERROR, { message: `No se encontró la sala de ajedrez '${data.roomId || reqPin}'.` });
+      return;
+    }
+
+    // Verify PIN if the room is PIN-protected
+    if (room.pin && reqPin && room.pin !== reqPin) {
       this.send(ws, CHESS_MSG.ERROR, { message: 'PIN de acceso incorrecto.' });
+      return;
+    }
+    if (room.pin && !reqPin && !data.roomId) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'PIN de acceso incorrecto.' });
+      return;
+    }
+    if (room.pin && !reqPin && data.roomId) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'PIN de acceso requerido para esta sala.' });
       return;
     }
 
@@ -296,7 +455,7 @@ class ChessRoomManager {
     }
 
     // Join as opponent!
-    meta.roomId = roomId;
+    meta.roomId = room.id;
     const creator = room.creatorMeta;
     const pref = room.preferredColor;
 
@@ -312,7 +471,7 @@ class ChessRoomManager {
 
     this.createAndStartGame({
       room,
-      roomId,
+      roomId: room.id,
       whiteWs,
       whiteMeta,
       blackWs,
@@ -346,22 +505,130 @@ class ChessRoomManager {
     });
 
     whiteMeta.roomId = roomId;
+    whiteMeta.isSpectating = false;
     blackMeta.roomId = roomId;
+    blackMeta.isSpectating = false;
+
+    // Generate secure session reconnection tokens
+    room.whiteToken = `tok_w_${Math.random().toString(36).substr(2, 10)}_${Date.now()}`;
+    room.blackToken = `tok_b_${Math.random().toString(36).substr(2, 10)}_${Date.now()}`;
+
+    const wTime = Math.max(0, Math.round(room.whiteTime * 10) / 10);
+    const bTime = Math.max(0, Math.round(room.blackTime * 10) / 10);
 
     const startPayload = {
       roomId,
       timeControl,
-      timeControlName: TIME_CONTROLS[timeControl].name,
+      timeControlName: TIME_CONTROLS[timeControl]?.name || timeControl,
       fen: room.engine.getFen(),
       white: { id: whiteMeta.id, name: whiteMeta.name },
       black: { id: blackMeta.id, name: blackMeta.name },
-      whiteTime: room.whiteTime,
-      blackTime: room.blackTime,
+      whitePlayer: { id: whiteMeta.id, name: whiteMeta.name },
+      blackPlayer: { id: blackMeta.id, name: blackMeta.name },
+      whiteTime: wTime,
+      blackTime: bTime,
+      clocks: { w: wTime, b: bTime, increment: room.increment },
       increment: room.increment
     };
 
-    this.send(whiteWs, CHESS_MSG.GAME_START, { ...startPayload, yourColor: 'w' });
-    this.send(blackWs, CHESS_MSG.GAME_START, { ...startPayload, yourColor: 'b' });
+    this.send(whiteWs, CHESS_MSG.GAME_START, {
+      ...startPayload,
+      yourColor: 'w',
+      color: 'w',
+      playerToken: room.whiteToken,
+      token: room.whiteToken,
+      opponent: { id: blackMeta.id, name: blackMeta.name }
+    });
+
+    this.send(blackWs, CHESS_MSG.GAME_START, {
+      ...startPayload,
+      yourColor: 'b',
+      color: 'b',
+      playerToken: room.blackToken,
+      token: room.blackToken,
+      opponent: { id: whiteMeta.id, name: whiteMeta.name }
+    });
+  }
+
+  // --- TOKEN-BASED RECONNECTION ---
+
+  handleReconnect(ws, meta, data = {}) {
+    let room = null;
+    if (data.roomId) {
+      room = this.rooms.get(String(data.roomId).trim().toLowerCase());
+    }
+    const token = data.playerToken || data.token;
+    if (!room && token) {
+      for (const r of this.rooms.values()) {
+        if (r.whiteToken === token || r.blackToken === token) {
+          room = r;
+          break;
+        }
+      }
+    }
+
+    if (!room) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'Partida no encontrada o ya finalizada.' });
+      return;
+    }
+
+    const isWhite = room.whiteToken && room.whiteToken === token;
+    const isBlack = room.blackToken && room.blackToken === token;
+
+    if (!isWhite && !isBlack) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'Token de sesión inválido.' });
+      return;
+    }
+
+    // Cancel forfeit / abandonment countdown
+    if (room.disconnectTimer) {
+      clearTimeout(room.disconnectTimer);
+      room.disconnectTimer = null;
+    }
+
+    // Re-bind active socket
+    if (isWhite) {
+      room.whiteWs = ws;
+    } else {
+      room.blackWs = ws;
+    }
+
+    meta.roomId = room.id;
+    meta.isSpectating = false;
+    meta.name = isWhite ? room.whiteName : room.blackName;
+    this.socketMeta.set(ws, meta);
+
+    const wTime = Math.max(0, Math.round(room.whiteTime * 10) / 10);
+    const bTime = Math.max(0, Math.round(room.blackTime * 10) / 10);
+
+    // Dispatch authoritative state recovery
+    this.send(ws, CHESS_MSG.RECONNECT_SUCCESS, {
+      roomId: room.id,
+      yourColor: isWhite ? 'w' : 'b',
+      color: isWhite ? 'w' : 'b',
+      playerToken: token,
+      fen: room.engine.getFen(),
+      turn: room.engine.turn,
+      whiteTime: wTime,
+      blackTime: bTime,
+      clocks: { w: wTime, b: bTime },
+      increment: room.increment,
+      history: room.engine.history,
+      isGameOver: room.isGameOver,
+      white: { id: room.whiteMeta?.id, name: room.whiteName },
+      black: { id: room.blackMeta?.id, name: room.blackName },
+      whitePlayer: { id: room.whiteMeta?.id, name: room.whiteName },
+      blackPlayer: { id: room.blackMeta?.id, name: room.blackName }
+    });
+
+    // Notify opponent of reconnection
+    const oppWs = isWhite ? room.blackWs : room.whiteWs;
+    if (oppWs && oppWs.readyState === 1) {
+      this.send(oppWs, CHESS_MSG.OPPONENT_RECONNECTED, {
+        color: isWhite ? 'w' : 'b',
+        name: isWhite ? room.whiteName : room.blackName
+      });
+    }
   }
 
   // --- GAME ACTIONS & MOVES ---
@@ -373,7 +640,10 @@ class ChessRoomManager {
 
     const isWhite = room.whiteWs === ws;
     const isBlack = room.blackWs === ws;
-    if (!isWhite && !isBlack) return; // Spectators cannot move
+    if (!isWhite && !isBlack) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'Los espectadores no pueden mover piezas.' });
+      return;
+    }
 
     const turnColor = room.engine.turn;
     if ((isWhite && turnColor !== 'w') || (isBlack && turnColor !== 'b')) {
@@ -393,16 +663,26 @@ class ChessRoomManager {
       else room.blackTime += room.increment;
     }
 
-    // Switch active clock
+    // Switch active clock timestamps
     room.lastMoveTime = Date.now();
+    room.lastTick = Date.now();
+    room.lastClockSync = Date.now();
 
     const status = room.engine.getGameStatus();
+    const wTime = Math.max(0, Math.round(room.whiteTime * 10) / 10);
+    const bTime = Math.max(0, Math.round(room.blackTime * 10) / 10);
+
     const movePayload = {
       roomId: room.id,
       move: executed,
+      from: executed.from,
+      to: executed.to,
+      promotion: executed.promotion,
+      san: executed.san,
       fen: executed.fenAfter,
-      whiteTime: Math.max(0, Math.round(room.whiteTime * 10) / 10),
-      blackTime: Math.max(0, Math.round(room.blackTime * 10) / 10),
+      whiteTime: wTime,
+      blackTime: bTime,
+      clocks: { w: wTime, b: bTime },
       turn: room.engine.turn,
       isCheck: executed.isCheck,
       isCheckmate: executed.isCheckmate,
@@ -423,6 +703,12 @@ class ChessRoomManager {
     if (!room || room.isGameOver) return;
 
     const isWhite = room.whiteWs === ws;
+    const isBlack = room.blackWs === ws;
+    if (!isWhite && !isBlack) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'Los espectadores no pueden modificar la partida.' });
+      return;
+    }
+
     const targetWs = isWhite ? room.blackWs : room.whiteWs;
     room.drawOfferFrom = isWhite ? 'w' : 'b';
 
@@ -438,6 +724,12 @@ class ChessRoomManager {
     if (!room || room.isGameOver || !room.drawOfferFrom) return;
 
     const isWhite = room.whiteWs === ws;
+    const isBlack = room.blackWs === ws;
+    if (!isWhite && !isBlack) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'Los espectadores no pueden modificar la partida.' });
+      return;
+    }
+
     const respondingColor = isWhite ? 'w' : 'b';
     if (respondingColor === room.drawOfferFrom) return;
 
@@ -462,7 +754,10 @@ class ChessRoomManager {
 
     const isWhite = room.whiteWs === ws;
     const isBlack = room.blackWs === ws;
-    if (!isWhite && !isBlack) return;
+    if (!isWhite && !isBlack) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'Los espectadores no pueden modificar la partida.' });
+      return;
+    }
 
     const winner = isWhite ? 'b' : 'w';
     this.finishGame(room, {
@@ -477,6 +772,19 @@ class ChessRoomManager {
     if (!meta.roomId) return;
     const room = this.rooms.get(meta.roomId);
     if (!room || !room.isGameOver) return;
+
+    const isWhite = room.whiteWs === ws;
+    const isBlack = room.blackWs === ws;
+    if (!isWhite && !isBlack) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'Los espectadores no pueden solicitar revancha.' });
+      return;
+    }
+
+    // Cancel 15-minute garbage collection timer on rematch restart
+    if (room.cleanupTimer) {
+      clearTimeout(room.cleanupTimer);
+      room.cleanupTimer = null;
+    }
 
     // Invert colors and restart
     const oldWhiteWs = room.whiteWs;
@@ -512,13 +820,33 @@ class ChessRoomManager {
       reason: status.reason,
       pgn
     });
+
+    // 15-minute cleanup timer on finished games for garbage collection
+    if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
+    room.cleanupTimer = setTimeout(() => {
+      this.destroyRoom(room.id);
+    }, 15 * 60 * 1000);
+  }
+
+  destroyRoom(roomId) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    if (room.pin) {
+      this.pinToRoom.delete(String(room.pin));
+    }
+    room.cleanup();
+    this.rooms.delete(roomId);
   }
 
   // --- SPECTATORS & BROADCASTING ---
 
   handleSpectateRoom(ws, meta, data = {}) {
-    if (!data || !data.roomId) return;
-    const room = this.rooms.get(data.roomId.trim().toLowerCase());
+    const roomId = data.roomId ? String(data.roomId).trim().toLowerCase() : null;
+    if (!roomId) {
+      this.send(ws, CHESS_MSG.ERROR, { message: 'ID de sala requerido para observar.' });
+      return;
+    }
+    const room = this.rooms.get(roomId);
     if (!room) {
       this.send(ws, CHESS_MSG.ERROR, { message: 'Partida no encontrada.' });
       return;
@@ -532,17 +860,29 @@ class ChessRoomManager {
     meta.roomId = room.id;
     meta.isSpectating = true;
 
+    const wTime = Math.max(0, Math.round(room.whiteTime * 10) / 10);
+    const bTime = Math.max(0, Math.round(room.blackTime * 10) / 10);
+
     this.send(ws, CHESS_MSG.SPECTATE_STATE, {
       roomId: room.id,
       fen: room.engine.getFen(),
       turn: room.engine.turn,
-      white: { id: room.whiteMeta.id, name: room.whiteName },
-      black: { id: room.blackMeta.id, name: room.blackName },
-      whiteTime: room.whiteTime,
-      blackTime: room.blackTime,
+      white: { id: room.whiteMeta?.id, name: room.whiteName },
+      black: { id: room.blackMeta?.id, name: room.blackName },
+      whitePlayer: { id: room.whiteMeta?.id, name: room.whiteName },
+      blackPlayer: { id: room.blackMeta?.id, name: room.blackName },
+      whiteTime: wTime,
+      blackTime: bTime,
+      clocks: { w: wTime, b: bTime },
       history: room.engine.history,
       spectatorCount: room.spectators.size,
       isGameOver: room.isGameOver
+    });
+
+    // Broadcast spectator count update to players & spectators
+    this.broadcast(room, CHESS_MSG.SPECTATOR_COUNT_UPDATE, {
+      roomId: room.id,
+      spectatorCount: room.spectators.size
     });
   }
 
@@ -551,6 +891,10 @@ class ChessRoomManager {
     const room = this.rooms.get(meta.roomId);
     if (room) {
       room.spectators.delete(ws);
+      this.broadcast(room, CHESS_MSG.SPECTATOR_COUNT_UPDATE, {
+        roomId: room.id,
+        spectatorCount: room.spectators.size
+      });
     }
     meta.roomId = null;
     meta.isSpectating = false;
@@ -592,7 +936,7 @@ class ChessRoomManager {
     });
   }
 
-  // --- CLOCK TICK LOOP ---
+  // --- CLOCK TICK & AUTHORITATIVE SYNCHRONIZATION LOOP ---
 
   tickClocks() {
     const now = Date.now();
@@ -612,6 +956,7 @@ class ChessRoomManager {
             winner,
             reason: winner ? 'Victoria por tiempo para las Negras' : 'Tablas por tiempo y material insuficiente'
           });
+          continue;
         }
       } else {
         room.blackTime = Math.max(0, room.blackTime - elapsedSec);
@@ -623,7 +968,25 @@ class ChessRoomManager {
             winner,
             reason: winner ? 'Victoria por tiempo para las Blancas' : 'Tablas por tiempo y material insuficiente'
           });
+          continue;
         }
+      }
+
+      // Authoritative clock sync broadcast:
+      // Broadcast every 5 seconds during active play, and every 1 second when active player's clock < 30s
+      const activeTime = room.engine.turn === 'w' ? room.whiteTime : room.blackTime;
+      const syncInterval = (activeTime < 30 || room.whiteTime < 30 || room.blackTime < 30) ? 1000 : 5000;
+      if (now - (room.lastClockSync || 0) >= syncInterval) {
+        room.lastClockSync = now;
+        const wTime = Math.max(0, Math.round(room.whiteTime * 10) / 10);
+        const bTime = Math.max(0, Math.round(room.blackTime * 10) / 10);
+        this.broadcast(room, CHESS_MSG.CLOCK_SYNC, {
+          roomId: room.id,
+          turn: room.engine.turn,
+          whiteTime: wTime,
+          blackTime: bTime,
+          clocks: { w: wTime, b: bTime }
+        });
       }
     }
   }
@@ -660,7 +1023,12 @@ class ChessRoom {
     this.increment = tcCfg.incrementSec;
     this.lastTick = Date.now();
     this.lastMoveTime = Date.now();
+    this.lastClockSync = Date.now();
+
     this.disconnectTimer = null;
+    this.cleanupTimer = null;
+    this.whiteToken = null;
+    this.blackToken = null;
   }
 
   initGame({ whiteWs, whiteMeta, blackWs, blackMeta, timeControl }) {
@@ -684,6 +1052,7 @@ class ChessRoom {
     this.drawOfferFrom = null;
     this.lastTick = Date.now();
     this.lastMoveTime = Date.now();
+    this.lastClockSync = Date.now();
   }
 
   onPlayerDisconnect(isWhite, onTimeoutCallback) {
@@ -696,12 +1065,17 @@ class ChessRoom {
       clearTimeout(this.disconnectTimer);
       this.disconnectTimer = null;
     }
+    if (this.cleanupTimer) {
+      clearTimeout(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
     this.spectators.clear();
   }
 }
 
 module.exports = {
   ChessRoomManager,
+  ChessRoom,
   CHESS_MSG,
   TIME_CONTROLS
 };

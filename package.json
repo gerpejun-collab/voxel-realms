@@ -5,8 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "test": "node --experimental-vm-modules test/check_syntax.js && node test/test.js && node test/test_mobile_ui_layout.js && node test/test_user_reported_fixes.js && node test/test_bunker_trump_defense.js && node test/test_billboard_and_rooms.js && node test/test_burst_500.js && node test/test_m1_flightsync.js && node test/test_aerial_sync.js && node test/test_chess_rules.js && node test/test_chess_multiplayer.js && node test/test_chess_ai.js"
+    "test": "node --experimental-vm-modules test/check_syntax.js && node test/test.js && node test/test_mobile_ui_layout.js && node test/test_user_reported_fixes.js && node test/test_bunker_trump_defense.js && node test/test_billboard_and_rooms.js && node test/test_burst_500.js && node test/test_m1_flightsync.js && node test/test_aerial_sync.js && node test/test_chess_rules.js && node test/test_chess_rules_extended.js && node test/test_chess_mobile_ui_layout.js && node --experimental-vm-modules test/test_chess_3d_procedural_geometry.js && node test/test_chess_multiplayer.js && node test/test_chess_multiplayer_sync.js && node test/test_chess_ai.js && node test/test_chess_nn.js && node test/test_chess_zobrist.js && node test/test_chess_mcts.js && node test/test_chess_book.js && node test/test_chess_rl.js && node test/test_chess_nn_engine.js"
   },
   "keywords": [
     "voxel",

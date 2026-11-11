@@ -15,7 +15,13 @@ class GameState {
     this.dayDurationSeconds = 600; // 10 minute full day/night cycle
     this.animalTypes = ['sheep', 'pig', 'cow', 'chicken', 'wolf', 'horse'];
 
+    this.aerialTargets = new Map(); // targetId -> { id, type, x, y, z, ... }
+    this.targetRespawnTimers = new Map(); // targetId -> Timeout
+    this.fighterAircraft = new Map(); // aircraftId -> { id, x, y, z, ... }
+
     this.initAmbientAnimals();
+    this.initAerialTargets();
+    this.initFighterAircraft();
   }
 
   /**
@@ -125,7 +131,498 @@ class GameState {
     }
   }
 
-  addPlayer(id, name) {
+  /**
+   * Initializes server-synchronized heavy aerial targets (flying practice drones/missiles)
+   * Clamped strictly to mid-altitude (Y: 35-60) and 50% reduced cruising speed (<= 5.0 m/s)
+   */
+  initAerialTargets() {
+    const targets = [
+      {
+        id: 'target_drone_1',
+        type: 'drone_heavy',
+        cx: 0,
+        cz: 0,
+        rx: 80,
+        rz: 60,
+        baseY: 45,
+        ampY: 6,
+        omega: 0.060, // ~4.2 m/s calm cruising speed (strictly <= 5.0 m/s)
+        phase: 0,
+        health: 250,
+        maxHealth: 250,
+        speed: 4.2,
+        state: 'patrol'
+      },
+      {
+        id: 'target_drone_2',
+        type: 'drone_heavy',
+        cx: -180,
+        cz: 180,
+        rx: 70,
+        rz: 70,
+        baseY: 48,
+        ampY: 5,
+        omega: 0.060, // 4.2 m/s calm cruising speed (strictly <= 5.0 m/s)
+        phase: Math.PI,
+        health: 250,
+        maxHealth: 250,
+        speed: 4.2,
+        state: 'patrol'
+      }
+    ];
+
+    for (const t of targets) {
+      const initX = t.cx + t.rx * Math.cos(t.phase);
+      const initZ = t.cz + t.rz * Math.sin(t.phase);
+      const initY = Math.max(35, Math.min(60, t.baseY + t.ampY * Math.sin(0.4 * t.phase)));
+      const initYaw = Math.atan2(-t.rx * Math.sin(t.phase), t.rz * Math.cos(t.phase));
+
+      this.aerialTargets.set(t.id, {
+        ...t,
+        time: 0,
+        x: initX,
+        y: initY,
+        z: initZ,
+        yaw: initYaw,
+        pitch: 0,
+        roll: 0,
+        speed: t.speed || 4.2
+      });
+    }
+  }
+
+  /**
+   * Updates aerial targets trajectories smoothly at 50% cruising speed, strictly bounded to Y: 35-60
+   */
+  updateAerialTargets(dt = 0.05) {
+    const delta = typeof dt === 'number' && Number.isFinite(dt) && dt > 0 ? dt : 0.05;
+    for (const target of this.aerialTargets.values()) {
+      if (target.state !== 'patrol') continue;
+      target.time = (target.time || 0) + delta;
+      const t = target.time * (target.omega || 0.06) + (target.phase || 0);
+      const nextX = target.cx + target.rx * Math.cos(t);
+      const nextZ = target.cz + target.rz * Math.sin(t);
+      const nextY = target.baseY + target.ampY * Math.sin(0.4 * t);
+
+      // Clamped strictly to mid-altitude (Y: 35-60)
+      target.y = Math.max(35, Math.min(60, nextY));
+
+      const dx = nextX - target.x;
+      const dz = nextZ - target.z;
+      if (dx !== 0 || dz !== 0) {
+        target.yaw = Math.atan2(dx, dz);
+      }
+
+      target.x = nextX;
+      target.z = nextZ;
+    }
+  }
+
+  /**
+   * Deducts damage from heavy aerial target. Base health: 250 HP.
+   * Single hits (e.g. Bazooka 95 HP) leave target alive.
+   * On health <= 0, marks state = 'destroyed', returns { destroyed: true, remainingHealth: 0 },
+   * and schedules authoritative 12-second respawn.
+   */
+  hitAerialTarget(targetId, damage = 20, shooterId = null) {
+    const target = this.aerialTargets.get(targetId);
+    if (!target || target.state !== 'patrol') return null;
+
+    const dmg = typeof damage === 'number' && Number.isFinite(damage) ? damage : 20;
+    target.health = Math.max(0, target.health - dmg);
+
+    if (target.health <= 0) {
+      target.state = 'destroyed';
+      target.destroyedAt = Date.now();
+
+      // Schedule authoritative respawn after 12 seconds
+      if (!this.targetRespawnTimers.has(targetId)) {
+        const timer = setTimeout(() => {
+          this.targetRespawnTimers.delete(targetId);
+          target.health = target.maxHealth;
+          target.state = 'patrol';
+          if (typeof this.onTargetRespawn === 'function') {
+            this.onTargetRespawn(target);
+          }
+        }, 12000);
+        this.targetRespawnTimers.set(targetId, timer);
+      }
+
+      return { destroyed: true, target, damage: dmg, remainingHealth: 0, shooterId };
+    }
+
+    return { destroyed: false, target, damage: dmg, remainingHealth: target.health, shooterId };
+  }
+
+  /**
+   * Serializes aerial targets snapshot for WebSocket broadcast
+   */
+  getAerialTargetsSnapshot() {
+    const list = [];
+    for (const t of this.aerialTargets.values()) {
+      list.push({
+        id: t.id,
+        type: t.type || 'drone_heavy',
+        x: Math.round(t.x * 100) / 100,
+        y: Math.round(t.y * 100) / 100,
+        z: Math.round(t.z * 100) / 100,
+        yaw: Math.round((t.yaw || 0) * 100) / 100,
+        pitch: Math.round((t.pitch || 0) * 100) / 100,
+        roll: Math.round((t.roll || 0) * 100) / 100,
+        speed: t.speed || 4.2,
+        health: t.health,
+        maxHealth: t.maxHealth || 250,
+        state: t.state || 'patrol'
+      });
+    }
+    return list;
+  }
+
+  /**
+   * Initializes server-synchronized acrobatic fighter aircraft
+   * Patrols upper airspace (Y: 45-110, e.g. Y=72) at swift cruising speed (48-64 m/s, e.g. 52.0 m/s)
+   */
+  initFighterAircraft() {
+    const waypoints = [
+      { x: 0, y: 72, z: 0 },         // Central Plaza (Y: 72)
+      { x: -250, y: 76, z: -250 },   // NYC Quadrant (Y: 76)
+      { x: -420, y: 92, z: 150 },    // Military Air Base Overflight (safe Y: 92 > 85 forcefield)
+      { x: -250, y: 80, z: 250 },    // Shanghai Quadrant (Y: 80)
+      { x: 0, y: 84, z: 450 },       // North Fjords (Y: 84)
+      { x: 250, y: 78, z: 250 },     // Japan Pagoda (Y: 78)
+      { x: 250, y: 76, z: -250 },    // Paris Eiffel (Y: 76)
+      { x: 0, y: 70, z: -450 }       // South Ocean (Y: 70)
+    ];
+
+    // Compute cumulative loop distances for Centripetal Catmull-Rom spline
+    const segmentDistances = [];
+    let totalLength = 0;
+    for (let i = 0; i < waypoints.length; i++) {
+      const nextIdx = (i + 1) % waypoints.length;
+      const dx = waypoints[nextIdx].x - waypoints[i].x;
+      const dy = waypoints[nextIdx].y - waypoints[i].y;
+      const dz = waypoints[nextIdx].z - waypoints[i].z;
+      const dist = Math.hypot(dx, dy, dz);
+      segmentDistances.push(dist);
+      totalLength += dist;
+    }
+
+    const aircraftData = [
+      {
+        id: 'fighter_1',
+        speed: 52.0, // Swift patrol cruise speed (48-64 m/s)
+        baseSpeed: 52.0,
+        sprintSpeed: 82.0,
+        state: 'patrol',
+        waypoints,
+        segmentDistances,
+        totalLength,
+        pathDistance: 0,
+        x: waypoints[0].x,
+        y: waypoints[0].y,
+        z: waypoints[0].z,
+        yaw: 0,
+        pitch: 0,
+        roll: 0,
+        bankRoll: 0,
+        baseYaw: 0,
+        evasionManeuver: null,
+        evasionStartTime: 0,
+        evasionDuration: 0,
+        evasionDirection: 1,
+        evasionProgress: 0
+      }
+    ];
+
+    for (const a of aircraftData) {
+      this.fighterAircraft.set(a.id, a);
+    }
+  }
+
+  /**
+   * Evaluates Centripetal Catmull-Rom spline at distance `s` along closed loop
+   */
+  evaluateCatmullRom(waypoints, segmentDistances, totalLength, s) {
+    const N = waypoints.length;
+    let dist = ((s % totalLength) + totalLength) % totalLength;
+
+    let segIdx = 0;
+    let accum = 0;
+    while (segIdx < N - 1 && accum + segmentDistances[segIdx] <= dist) {
+      accum += segmentDistances[segIdx];
+      segIdx++;
+    }
+
+    const segLen = Math.max(0.001, segmentDistances[segIdx]);
+    const u = Math.max(0, Math.min(1, (dist - accum) / segLen));
+
+    const p0 = waypoints[(segIdx - 1 + N) % N];
+    const p1 = waypoints[segIdx];
+    const p2 = waypoints[(segIdx + 1) % N];
+    const p3 = waypoints[(segIdx + 2) % N];
+
+    // Centripetal Catmull-Rom formulation
+    const evalCoord = (c) => {
+      const v0 = (p2[c] - p0[c]) * 0.5;
+      const v1 = (p3[c] - p1[c]) * 0.5;
+      const u2 = u * u;
+      const u3 = u2 * u;
+      return (2 * p1[c] - 2 * p2[c] + v0 + v1) * u3 +
+             (-3 * p1[c] + 3 * p2[c] - 2 * v0 - v1) * u2 +
+             v0 * u + p1[c];
+    };
+
+    const evalDeriv = (c) => {
+      const v0 = (p2[c] - p0[c]) * 0.5;
+      const v1 = (p3[c] - p1[c]) * 0.5;
+      const u2 = u * u;
+      return 3 * (2 * p1[c] - 2 * p2[c] + v0 + v1) * u2 +
+             2 * (-3 * p1[c] + 3 * p2[c] - 2 * v0 - v1) * u +
+             v0;
+    };
+
+    const posX = evalCoord('x');
+    const posY = evalCoord('y');
+    const posZ = evalCoord('z');
+
+    const dirX = evalDeriv('x');
+    const dirY = evalDeriv('y');
+    const dirZ = evalDeriv('z');
+
+    return { posX, posY, posZ, dirX, dirY, dirZ };
+  }
+
+  /**
+   * Advances smooth Centripetal Catmull-Rom spline trajectory with roll banking and quintic evasion
+   */
+  updateFighterAircraft(dt = 0.05) {
+    const delta = typeof dt === 'number' && Number.isFinite(dt) && dt > 0 ? dt : 0.05;
+    const now = Date.now();
+
+    for (const aircraft of this.fighterAircraft.values()) {
+      // 1. Advance distance along spline
+      const currentSpeed = aircraft.state === 'evading' ? (aircraft.sprintSpeed || 82.0) : (aircraft.baseSpeed || 52.0);
+      aircraft.speed = currentSpeed;
+      aircraft.pathDistance = (aircraft.pathDistance + currentSpeed * delta) % aircraft.totalLength;
+
+      // 2. Evaluate base position and tangent from Centripetal Catmull-Rom spline
+      const spline = this.evaluateCatmullRom(
+        aircraft.waypoints,
+        aircraft.segmentDistances,
+        aircraft.totalLength,
+        aircraft.pathDistance
+      );
+
+      const tanLen = Math.max(0.0001, Math.hypot(spline.dirX, spline.dirY, spline.dirZ));
+      const tx = spline.dirX / tanLen;
+      const ty = spline.dirY / tanLen;
+      const tz = spline.dirZ / tanLen;
+
+      const baseYaw = Math.atan2(tx, tz);
+      const basePitch = Math.asin(Math.max(-1, Math.min(1, ty)));
+
+      // Horizontal turn rate (for coordinated roll banking: tan(phi) = v^2 * kappa / g)
+      const prevBaseYaw = typeof aircraft.baseYaw === 'number' ? aircraft.baseYaw : (aircraft.yaw || 0);
+      let yawDiff = baseYaw - prevBaseYaw;
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      const yawRate = yawDiff / delta;
+      aircraft.baseYaw = baseYaw;
+
+      const targetBank = Math.max(-1.13, Math.min(1.13, Math.atan((currentSpeed * yawRate) / 9.81)));
+      aircraft.bankRoll = (aircraft.bankRoll || 0) + (targetBank - (aircraft.bankRoll || 0)) * Math.min(1.0, delta * 4.5);
+      const baseRoll = aircraft.bankRoll;
+
+      // 3. Evasive Maneuver Calculation with Quintic Smoothstep Blending
+      let offsetPosX = 0;
+      let offsetPosY = 0;
+      let offsetPosZ = 0;
+      let offsetYaw = 0;
+      let offsetPitch = 0;
+      let offsetRoll = 0;
+
+      if (aircraft.state === 'evading') {
+        const elapsed = (now - aircraft.evasionStartTime) / 1000;
+        const duration = Math.max(0.1, aircraft.evasionDuration || 2.0);
+        const tau = Math.max(0, Math.min(1, elapsed / duration));
+        aircraft.evasionProgress = tau;
+
+        if (tau >= 1.0) {
+          // Evasion maneuver completed cleanly
+          aircraft.state = 'patrol';
+          aircraft.evasionManeuver = null;
+          aircraft.speed = aircraft.baseSpeed || 52.0;
+        } else {
+          // Quintic smoothstep S(tau) = 6*tau^5 - 15*tau^4 + 10*tau^3
+          const tau2 = tau * tau;
+          const tau3 = tau2 * tau;
+          const tau4 = tau3 * tau;
+          const tau5 = tau4 * tau;
+          const S = 6 * tau5 - 15 * tau4 + 10 * tau3;
+
+          // Symmetric quintic bell window W(tau) where W(0)=0, W(0.5)=1, W(1)=0, and W'(0)=W'(1)=0
+          const subTau = tau < 0.5 ? 2 * tau : 2 * (1 - tau);
+          const st2 = subTau * subTau;
+          const st3 = st2 * subTau;
+          const st4 = st3 * subTau;
+          const st5 = st4 * subTau;
+          const W = 6 * st5 - 15 * st4 + 10 * st3;
+
+          const dir = aircraft.evasionDirection || 1;
+          const maneuver = aircraft.evasionManeuver || 'barrel_roll';
+
+          // Lateral (right) unit vector in horizontal plane: normal to forward vector
+          const rx = tz;
+          const rz = -tx;
+
+          if (maneuver === 'barrel_roll') {
+            // 360-degree helical roll
+            offsetRoll = dir * Math.PI * 2 * S;
+            const helixR = 4.5;
+            offsetPosY = W * helixR * (1 - Math.cos(Math.PI * 2 * tau));
+            offsetPosX = W * helixR * Math.sin(Math.PI * 2 * tau) * rx;
+            offsetPosZ = W * helixR * Math.sin(Math.PI * 2 * tau) * rz;
+          } else if (maneuver === 'break_turn') {
+            // High-G knife-edge break away
+            offsetRoll = dir * 1.39 * W; // ~80 degrees bank
+            offsetYaw = dir * 1.13 * W;  // ~65 degrees heading break windowed with W(tau)
+            offsetPosX = W * 16.0 * dir * rx;
+            offsetPosZ = W * 16.0 * dir * rz;
+            offsetPosY = W * 3.5;
+          } else if (maneuver === 'zoom_climb') {
+            // Vertical pitch-up zoom climb
+            offsetPitch = 0.96 * W; // ~55 degrees pitch up
+            offsetPosY = W * 24.0;  // steep climb
+            if (tau > 0.5) {
+              const recTau = (tau - 0.5) * 2; // [0, 1]
+              const rt2 = recTau * recTau;
+              const rt3 = rt2 * recTau;
+              const rt4 = rt3 * recTau;
+              const rt5 = rt4 * recTau;
+              const recS = 6 * rt5 - 15 * rt4 + 10 * rt3;
+              offsetRoll = dir * Math.PI * 2 * recS; // continuous smoothstep inverted recovery
+            }
+          } else if (maneuver === 'spiraling_scissors') {
+            // Decaying oscillatory weaving jink
+            const freq = 1.4;
+            const wave = Math.sin(Math.PI * 2 * freq * tau * duration);
+            const cosWave = Math.cos(Math.PI * 2 * freq * tau * duration);
+            offsetRoll = dir * 1.13 * wave * W;
+            offsetPosY = W * 5.0 * cosWave;
+            offsetPosX = W * 5.0 * wave * rx;
+            offsetPosZ = W * 5.0 * wave * rz;
+          }
+        }
+      }
+
+      // 4. Update aircraft transforms with altitude clamping strictly between Y: 45 and Y: 110
+      aircraft.x = spline.posX + offsetPosX;
+      aircraft.y = Math.max(45, Math.min(110, spline.posY + offsetPosY));
+      aircraft.z = spline.posZ + offsetPosZ;
+      aircraft.yaw = baseYaw + offsetYaw;
+      aircraft.pitch = basePitch + offsetPitch;
+      aircraft.roll = baseRoll + offsetRoll;
+    }
+  }
+
+  /**
+   * Triggers evasive maneuver for fighter aircraft under weapon burst fire
+   * Supported maneuvers: 'barrel_roll', 'break_turn', 'zoom_climb', 'spiraling_scissors'
+   */
+  triggerAircraftEvasion(aircraftId, threatSource = null) {
+    let aircraft = this.fighterAircraft.get(aircraftId);
+    if (!aircraft && this.fighterAircraft.size > 0) {
+      aircraft = this.fighterAircraft.values().next().value;
+    }
+    if (!aircraft) return null;
+
+    // Guard against burst fire retriggering: if aircraft is already actively evading,
+    // do not interrupt or reset evasionStartTime to prevent mid-air teleportation
+    if (aircraft.state === 'evading') {
+      const elapsed = (Date.now() - (aircraft.evasionStartTime || 0)) / 1000;
+      const duration = Math.max(0.1, aircraft.evasionDuration || 2.0);
+      const tau = elapsed / duration;
+      const progress = typeof aircraft.evasionProgress === 'number' ? aircraft.evasionProgress : tau;
+      if (progress < 0.9 || tau < 0.9) {
+        return null;
+      }
+    }
+
+    // Determine maneuver based on incoming threat or cycle
+    const maneuvers = ['barrel_roll', 'break_turn', 'zoom_climb', 'spiraling_scissors'];
+    let chosenManeuver = null;
+
+    if (threatSource && typeof threatSource === 'object') {
+      if (threatSource.weaponType === 'bazooka') {
+        chosenManeuver = 'break_turn';
+      } else if (threatSource.weaponType === 'plasma') {
+        chosenManeuver = 'barrel_roll';
+      } else if (threatSource.weaponType === 'sniper' || threatSource.weaponType === 'rifle') {
+        chosenManeuver = 'spiraling_scissors';
+      }
+    } else if (typeof threatSource === 'string' && maneuvers.includes(threatSource)) {
+      chosenManeuver = threatSource;
+    }
+
+    if (!chosenManeuver) {
+      chosenManeuver = maneuvers[Math.floor(Math.random() * maneuvers.length)];
+    }
+
+    const durationTable = {
+      barrel_roll: 1.8,
+      break_turn: 2.4,
+      zoom_climb: 3.2,
+      spiraling_scissors: 2.8
+    };
+
+    const duration = durationTable[chosenManeuver] || 2.2;
+    const direction = (Math.random() > 0.5 ? 1 : -1);
+
+    aircraft.state = 'evading';
+    aircraft.evasionManeuver = chosenManeuver;
+    aircraft.evasionStartTime = Date.now();
+    aircraft.evasionDuration = duration;
+    aircraft.evasionDirection = direction;
+    aircraft.evasionProgress = 0;
+    aircraft.speed = aircraft.sprintSpeed || 82.0;
+
+    return {
+      aircraftId: aircraft.id,
+      maneuver: chosenManeuver,
+      startTime: aircraft.evasionStartTime,
+      duration,
+      direction
+    };
+  }
+
+  /**
+   * Serializes fighter aircraft snapshot for WebSocket broadcast
+   */
+  getAircraftSnapshot() {
+    const list = [];
+    for (const a of this.fighterAircraft.values()) {
+      list.push({
+        id: a.id,
+        x: Math.round(a.x * 100) / 100,
+        y: Math.round(a.y * 100) / 100,
+        z: Math.round(a.z * 100) / 100,
+        yaw: Math.round((a.yaw || 0) * 100) / 100,
+        pitch: Math.round((a.pitch || 0) * 100) / 100,
+        roll: Math.round((a.roll || 0) * 100) / 100,
+        speed: Math.round((a.speed || 52.0) * 10) / 10,
+        state: a.state || 'patrol',
+        evasionManeuver: a.evasionManeuver || null,
+        evasionStartTime: a.evasionStartTime || 0,
+        evasionDuration: a.evasionDuration || 0,
+        evasionProgress: Math.round((a.evasionProgress || 0) * 100) / 100,
+        pos: [Math.round(a.x * 100) / 100, Math.round(a.y * 100) / 100, Math.round(a.z * 100) / 100],
+        rot: [Math.round((a.yaw || 0) * 100) / 100, Math.round((a.pitch || 0) * 100) / 100, Math.round((a.roll || 0) * 100) / 100]
+      });
+    }
+    return list;
+  }
+
+  addPlayer(id, name, options = {}) {
     // Generate safe unique name if duplicate
     let finalName = name;
     const existingNames = new Set(Array.from(this.players.values()).map(p => p.name.toLowerCase()));
@@ -139,7 +636,8 @@ class GameState {
       name: finalName,
       pos: [0, 25, 0], // Default spawn point at central plaza
       rot: [0, 0],     // [yaw, pitch]
-      action: 'idle',
+      action: (options && options.action) ? options.action : 'idle',
+      isFlying: Boolean(options && options.isFlying),
       weaponsEnabled: true,
       isAdmin: false,
       joinedAt: Date.now(),
@@ -175,6 +673,9 @@ class GameState {
     }
     if (data.action) {
       player.action = data.action;
+    }
+    if (typeof data.isFlying === 'boolean') {
+      player.isFlying = data.isFlying;
     }
     if (typeof data.weaponsEnabled === 'boolean') {
       player.weaponsEnabled = data.weaponsEnabled;
@@ -368,6 +869,7 @@ class GameState {
 
     // Adjust any players standing on destroyed blocks
     for (const p of this.players.values()) {
+      if (p.isFlying || p.action === 'flying') continue;
       const px = p.pos[0];
       const py = p.pos[1];
       const pz = p.pos[2];
@@ -464,6 +966,13 @@ class GameState {
     this.billboards.clear();
     this.nextAnimalId = 1;
     this.initAmbientAnimals();
+
+    for (const timer of this.targetRespawnTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.targetRespawnTimers.clear();
+    this.aerialTargets.clear();
+    this.initAerialTargets();
   }
 
   spawnAnimal(type, x, y, z) {
@@ -555,6 +1064,7 @@ class GameState {
     const affectedPlayers = [];
     if (blockType === 0) {
       for (const p of this.players.values()) {
+        if (p.isFlying || p.action === 'flying') continue;
         const px = p.pos[0];
         const py = p.pos[1];
         const pz = p.pos[2];
@@ -603,6 +1113,7 @@ class GameState {
           pos: p.pos,
           rot: p.rot,
           action: p.action,
+          isFlying: Boolean(p.isFlying),
           weaponsEnabled: !!p.weaponsEnabled,
           joinedAt: p.joinedAt || Date.now()
         });
@@ -622,6 +1133,9 @@ class GameState {
       deltas: deltas,
       animals: this.getAnimalsSnapshot(),
       billboards: this.getBillboardsSnapshot(),
+      aerialTargets: this.getAerialTargetsSnapshot(),
+      fighterAircraft: this.getAircraftSnapshot(),
+      aircraft: this.getAircraftSnapshot(),
       timeOfDay: this.getTimeOfDay()
     };
   }
@@ -647,6 +1161,7 @@ class GameState {
           Math.round(p.rot[1] * 100) / 100
         ],
         action: p.action,
+        isFlying: Boolean(p.isFlying),
         weaponsEnabled: !!p.weaponsEnabled,
         isAdmin: !!p.isAdmin,
         joinedAt: p.joinedAt || Date.now()

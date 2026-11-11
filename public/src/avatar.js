@@ -199,10 +199,20 @@ export class Avatar {
     this.animTime = 0;
     this.swingProgress = 0;
     this.weaponsEnabled = false;
+    this.isFlying = false;
     this.buildModel();
     this.createNameTag();
 
     this.scene.add(this.group);
+  }
+
+  setFlightMode(isFlying) {
+    this.isFlying = Boolean(isFlying);
+    if (this.isFlying) {
+      this.action = 'flying';
+      this.onGround = false;
+      this.velY = 0;
+    }
   }
 
   get currentPos() {
@@ -571,7 +581,7 @@ export class Avatar {
    * Model falls naturally and stands firmly on the newly exposed floor.
    */
   updateGroundDetection(world = this.world) {
-    if (this.action === 'driving') return 25;
+    if (this.isFlying || this.action === 'flying' || this.action === 'driving') return this.targetPos.y;
     if (world) this.world = world;
     const px = this.group.position.x;
     const pz = this.group.position.z;
@@ -604,7 +614,7 @@ export class Avatar {
    * If BLOCKS.AIR, sets onGround = false and applies downward gravitational velocity.
    */
   updateGroundSupport(world = this.world) {
-    if (this.action === 'driving') return true;
+    if (this.isFlying || this.action === 'flying' || this.action === 'driving') return true;
     if (world) this.world = world;
     if (!this.world) return false;
 
@@ -633,6 +643,7 @@ export class Avatar {
   }
 
   onSupportingBlockRemoved(bx, by, bz) {
+    if (this.isFlying || this.action === 'flying' || this.action === 'driving') return;
     if (bx !== undefined && by !== undefined && bz !== undefined) {
       if (!this.isSupportedByBlock(bx, by, bz)) {
         return;
@@ -655,9 +666,26 @@ export class Avatar {
     if (this.plasmaSubGroup) this.plasmaSubGroup.visible = (this.weaponType === 'plasma');
   }
 
-  setTargetState(pos, rot, action, weaponsEnabled) {
+  setTargetState(posOrData, rot, action, weaponsEnabled, isFlying) {
+    let pos = posOrData;
+    if (posOrData && typeof posOrData === 'object' && !Array.isArray(posOrData) && ('pos' in posOrData || 'action' in posOrData || 'isFlying' in posOrData)) {
+      pos = posOrData.pos;
+      rot = posOrData.rot;
+      action = posOrData.action;
+      weaponsEnabled = posOrData.weaponsEnabled;
+      isFlying = posOrData.isFlying;
+    }
+
     if (action) {
       this.action = action;
+    }
+    if (typeof isFlying === 'boolean') {
+      this.isFlying = isFlying;
+    }
+    if (this.isFlying || this.action === 'flying') {
+      this.isFlying = true;
+      this.action = 'flying';
+      this.onGround = false;
     }
     if (typeof weaponsEnabled === 'boolean') {
       this.setWeaponsEnabled(weaponsEnabled);
@@ -667,7 +695,7 @@ export class Avatar {
       let py = pos[1];
       const pz = pos[2];
 
-      if (this.world && this.action !== 'driving') {
+      if (this.world && this.action !== 'driving' && !this.isFlying && this.action !== 'flying') {
         const groundY = this.getGroundHeight(px, pz, py);
         // Eliminate burying or sinking glitch: player model must never sink below true voxel ground
         if (py < groundY) {
@@ -716,7 +744,15 @@ export class Avatar {
       // Instant snap when falling through world, void-wrapping, teleporting, or respawning
       this.group.position.copy(this.targetPos);
       this.velY = 0;
-      this.onGround = true;
+      this.onGround = !this.isFlying && this.action !== 'flying';
+    } else if (this.isFlying || this.action === 'flying') {
+      // FLIGHT MODE: Smooth symmetric 3D kinematic interpolation (Zero gravity, zero ground snapping)
+      const lerpFactor = Math.min(1.0, dt * 14.0);
+      this.group.position.x += (this.targetPos.x - this.group.position.x) * lerpFactor;
+      this.group.position.z += (this.targetPos.z - this.group.position.z) * lerpFactor;
+      this.group.position.y += (this.targetPos.y - this.group.position.y) * lerpFactor;
+      this.velY = 0;
+      this.onGround = false;
     } else {
       // Horizontal smooth interpolation (lerp)
       const horizLerp = Math.min(1.0, dt * 14.0);

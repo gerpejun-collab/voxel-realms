@@ -18,6 +18,8 @@ import { TacticalRadar } from './radar.js';
 import { SandboxManager } from './sandbox.js';
 import { BillboardManager } from './billboard.js';
 import { Avatar } from './avatar.js';
+import { AerialTargetManager } from './aerial_targets.js';
+import { FighterAircraftManager } from './fighter_aircraft.js';
 import { BLOCKS } from './blocks.js';
 import { sound } from './audio.js';
 
@@ -146,6 +148,26 @@ class VoxelRealmsApp {
     }
     if (this.ui) {
       this.ui.setBillboardManager(this.billboardManager);
+    }
+
+    // 7d. Initialize Server-Synchronized Heavy Aerial Targets (Milestone M2)
+    this.aerialTargetManager = new AerialTargetManager(
+      this.sceneManager.scene,
+      this.particleManager,
+      sound
+    );
+    if (this.multiplayer) {
+      this.multiplayer.aerialTargetManager = this.aerialTargetManager;
+    }
+
+    // 7e. Initialize Acrobatic Fighter Aircraft (Milestone M3)
+    this.fighterAircraftManager = new FighterAircraftManager(
+      this.sceneManager.scene,
+      this.particleManager,
+      sound
+    );
+    if (this.multiplayer) {
+      this.multiplayer.fighterAircraftManager = this.fighterAircraftManager;
     }
 
     // Connect Multiplayer Animal & Vehicle Synchronizer
@@ -319,18 +341,52 @@ class VoxelRealmsApp {
         hitAnim = this.animalManager.getHitAnimal(origin, dir, effectiveRange);
       }
 
+      // 3b. Raycast heavy aerial targets
+      let targetAerialHit = null;
+      let targetAerialId = null;
+      if (this.aerialTargetManager && typeof this.aerialTargetManager.getRaycastHit === 'function') {
+        targetAerialHit = this.aerialTargetManager.getRaycastHit(origin, dir, effectiveRange);
+        if (targetAerialHit) {
+          targetAerialId = targetAerialHit.id;
+        }
+      }
+
+      // 3c. Raycast acrobatic fighter aircraft
+      let targetAircraftHit = null;
+      let targetAircraftId = null;
+      if (this.fighterAircraftManager && typeof this.fighterAircraftManager.getRaycastHit === 'function') {
+        targetAircraftHit = this.fighterAircraftManager.getRaycastHit(origin, dir, effectiveRange);
+        if (targetAircraftHit) {
+          targetAircraftId = targetAircraftHit.id;
+        }
+      }
+
       // 4. Raycast voxel block hit (check for BLOCKS.TNT)
       const isTnt = voxelHit && (voxelHit.type === BLOCKS.TNT || voxelHit.type === 19);
 
       // Distance arbitration: find closest impact target
       const playerDist = targetPlayerHit ? targetPlayerHit.distance : Infinity;
       const animalDist = hitAnim ? (hitAnim.distance || effectiveRange) : Infinity;
+      const aerialDist = targetAerialHit ? targetAerialHit.distance : Infinity;
+      const aircraftDist = targetAircraftHit ? targetAircraftHit.distance : Infinity;
       const voxelDist = voxelHit ? Math.hypot(voxelHit.x + 0.5 - origin.x, voxelHit.y + 0.5 - origin.y, voxelHit.z + 0.5 - origin.z) : Infinity;
 
       let targetPoint = null;
       let targetAnimalId = null;
 
-      if (hitAnim && animalDist <= playerDist && animalDist <= voxelDist) {
+      if (targetAircraftHit && aircraftDist <= playerDist && aircraftDist <= animalDist && aircraftDist <= aerialDist && aircraftDist <= voxelDist) {
+        // Hit acrobatic fighter aircraft: spawn impact deflection flash
+        targetPoint = targetAircraftHit.point;
+        if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
+          this.particleManager.spawnMuzzleFlash(targetPoint);
+        }
+      } else if (targetAerialHit && aerialDist <= playerDist && aerialDist <= animalDist && aerialDist <= voxelDist) {
+        // Hit heavy aerial target: spawn shield impact / sparks
+        targetPoint = targetAerialHit.point;
+        if (this.particleManager && typeof this.particleManager.spawnMuzzleFlash === 'function') {
+          this.particleManager.spawnMuzzleFlash(targetPoint);
+        }
+      } else if (hitAnim && animalDist <= playerDist && animalDist <= voxelDist) {
         // Hit an animal or NPC: spawn blood particles & trigger knockback animation
         targetAnimalId = hitAnim.id;
         targetPoint = { x: hitAnim.x, y: hitAnim.y, z: hitAnim.z };
@@ -387,8 +443,10 @@ class VoxelRealmsApp {
       }
 
       // 5. Weapon-specific projectile & destructive impact logic
+      const isSolidVoxelHit = Boolean(voxelHit && voxelDist < Infinity && voxelDist <= playerDist && voxelDist <= animalDist);
+
       if (weaponType === 'bazooka') {
-        const hasSurfaceOrEntityImpact = Boolean((voxelHit && voxelDist < Infinity) || targetPlayerHit || hitAnim);
+        const hasSurfaceOrEntityImpact = Boolean(voxelHit && voxelDist < Infinity && isSolidVoxelHit);
         const impactX = Math.round(targetPoint.x);
         const impactY = Math.round(targetPoint.y);
         const impactZ = Math.round(targetPoint.z);
@@ -432,7 +490,7 @@ class VoxelRealmsApp {
         } else if (this.particleManager && typeof this.particleManager.spawnBulletTracer === 'function') {
           this.particleManager.spawnBulletTracer(tracerStart, targetPoint);
         }
-        if ((voxelHit && voxelDist < Infinity) || targetPlayerHit || hitAnim) {
+        if (isSolidVoxelHit) {
           const px = Math.round(targetPoint.x);
           const py = Math.round(targetPoint.y);
           const pz = Math.round(targetPoint.z);
@@ -455,6 +513,8 @@ class VoxelRealmsApp {
           dir: [dir.x, dir.y, dir.z],
           targetPlayerId,
           targetAnimalId,
+          targetAerialId,
+          targetAircraftId,
           targetTnt: isTnt ? { x: voxelHit.x, y: voxelHit.y, z: voxelHit.z } : null,
           hitPos: targetPoint ? [targetPoint.x, targetPoint.y, targetPoint.z] : null
         });
@@ -628,6 +688,12 @@ class VoxelRealmsApp {
     }
     if (this.billboardManager) {
       this.billboardManager.update(dt);
+    }
+    if (this.aerialTargetManager) {
+      this.aerialTargetManager.update(dt, this.sceneManager.camera);
+    }
+    if (this.fighterAircraftManager) {
+      this.fighterAircraftManager.update(dt);
     }
 
     // 6. Ambient Voxel Animals, Rare NPCs & Highway Traffic

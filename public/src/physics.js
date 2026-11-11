@@ -30,6 +30,7 @@ export class PlayerPhysics {
     // Speed multiplier & Flight Mode
     this.speedMultiplier = 1.0;
     this.flightMode = false;
+    this.isFlying = false;
 
     // Step height (allows stepping over 0.5 unit obstacles smoothly)
     this.stepHeight = 0.5;
@@ -39,6 +40,14 @@ export class PlayerPhysics {
     this.vehicleManager = null;
     this.trafficManager = null;
     this.isDriving = false;
+  }
+
+  get isFlying() {
+    return Boolean(this.flightMode);
+  }
+
+  set isFlying(val) {
+    this.flightMode = Boolean(val);
   }
 
   setVehicleManager(vm) {
@@ -126,6 +135,7 @@ export class PlayerPhysics {
    * Triggered immediately when a supporting block is broken
    */
   onBlockBroken(x, y, z) {
+    if (this.flightMode || this.isFlying) return;
     if (this.isSupportedByBlock(x, y, z)) {
       this.onGround = false;
       if (this.vel.y >= 0) {
@@ -239,7 +249,10 @@ export class PlayerPhysics {
 
     // Determine current action for animation sync
     const horizSpeed = Math.sqrt(this.vel.x * this.vel.x + this.vel.z * this.vel.z);
-    if (this.inWater) {
+    if (this.flightMode || this.isFlying) {
+      this.action = 'flying';
+      this.isFlying = true;
+    } else if (this.inWater) {
       this.action = 'swimming';
     } else if (!this.onGround) {
       this.action = 'jumping';

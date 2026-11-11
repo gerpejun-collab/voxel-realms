@@ -58,14 +58,30 @@ class RoomManager {
       const roomPin = (pin !== null && pin !== undefined) ? pin : (meta?.pin || null);
       const isPrivate = Boolean(roomPin) || (meta ? Boolean(meta.isPrivate) : false);
 
-      this.rooms.set(roomId, {
+      const gameState = new GameState(this.defaultSeed, this.maxPlayers);
+      const room = {
         id: roomId,
         name: roomName,
         pin: roomPin,
         isPrivate: isPrivate,
-        gameState: new GameState(this.defaultSeed, this.maxPlayers),
+        gameState: gameState,
         clients: new Map() // ws -> playerId
-      });
+      };
+      gameState.onTargetRespawn = (target) => {
+        this.broadcast(room, MSG.AERIAL_TARGET_SPAWN, {
+          id: target.id,
+          type: target.type,
+          x: target.x,
+          y: target.y,
+          z: target.z,
+          yaw: target.yaw,
+          health: target.health,
+          maxHealth: target.maxHealth,
+          speed: target.speed,
+          state: target.state
+        });
+      };
+      this.rooms.set(roomId, room);
       if (!this.roomMetadata.has(roomId)) {
         this.roomMetadata.set(roomId, {
           id: roomId,
@@ -410,6 +426,7 @@ class RoomManager {
       pos: player.pos,
       rot: player.rot,
       action: player.action,
+      isFlying: Boolean(player.isFlying),
       weaponsEnabled: !!player.weaponsEnabled,
       joinedAt: player.joinedAt
     }, ws);
@@ -531,6 +548,7 @@ class RoomManager {
       pos: player.pos,
       rot: player.rot,
       action: player.action,
+      isFlying: Boolean(player.isFlying),
       weaponsEnabled: !!player.weaponsEnabled,
       joinedAt: player.joinedAt
     }, ws);
@@ -817,6 +835,92 @@ class RoomManager {
         });
       }, 3050);
       this.pendingTntTimers.add(despawnBroadcastTimer);
+    }
+
+    // 2b. Check if shot targeted a synchronized heavy aerial target
+    if (data.targetAerialId && room.gameState && typeof room.gameState.hitAerialTarget === 'function') {
+      const damageTable = {
+        bazooka: 95,
+        plasma: 45,
+        rifle: 20,
+        sniper: 25,
+        shotgun: 30
+      };
+      const damage = damageTable[data.weaponType] || 20;
+      const result = room.gameState.hitAerialTarget(data.targetAerialId, damage, shooter.id);
+
+      if (result) {
+        if (result.destroyed) {
+          this.broadcast(room, MSG.AERIAL_TARGET_DESTROYED, {
+            targetId: data.targetAerialId,
+            killerId: shooter.id,
+            killerName: shooter.name,
+            weaponType: data.weaponType || 'rifle',
+            x: result.target.x,
+            y: result.target.y,
+            z: result.target.z,
+            respawnDelaySeconds: 12
+          });
+        } else {
+          this.broadcast(room, MSG.AERIAL_TARGET_HIT, {
+            targetId: data.targetAerialId,
+            shooterId: shooter.id,
+            shooterName: shooter.name,
+            weaponType: data.weaponType || 'rifle',
+            damage,
+            remainingHealth: result.remainingHealth,
+            maxHealth: result.target.maxHealth,
+            hitPos: data.hitPos || [result.target.x, result.target.y, result.target.z]
+          });
+        }
+      }
+    }
+
+    // 2c. Check if shot targeted or passed near a synchronized acrobatic fighter aircraft
+    let targetedAircraft = null;
+    if (data.targetAircraftId && room.gameState && room.gameState.fighterAircraft) {
+      targetedAircraft = room.gameState.fighterAircraft.get(data.targetAircraftId);
+    }
+    // Also check if projectile passed near any aircraft in airspace
+    if (!targetedAircraft && room.gameState && room.gameState.fighterAircraft && data.origin && data.dir) {
+      const ox = data.origin[0], oy = data.origin[1], oz = data.origin[2];
+      const dx = data.dir[0], dy = data.dir[1], dz = data.dir[2];
+      for (const plane of room.gameState.fighterAircraft.values()) {
+        const vx = plane.x - ox, vy = plane.y - oy, vz = plane.z - oz;
+        const proj = vx * dx + vy * dy + vz * dz;
+        if (proj > 0 && proj < 1500) {
+          const distSq = (vx * vx + vy * vy + vz * vz) - proj * proj;
+          if (distSq < 45 * 45) { // within 45m threat cylinder
+            targetedAircraft = plane;
+            break;
+          }
+        }
+      }
+    }
+
+    if (targetedAircraft && room.gameState && typeof room.gameState.triggerAircraftEvasion === 'function') {
+      const isEvading = targetedAircraft.state === 'evading' && (targetedAircraft.evasionProgress === undefined || targetedAircraft.evasionProgress < 0.9);
+      if (!isEvading) {
+        const evasionResult = room.gameState.triggerAircraftEvasion(targetedAircraft.id, {
+          threatSource: shooter.id,
+          weaponType: data.weaponType,
+          origin: data.origin,
+          dir: data.dir
+        });
+
+        if (evasionResult) {
+          this.broadcast(room, MSG.AIRCRAFT_EVADE, {
+            aircraftId: targetedAircraft.id,
+            evasionType: evasionResult.maneuver,
+            evasionManeuver: evasionResult.maneuver,
+            threatType: data.weaponType || 'rifle',
+            threatOrigin: data.origin || null,
+            startTime: evasionResult.startTime || Date.now(),
+            durationMs: (evasionResult.duration || 2.2) * 1000,
+            direction: evasionResult.direction || 1
+          });
+        }
+      }
     }
 
     // 3. Shoot-to-detonate TNT block immediately
@@ -1497,13 +1601,48 @@ class RoomManager {
     for (const room of this.rooms.values()) {
       if (!room || !room.clients || room.clients.size === 0) continue;
       try {
+        if (room.gameState && typeof room.gameState.updateAerialTargets === 'function') {
+          room.gameState.updateAerialTargets(0.05);
+        }
+        if (room.gameState && typeof room.gameState.updateFighterAircraft === 'function') {
+          room.gameState.updateFighterAircraft(0.05);
+        }
+
         const snapshot = room.gameState.getPlayersSnapshot();
         const timeOfDay = room.gameState.getTimeOfDay();
+        const targetsSnapshot = (room.gameState && typeof room.gameState.getAerialTargetsSnapshot === 'function')
+          ? room.gameState.getAerialTargetsSnapshot()
+          : [];
+        const aircraftSnapshot = (room.gameState && typeof room.gameState.getAircraftSnapshot === 'function')
+          ? room.gameState.getAircraftSnapshot()
+          : [];
 
         const payload = JSON.stringify({
           type: MSG.PLAYERS_UPDATE,
-          data: { players: snapshot, timeOfDay }
+          data: {
+            players: snapshot,
+            timeOfDay,
+            aerialTargets: targetsSnapshot,
+            aircraft: aircraftSnapshot,
+            fighterAircraft: aircraftSnapshot
+          }
         });
+
+        let targetsPayload = null;
+        if (targetsSnapshot.length > 0) {
+          targetsPayload = JSON.stringify({
+            type: MSG.AERIAL_TARGETS_UPDATE,
+            data: { targets: targetsSnapshot }
+          });
+        }
+
+        let aircraftPayload = null;
+        if (aircraftSnapshot.length > 0) {
+          aircraftPayload = JSON.stringify({
+            type: MSG.AIRCRAFT_UPDATE,
+            data: { aircraft: aircraftSnapshot }
+          });
+        }
 
         let adminPayload = null;
         if (shouldSendAdmin) {
@@ -1521,6 +1660,12 @@ class RoomManager {
           if (clientWs.readyState === 1) {
             try {
               clientWs.send(payload);
+              if (targetsPayload) {
+                clientWs.send(targetsPayload);
+              }
+              if (aircraftPayload) {
+                clientWs.send(aircraftPayload);
+              }
               if (adminPayload) {
                 const meta = this.socketMeta.get(clientWs);
                 if (meta && meta.isAdmin) {
@@ -1547,11 +1692,19 @@ class RoomManager {
     }
     this.pendingTntTimers.clear();
     for (const room of this.rooms.values()) {
-      if (room.gameState && room.gameState.animalTimers) {
-        for (const timer of room.gameState.animalTimers.values()) {
-          clearTimeout(timer);
+      if (room.gameState) {
+        if (room.gameState.animalTimers) {
+          for (const timer of room.gameState.animalTimers.values()) {
+            clearTimeout(timer);
+          }
+          room.gameState.animalTimers.clear();
         }
-        room.gameState.animalTimers.clear();
+        if (room.gameState.targetRespawnTimers) {
+          for (const timer of room.gameState.targetRespawnTimers.values()) {
+            clearTimeout(timer);
+          }
+          room.gameState.targetRespawnTimers.clear();
+        }
       }
     }
   }

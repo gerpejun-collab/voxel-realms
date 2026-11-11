@@ -52,6 +52,8 @@ export class MultiplayerClient {
     this.onVehicleExit = null;
     this.onAdminState = null;
     this.onServerReset = null;
+    this.aerialTargetManager = null;
+    this.fighterAircraftManager = null;
   }
 
   get isConnected() {
@@ -211,6 +213,10 @@ export class MultiplayerClient {
     this.remoteAvatars.clear();
     this.playerDirectory.clear();
 
+    if (this.aerialTargetManager && typeof this.aerialTargetManager.clearAll === 'function') {
+      this.aerialTargetManager.clearAll();
+    }
+
     if (this.onDisconnected) this.onDisconnected();
 
     // Do not auto-reconnect if kicked to login screen by an admin server reset or in Offline Mode
@@ -263,6 +269,12 @@ export class MultiplayerClient {
         }
         this.remoteAvatars.clear();
         this.playerDirectory.clear();
+        if (this.aerialTargetManager && typeof this.aerialTargetManager.clearAll === 'function') {
+          this.aerialTargetManager.clearAll();
+        }
+        if (this.fighterAircraftManager && typeof this.fighterAircraftManager.clearAll === 'function') {
+          this.fighterAircraftManager.clearAll();
+        }
         if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
           this.billboardManager.clear();
         }
@@ -311,6 +323,19 @@ export class MultiplayerClient {
         }
         this.remoteAvatars.clear();
         this.playerDirectory.clear();
+        if (this.aerialTargetManager) {
+          this.aerialTargetManager.clearAll();
+          if (Array.isArray(data.aerialTargets)) {
+            this.aerialTargetManager.syncFromServer(data.aerialTargets);
+          }
+        }
+        if (this.fighterAircraftManager) {
+          this.fighterAircraftManager.clearAll();
+          const initAircraft = data.fighterAircraft || data.aircraft;
+          if (Array.isArray(initAircraft)) {
+            this.fighterAircraftManager.syncFromServer(initAircraft);
+          }
+        }
         if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
           this.billboardManager.clear();
         }
@@ -468,13 +493,20 @@ export class MultiplayerClient {
             if (p.id !== this.myId) {
               const avatar = this.remoteAvatars.get(p.id);
               if (avatar) {
-                avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled);
+                avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled, p.isFlying);
                 if (p.weaponsEnabled !== undefined && typeof avatar.setWeaponsEnabled === 'function') {
                   avatar.setWeaponsEnabled(p.weaponsEnabled);
                 }
               }
             }
           }
+        }
+        if (Array.isArray(data.aerialTargets) && this.aerialTargetManager) {
+          this.aerialTargetManager.syncFromServer(data.aerialTargets);
+        }
+        const aircraftList = data.aircraft || data.fighterAircraft;
+        if (Array.isArray(aircraftList) && this.fighterAircraftManager) {
+          this.fighterAircraftManager.syncFromServer(aircraftList);
         }
         break;
 
@@ -565,6 +597,48 @@ export class MultiplayerClient {
       case 'animal_burst':
         if (data && this.onAnimalBurst) {
           this.onAnimalBurst(data);
+        }
+        break;
+
+      case 'aerial_targets_update':
+        if (data && Array.isArray(data.targets) && this.aerialTargetManager) {
+          this.aerialTargetManager.syncFromServer(data.targets);
+        }
+        break;
+
+      case 'aerial_target_hit':
+        if (data && this.aerialTargetManager) {
+          this.aerialTargetManager.handleHit(data);
+        }
+        if (typeof this.onAerialTargetHit === 'function') {
+          this.onAerialTargetHit(data);
+        }
+        break;
+
+      case 'aerial_target_destroyed':
+        if (data && this.aerialTargetManager) {
+          this.aerialTargetManager.handleDestroyed(data);
+        }
+        if (typeof this.onAerialTargetDestroyed === 'function') {
+          this.onAerialTargetDestroyed(data);
+        }
+        break;
+
+      case 'aerial_target_spawn':
+        if (data && this.aerialTargetManager) {
+          this.aerialTargetManager.handleSpawn(data);
+        }
+        break;
+
+      case 'aircraft_update':
+        if (data && Array.isArray(data.aircraft) && this.fighterAircraftManager) {
+          this.fighterAircraftManager.syncFromServer(data.aircraft);
+        }
+        break;
+
+      case 'aircraft_evade':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleEvade(data);
         }
         break;
 
@@ -784,9 +858,12 @@ export class MultiplayerClient {
     if (this.remoteAvatars.has(p.id) || p.id === this.myId) return;
     const avatar = new Avatar(p.id, p.name, this.scene, this.world);
     avatar.world = this.world;
+    if (p.isFlying !== undefined) {
+      avatar.isFlying = Boolean(p.isFlying);
+    }
     if (p.pos) {
       avatar.group.position.set(p.pos[0], p.pos[1], p.pos[2]);
-      avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled);
+      avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled, p.isFlying);
     }
     if (p.weaponsEnabled !== undefined && typeof avatar.setWeaponsEnabled === 'function') {
       avatar.setWeaponsEnabled(p.weaponsEnabled);
@@ -826,6 +903,12 @@ export class MultiplayerClient {
       ? this.controls.weaponsMode
       : true;
 
+    const isFlying = Boolean(
+      (this.controls && this.controls.physics && (this.controls.physics.flightMode || this.controls.physics.isFlying)) ||
+      (this.physics && (this.physics.flightMode || this.physics.isFlying)) ||
+      action === 'flying'
+    );
+
     this.send('move', {
       pos: [
         Math.round(pos.x * 100) / 100,
@@ -836,7 +919,8 @@ export class MultiplayerClient {
         Math.round(rot.yaw * 100) / 100,
         Math.round(rot.pitch * 100) / 100
       ],
-      action: action || 'idle',
+      action: isFlying ? 'flying' : (action || 'idle'),
+      isFlying,
       weaponsEnabled
     });
   }
@@ -881,6 +965,7 @@ export class MultiplayerClient {
   checkAvatarsGroundAfterBlockBreak(x, y, z) {
     for (const avatar of this.remoteAvatars.values()) {
       if (!avatar) continue;
+      if (avatar.isFlying || avatar.action === 'flying') continue;
       if (typeof avatar.onSupportingBlockRemoved === 'function') {
         avatar.onSupportingBlockRemoved(x, y, z);
       } else if (typeof avatar.updateGroundDetection === 'function') {
@@ -889,7 +974,9 @@ export class MultiplayerClient {
     }
 
     if (this.physics && typeof this.physics.onBlockBroken === 'function') {
-      this.physics.onBlockBroken(x, y, z);
+      if (!this.physics.flightMode && !this.physics.isFlying) {
+        this.physics.onBlockBroken(x, y, z);
+      }
     }
   }
 
@@ -1198,6 +1285,9 @@ export class MultiplayerClient {
   update(dt) {
     for (const avatar of this.remoteAvatars.values()) {
       avatar.update(dt);
+    }
+    if (this.aerialTargetManager && typeof this.aerialTargetManager.update === 'function') {
+      this.aerialTargetManager.update(dt);
     }
   }
 }

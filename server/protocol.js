@@ -51,6 +51,12 @@ const MSG = {
   BOMBER_RETURN: 'bomber_return',
   ANIMALS_UPDATE: 'animals_update',
   ANIMAL_BURST: 'animal_burst',
+  AERIAL_TARGETS_UPDATE: 'aerial_targets_update',
+  AERIAL_TARGET_HIT: 'aerial_target_hit',
+  AERIAL_TARGET_DESTROYED: 'aerial_target_destroyed',
+  AERIAL_TARGET_SPAWN: 'aerial_target_spawn',
+  AIRCRAFT_UPDATE: 'aircraft_update',
+  AIRCRAFT_EVADE: 'aircraft_evade',
   ADMIN_STATE: 'admin_state',
   SERVER_RESET: 'server_reset',
   PONG: 'pong',
@@ -244,6 +250,7 @@ function isValidMove(data) {
   for (const n of rot) {
     if (typeof n !== 'number' || !Number.isFinite(n)) return false;
   }
+  if (data.isFlying !== undefined && typeof data.isFlying !== 'boolean') return false;
   return true;
 }
 
@@ -273,6 +280,21 @@ function isValidWeaponShoot(data) {
   if (data.targetAnimalId !== undefined && data.targetAnimalId !== null) {
     if (typeof data.targetAnimalId !== 'string' || data.targetAnimalId.length > 64) return false;
   }
+  if (data.targetAerialId !== undefined && data.targetAerialId !== null) {
+    if (typeof data.targetAerialId !== 'string' || data.targetAerialId.length > 64) return false;
+  }
+  if (data.targetAircraftId !== undefined && data.targetAircraftId !== null) {
+    if (typeof data.targetAircraftId !== 'string' || data.targetAircraftId.length > 64) return false;
+  }
+  return true;
+}
+
+/**
+ * Validate aerial target hit packet
+ */
+function isValidAerialTargetHit(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (typeof data.targetAerialId !== 'string' || data.targetAerialId.length === 0 || data.targetAerialId.length > 64) return false;
   return true;
 }
 
@@ -358,6 +380,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isValidMove,
     validateTeleportPacket,
     isValidWeaponShoot,
+    isValidAerialTargetHit,
     isValidTntTrigger,
     isValidVehicleDrive,
     isValidMissileLaunch,

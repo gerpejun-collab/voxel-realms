@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/test.js && node test/test_mobile_ui_layout.js && node test/test_user_reported_fixes.js && node test/test_bunker_trump_defense.js && node test/test_billboard_and_rooms.js && node test/test_burst_500.js"
+    "test": "node test/test.js && node test/test_mobile_ui_layout.js && node test/test_user_reported_fixes.js && node test/test_bunker_trump_defense.js && node test/test_billboard_and_rooms.js && node test/test_burst_500.js && node test/test_m1_flightsync.js && node test/test_aerial_sync.js"
   },
   "keywords": [
     "voxel",

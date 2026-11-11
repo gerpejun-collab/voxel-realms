@@ -4745,21 +4745,102 @@ body.mobile-mode .desktop-only {
   transform: translateY(-1px);
 }
 
-/* --- 2. Grandmaster Chess App Modal & Mobile Material 3 Layout --- */
+/* --- 2. Grandmaster Chess App Modal & Mobile Material 3 Expressive Layout --- */
 :root {
-  --chess-bg: #10131a;
-  --chess-surface: #181d26;
-  --chess-surface-variant: #222936;
-  --chess-surface-elevated: #2c3545;
-  --chess-primary: #38bdf8;
-  --chess-primary-glow: rgba(56, 189, 248, 0.4);
-  --chess-accent: #f59e0b;
-  --chess-danger: #ef4444;
-  --chess-danger-pulse: #7f1d1d;
-  --chess-success: #22c55e;
-  --chess-text: #f1f5f9;
-  --chess-text-muted: #94a3b8;
+  --chess-bg: #0f1217;
+  --chess-surface: #171b22;
+  --chess-surface-variant: #1f2530;
+  --chess-surface-container: #1b2029;
+  --chess-surface-container-high: #242b37;
+  --chess-surface-container-highest: #2c3543;
+  --chess-primary: #8ab4f8;
+  --chess-primary-glow: rgba(138, 180, 248, 0.35);
+  --chess-on-primary: #062e6f;
+  --chess-primary-container: #1e3a5f;
+  --chess-on-primary-container: #d3e3fd;
+  --chess-secondary-container: #33435c;
+  --chess-on-secondary-container: #d8e2ff;
+  --chess-accent: #fbc02d;
+  --chess-danger: #f28b82;
+  --chess-danger-pulse: #5c1d1d;
+  --chess-success: #81c995;
+  --chess-text: #e8eaed;
+  --chess-text-muted: #9aa0a6;
+  --chess-outline: #8c9199;
+  --chess-outline-variant: rgba(255, 255, 255, 0.12);
   --chess-border: rgba(255, 255, 255, 0.08);
+  --m3-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --m3-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Material 3 Expressive Vector SVG Icon Classes */
+.chess-m3-icon,
+.m3-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  vertical-align: middle;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.m3-icon-sm {
+  width: 15px;
+  height: 15px;
+  display: inline-block;
+  vertical-align: middle;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.m3-nav-icon,
+.m3-nav-svg {
+  width: 22px;
+  height: 22px;
+  display: inline-block;
+  fill: currentColor;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.m3-avatar-icon,
+.m3-avatar-svg {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  fill: currentColor;
+}
+
+.portal-chess-svg {
+  width: 38px;
+  height: 38px;
+  fill: var(--chess-primary);
+}
+
+.portal-feat-svg {
+  width: 16px;
+  height: 16px;
+  fill: var(--chess-primary);
+  margin-right: 8px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.portal-btn-svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  margin-left: 6px;
+  transition: transform 0.2s ease;
+}
+
+.portal-launch-btn:hover .portal-btn-svg {
+  transform: translateX(4px);
+}
+
+.chess-promo-svg {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
 }
 
 #chess-app-modal {
@@ -4773,7 +4854,7 @@ body.mobile-mode .desktop-only {
   flex-direction: column;
   background: var(--chess-bg);
   color: var(--chess-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -4818,7 +4899,7 @@ body.mobile-mode .desktop-only {
   padding: 0 8px;
   background: var(--chess-surface);
   border-bottom: 1px solid var(--chess-border);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
   z-index: 10;
   box-sizing: border-box;
@@ -4837,13 +4918,13 @@ body.mobile-mode .desktop-only {
   justify-content: center;
   border-radius: 50%;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s var(--m3-easing-standard);
   padding: 0;
 }
 
 .chess-nav-back-btn:hover,
 .chess-nav-back-btn:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .chess-appbar-title-group {
@@ -4859,10 +4940,10 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-appbar-title {
-  font-family: 'Cinzel', serif;
-  font-weight: 800;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
+  font-weight: 700;
   font-size: 15px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.15px;
   color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
@@ -4884,28 +4965,29 @@ body.mobile-mode .desktop-only {
 .chess-appbar-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .chess-pill-btn {
-  padding: 4px 10px;
-  border-radius: 14px;
+  padding: 4px 12px;
+  border-radius: 9999px;
   font-size: 12px;
   font-weight: 600;
-  background: rgba(56, 189, 248, 0.15);
+  background: rgba(138, 180, 248, 0.12);
   color: var(--chess-primary);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  border: 1px solid rgba(138, 180, 248, 0.28);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  transition: all 0.15s ease;
+  gap: 6px;
+  transition: all 0.2s var(--m3-easing-standard);
   min-height: 32px;
 }
 
 .chess-pill-btn:hover,
 .chess-pill-btn:active {
-  background: rgba(56, 189, 248, 0.28);
+  background: rgba(138, 180, 248, 0.24);
+  border-color: var(--chess-primary);
 }
 
 .chess-icon-btn {
@@ -4921,13 +5003,13 @@ body.mobile-mode .desktop-only {
   justify-content: center;
   border-radius: 50%;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s var(--m3-easing-standard);
   padding: 0;
 }
 
 .chess-icon-btn:hover,
 .chess-icon-btn:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .chess-svg-icon {
@@ -4942,15 +5024,16 @@ body.mobile-mode .desktop-only {
   min-height: 44px;
   margin: 2px 8px;
   padding: 0 10px;
-  background: var(--chess-surface);
-  border: 1px solid var(--chess-border);
-  border-radius: 8px;
+  background: var(--chess-surface-container);
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   box-sizing: border-box;
   flex-shrink: 0;
   gap: 8px;
+  transition: all 0.2s var(--m3-easing-standard);
 }
 
 .chess-player-card.top {
@@ -4977,13 +5060,14 @@ body.mobile-mode .desktop-only {
   height: 32px;
   min-width: 32px;
   border-radius: 50%;
-  background: var(--chess-surface-variant);
-  border: 1px solid var(--chess-border);
+  background: var(--chess-surface-container-high);
+  border: 1px solid var(--chess-outline-variant);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
   color: #ffffff;
+  overflow: hidden;
 }
 
 .chess-status-dot {
@@ -4993,7 +5077,7 @@ body.mobile-mode .desktop-only {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  border: 1.5px solid var(--chess-surface);
+  border: 1.5px solid var(--chess-surface-container);
   background: #64748b;
 }
 
@@ -5025,6 +5109,7 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-player-name {
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
   font-weight: 700;
   color: var(--chess-text);
@@ -5037,10 +5122,11 @@ body.mobile-mode .desktop-only {
 .chess-rating-badge {
   font-size: 10px;
   font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: var(--chess-surface-container-highest);
   color: var(--chess-text-muted);
+  border: 1px solid var(--chess-outline-variant);
 }
 
 .chess-captured-line {
@@ -5053,7 +5139,7 @@ body.mobile-mode .desktop-only {
 
 .chess-captured-tray {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--chess-text-muted);
   letter-spacing: 0.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -5063,10 +5149,10 @@ body.mobile-mode .desktop-only {
 .chess-material-diff {
   font-size: 10px;
   font-weight: 700;
-  padding: 0 4px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  padding: 0 6px;
+  border-radius: 9999px;
+  background: var(--chess-secondary-container);
+  color: var(--chess-on-secondary-container);
   display: inline-block;
   line-height: 14px;
 }
@@ -5077,18 +5163,18 @@ body.mobile-mode .desktop-only {
 
 /* Digital Fischer Clock Pill */
 .chess-clock-pill {
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 8px;
+  background: #11151c;
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 9999px;
   padding: 4px 10px;
   font-family: 'Roboto Mono', 'VT323', monospace;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #f8fafc;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
   min-width: 66px;
   text-align: center;
-  transition: all 0.2s ease;
+  transition: all 0.2s var(--m3-easing-standard);
   user-select: none;
   flex-shrink: 0;
 }
@@ -5142,7 +5228,7 @@ body.mobile-mode .desktop-only {
   max-height: 100%;
   border-radius: 3px;
   overflow: hidden;
-  background: #27272a;
+  background: var(--chess-surface-container-high);
   position: relative;
   flex-shrink: 0;
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
@@ -5165,15 +5251,16 @@ body.mobile-mode .desktop-only {
   top: 50%;
   transform: translateY(-50%);
   font-size: 10px;
-  font-weight: 800;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.85);
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(15, 18, 23, 0.92);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--chess-outline-variant);
   white-space: nowrap;
   pointer-events: none;
   z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* 1:1 Responsive Board Arena */
@@ -5190,9 +5277,10 @@ body.mobile-mode .desktop-only {
   user-select: none;
   -webkit-user-select: none;
   overflow: hidden;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  background: #151821;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
+  background: #131720;
+  border: 1px solid var(--chess-outline-variant);
 }
 
 #chess-canvas-2d,
@@ -5200,7 +5288,7 @@ body.mobile-mode .desktop-only {
   width: 100% !important;
   height: 100% !important;
   display: block;
-  border-radius: 8px;
+  border-radius: 16px;
   touch-action: none;
 }
 
@@ -5210,9 +5298,9 @@ body.mobile-mode .desktop-only {
   min-height: 38px;
   margin: 2px 8px;
   padding: 0 6px;
-  background: var(--chess-surface);
-  border: 1px solid var(--chess-border);
-  border-radius: 8px;
+  background: var(--chess-surface-container);
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 12px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -5222,25 +5310,24 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-ticker-btn {
-  width: 32px;
+  width: 30px;
   height: 28px;
-  min-width: 32px;
+  min-width: 30px;
   background: transparent;
   border: none;
   color: var(--chess-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 50%;
   cursor: pointer;
-  font-size: 13px;
   padding: 0;
-  transition: all 0.15s ease;
+  transition: all 0.15s var(--m3-easing-standard);
 }
 
 .chess-ticker-btn:hover,
 .chess-ticker-btn:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
 }
 
@@ -5248,7 +5335,7 @@ body.mobile-mode .desktop-only {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: none;
@@ -5266,11 +5353,12 @@ body.mobile-mode .desktop-only {
   color: #cbd5e1;
   font-size: 12px;
   font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
+  padding: 3px 8px;
+  border-radius: 9999px;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: all 0.15s var(--m3-easing-standard);
 }
 
 .chess-ply-btn:hover {
@@ -5278,27 +5366,30 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-ply-btn.active {
-  background: rgba(56, 189, 248, 0.2);
-  color: var(--chess-primary);
+  background: var(--chess-primary-container);
+  color: var(--chess-on-primary-container);
   font-weight: 700;
 }
 
 .chess-ticker-undo {
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--chess-border);
-  border-radius: 5px;
+  padding: 4px 10px;
+  background: var(--chess-surface-container-high);
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 9999px;
   color: var(--chess-text);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s var(--m3-easing-standard);
 }
 
 .chess-ticker-undo:hover,
 .chess-ticker-undo:active {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .chess-ticker-undo.hidden {
@@ -5309,8 +5400,8 @@ body.mobile-mode .desktop-only {
 .chess-bottom-nav {
   height: 56px;
   min-height: 56px;
-  background: #141720;
-  border-top: 1px solid var(--chess-border);
+  background: var(--chess-surface);
+  border-top: 1px solid var(--chess-outline-variant);
   display: flex;
   align-items: center;
   justify-content: space-around;
@@ -5331,7 +5422,7 @@ body.mobile-mode .desktop-only {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color 0.2s var(--m3-easing-standard);
   position: relative;
   padding: 4px 0;
   border-radius: 12px;
@@ -5341,12 +5432,17 @@ body.mobile-mode .desktop-only {
   font-size: 20px;
   line-height: 1;
   margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chess-nav-label {
-  font-size: 10.5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
   font-weight: 500;
   line-height: 1;
+  letter-spacing: 0.2px;
 }
 
 .chess-nav-item.active {
@@ -5359,16 +5455,18 @@ body.mobile-mode .desktop-only {
 
 .chess-nav-indicator {
   position: absolute;
-  inset: 2px 10px;
-  background: rgba(56, 189, 248, 0.14);
+  inset: 4px 12px;
+  background: rgba(138, 180, 248, 0.16);
   border-radius: 16px;
   z-index: -1;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transform: scaleX(0.7);
+  transition: opacity 0.2s var(--m3-easing-standard), transform 0.2s var(--m3-easing-emphasized);
 }
 
 .chess-nav-item.active .chess-nav-indicator {
   opacity: 1;
+  transform: scaleX(1);
 }
 
 .chess-nav-badge {
@@ -5379,10 +5477,11 @@ body.mobile-mode .desktop-only {
   color: #ffffff;
   font-size: 9px;
   font-weight: 800;
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: 8px;
   line-height: 1;
   display: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 .chess-nav-badge.active {
@@ -5396,14 +5495,14 @@ body.mobile-mode .desktop-only {
   z-index: 9999;
   pointer-events: none;
   background: rgba(0, 0, 0, 0);
-  transition: background 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: background 0.28s var(--m3-easing-emphasized);
 }
 
 #chess-bottom-sheet-container.active {
   pointer-events: auto;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .chess-bottom-sheet {
@@ -5412,12 +5511,13 @@ body.mobile-mode .desktop-only {
   left: 0;
   width: 100%;
   max-height: 85vh;
-  background: #1a1e29;
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
+  background: var(--chess-surface-container);
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  border-top: 1px solid var(--chess-outline-variant);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.65);
   transform: translateY(100%);
-  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform 0.3s var(--m3-easing-emphasized);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -5430,104 +5530,130 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-sheet-drag-handle {
-  width: 36px;
+  width: 32px;
   height: 4px;
-  background: #475569;
-  border-radius: 2px;
-  margin: 8px auto 8px auto;
+  background: var(--chess-outline);
+  border-radius: 9999px;
+  margin: 10px auto 8px auto;
   cursor: grab;
   flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s var(--m3-easing-standard);
+}
+
+.chess-sheet-drag-handle:hover,
+.chess-sheet-drag-handle:active {
+  opacity: 1;
 }
 
 .chess-sheet-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 16px 8px 16px;
-  border-bottom: 1px solid var(--chess-border);
+  padding: 4px 16px 10px 16px;
+  border-bottom: 1px solid var(--chess-outline-variant);
   flex-shrink: 0;
 }
 
 .chess-sheet-title {
-  font-size: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--chess-text);
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .chess-sheet-close {
-  background: none;
+  background: transparent;
   border: none;
   color: var(--chess-text-muted);
   font-size: 20px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.15s var(--m3-easing-standard);
 }
 
-.chess-sheet-close:hover {
+.chess-sheet-close:hover,
+.chess-sheet-close:active {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.08);
 }
 
 .chess-sheet-body {
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 14px 18px;
   flex: 1;
   -webkit-overflow-scrolling: touch;
 }
 
 /* Generic Form Styles inside Bottom Sheets */
 .chess-section-title {
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--chess-text);
   margin-bottom: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
+  letter-spacing: 0.1px;
 }
 
 .chess-time-presets {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .chess-preset-btn {
-  padding: 8px 4px;
-  background: var(--chess-surface-variant);
-  color: #cbd5e1;
-  border: 1px solid var(--chess-border);
-  border-radius: 6px;
+  padding: 8px 6px;
+  background: var(--chess-surface-container-high);
+  color: var(--chess-text);
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 9999px;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s ease;
+  transition: all 0.15s var(--m3-easing-standard);
+}
+
+.chess-preset-btn:hover {
+  background: var(--chess-surface-container-highest);
 }
 
 .chess-preset-btn.selected {
-  background: rgba(56, 189, 248, 0.2);
+  background: var(--chess-primary-container);
   border-color: var(--chess-primary);
-  color: var(--chess-primary);
+  color: var(--chess-on-primary-container);
+  font-weight: 700;
 }
 
 .chess-btn {
-  padding: 9px 14px;
-  border-radius: 8px;
+  padding: 10px 16px;
+  border-radius: 9999px;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.15s ease;
+  transition: all 0.2s var(--m3-easing-standard);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   text-align: center;
 }
 
@@ -5536,64 +5662,66 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-btn-primary {
-  background: #0284c7;
-  color: #ffffff;
+  background: var(--chess-primary);
+  color: var(--chess-on-primary);
 }
 
 .chess-btn-primary:hover,
 .chess-btn-primary:active {
-  background: #0369a1;
+  background: #a8c7fa;
+  box-shadow: 0 2px 8px var(--chess-primary-glow);
 }
 
 .chess-btn-success {
-  background: #16a34a;
-  color: #ffffff;
+  background: var(--chess-success);
+  color: #043817;
 }
 
 .chess-btn-success:hover,
 .chess-btn-success:active {
-  background: #15803d;
+  background: #a3e9b7;
 }
 
 .chess-btn-danger {
-  background: #dc2626;
-  color: #ffffff;
+  background: var(--chess-danger);
+  color: #601410;
 }
 
 .chess-btn-danger:hover,
 .chess-btn-danger:active {
-  background: #b91c1c;
+  background: #f6aea9;
 }
 
 .chess-btn-outline {
   background: transparent;
-  border: 1px solid var(--chess-border);
+  border: 1px solid var(--chess-outline-variant);
   color: var(--chess-text);
 }
 
 .chess-btn-outline:hover,
 .chess-btn-outline:active {
   background: rgba(255, 255, 255, 0.08);
+  border-color: var(--chess-outline);
 }
 
 .chess-divider {
   height: 1px;
-  background: var(--chess-border);
+  background: var(--chess-outline-variant);
   margin: 14px 0;
 }
 
 .chess-private-row {
   display: flex;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .chess-pin-input {
   width: 100px;
-  padding: 8px 10px;
-  background: #11141c;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
+  padding: 8px 12px;
+  background: var(--chess-surface-variant);
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 12px;
   color: #ffffff;
   font-family: monospace;
   font-size: 14px;
@@ -5606,8 +5734,8 @@ body.mobile-mode .desktop-only {
   background: var(--chess-accent);
   color: #000000;
   font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 2px 10px;
+  border-radius: 9999px;
   font-family: monospace;
   letter-spacing: 2px;
 }
@@ -5629,11 +5757,12 @@ body.mobile-mode .desktop-only {
 
 .chess-select {
   flex: 1;
-  padding: 8px;
+  padding: 8px 12px;
   background: var(--chess-surface-variant);
-  color: #f1f5f9;
-  border: 1px solid var(--chess-border);
-  border-radius: 6px;
+  color: var(--chess-text);
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
   font-size: 12px;
 }
 
@@ -5656,18 +5785,18 @@ body.mobile-mode .desktop-only {
 
 /* Analysis Sheet Table & PGN / FEN */
 .chess-code-box {
-  background: #11141c;
-  border: 1px solid var(--chess-border);
-  border-radius: 6px;
-  padding: 8px;
-  font-family: monospace;
+  background: var(--chess-surface-container-highest);
+  border: 1px solid var(--chess-outline-variant);
+  border-radius: 12px;
+  padding: 10px;
+  font-family: 'Roboto Mono', monospace;
   font-size: 11px;
   color: #cbd5e1;
   word-break: break-all;
   max-height: 70px;
   overflow-y: auto;
   user-select: all;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .chess-copy-row {
@@ -5682,16 +5811,16 @@ body.mobile-mode .desktop-only {
   top: 56px;
   left: 50%;
   transform: translateX(-50%) translateY(-20px);
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--chess-surface-container-highest);
   border: 1px solid var(--chess-primary);
   color: #ffffff;
-  padding: 8px 16px;
-  border-radius: 20px;
+  padding: 8px 18px;
+  border-radius: 9999px;
   font-size: 12px;
   font-weight: 600;
   pointer-events: none;
   opacity: 0;
-  transition: all 0.25s ease;
+  transition: all 0.25s var(--m3-easing-emphasized);
   z-index: 10001;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
@@ -5705,9 +5834,9 @@ body.mobile-mode .desktop-only {
 .chess-modal-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5715,27 +5844,28 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-promotion-box {
-  background: var(--chess-surface);
-  border: 2px solid var(--chess-primary);
-  border-radius: 16px;
-  padding: 16px;
+  background: var(--chess-surface-container-high);
+  border: 1px solid var(--chess-primary);
+  border-radius: 24px;
+  padding: 18px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
   text-align: center;
-  max-width: 280px;
+  max-width: 290px;
   width: 90%;
 }
 
 .chess-promo-title {
+  font-family: -apple-system, BlinkMacSystemFont, "Google Sans", "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
   font-weight: 700;
   color: #ffffff;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .chess-promo-options {
   display: flex;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .chess-promo-btn {
@@ -5748,19 +5878,19 @@ body.mobile-mode .desktop-only {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--chess-surface-variant);
+  background: var(--chess-surface-container-highest);
   border: 2px solid var(--chess-primary);
   color: #ffffff;
   cursor: pointer;
-  transition: transform 0.1s ease, background 0.15s ease;
+  transition: transform 0.15s var(--m3-easing-standard), background 0.15s var(--m3-easing-standard);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .chess-promo-btn:hover,
 .chess-promo-btn:active {
-  transform: scale(1.1);
+  transform: scale(1.08);
   background: var(--chess-primary);
-  color: #000000;
+  color: #062e6f;
 }
 
 /* Orientation & Mobile Ergonomics Media Queries */

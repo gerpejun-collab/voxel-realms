@@ -19,6 +19,45 @@ import { ChessView2D } from './chess_view_2d.js';
 import { ChessView3D } from './chess_view_3d.js';
 import { ChessAI } from './chess_ai.js';
 
+export const M3_ICONS = {
+    cube3D: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M21 16.5l-9 5.2-9-5.2V7.5l9-5.2 9 5.2v9zM12 4.1L5 8.1l7 4 7-4-7-4zm-8 5.2v6.2l7 4V13.3L4 9.3zm16 0l-7 4v6.2l7-4V9.3z"/></svg>`,
+    grid2D: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM8 20H4v-4h4v4zm0-6H4v-4h4v4zm0-6H4V4h4v4zm6 12h-4v-4h4v4zm0-6h-4v-4h4v4zm0-6h-4V4h4v4zm6 12h-4v-4h4v4zm0-6h-4v-4h4v4zm0-6h-4V4h4v4z"/></svg>`,
+    smartToy: `<svg class="m3-avatar-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h4V5.72c-.6-.34-1-.98-1-1.72a2 2 0 0 1 2-2M7.5 13a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m9 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-7.5 4h6a1 1 0 0 0 0-2h-6a1 1 0 0 0 0 2"/></svg>`,
+    person: `<svg class="m3-avatar-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
+    kingWhite: `<svg class="m3-avatar-svg" viewBox="0 0 24 24"><path fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" d="M12 2v2m-2-1h4m-3 3c-1.5 0-3 1-3 2.5 0 1.2.8 2 1.8 2.3L9 14h6l-.8-3.2c1-.3 1.8-1.1 1.8-2.3C16 7 14.5 6 13 6h-2zM8 15h8v2H8zm-1 3h10v2H7z"/></svg>`,
+    kingBlack: `<svg class="m3-avatar-svg" viewBox="0 0 24 24"><path fill="#94a3b8" stroke="#475569" stroke-width="1.2" d="M12 2v2m-2-1h4m-3 3c-1.5 0-3 1-3 2.5 0 1.2.8 2 1.8 2.3L9 14h6l-.8-3.2c1-.3 1.8-1.1 1.8-2.3C16 7 14.5 6 13 6h-2zM8 15h8v2H8zm-1 3h10v2H7z"/></svg>`,
+    skipFirst: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>`,
+    chevronPrev: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>`,
+    chevronNext: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>`,
+    skipLatest: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>`,
+    undo: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>`,
+    navGame: `<svg class="m3-nav-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 14H5v-4h6v4zm0-6H5V7h6v4zm8 6h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg>`,
+    navPlay: `<svg class="m3-nav-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>`,
+    navAnalysis: `<svg class="m3-nav-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>`,
+    navRooms: `<svg class="m3-nav-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>`,
+    search: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>`,
+    lock: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>`,
+    bolt: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66s.19-.34.22-.38L14 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15L11 21z"/></svg>`,
+    settings: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.44.17-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>`,
+    drawHandshake: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M18 11.2h-2.4l-2.1-2.1c-.4-.4-1-.4-1.4 0L8.7 12.5c-.4.4-.4 1 0 1.4l3.5 3.5c.4.4 1 .4 1.4 0l4.4-4.4c.4-.4.4-1 0-1.4l-.0-.4zM12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/></svg>`,
+    flagResign: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg>`,
+    replay: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>`,
+    palette: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.25 19.57 10.58 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>`,
+    videocam: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>`,
+    volumeUp: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`,
+    volumeOff: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`,
+    copy: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`,
+    visibility: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`,
+    description: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`,
+    send: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`,
+    close: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`,
+    // Vector Chess Pieces for Promotion Modal
+    promoQueen: `<svg class="chess-promo-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M18 3l-3 4-3-4-3 4-3-4-1 9h16l-1-9zm-6 12c-2.76 0-5 2.24-5 5h10c0-2.76-2.24-5-5-5z"/></svg>`,
+    promoKnight: `<svg class="chess-promo-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 22H5v-2h14v2M17 19H7v-2h10v2M16.5 10.5c0-.29-.12-.56-.32-.75.52-.63.82-1.4.82-2.25 0-1.93-1.57-3.5-3.5-3.5-.44 0-.85.08-1.23.23L12 2h-2l-.27 2.23C9.35 4.08 8.94 4 8.5 4 6.57 4 5 5.57 5 7.5c0 .85.3 1.62.82 2.25-.2.19-.32.46-.32.75 0 .55.45 1 1 1h.63L8 16h6l.87-4.5h.63c.55 0 1-.45 1-1z"/></svg>`,
+    promoRook: `<svg class="chess-promo-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 22H5v-2h14v2M17 19H7v-2h10v2M17 8V4h-2v2h-2V4h-2v2H9V4H7v4h1v7h8V8h1z"/></svg>`,
+    promoBishop: `<svg class="chess-promo-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 22H5v-2h14v2M17 19H7v-2h10v2m-5-17c-.55 0-1 .45-1 1 0 .28.11.53.29.71L10 6c-2 2-2 5 0 7l-1 2h6l-1-2c2-2 2-5 0-7l-1.29-1.29c.18-.18.29-.43.29-.71 0-.55-.45-1-1-1z"/></svg>`
+};
+
 export class ChessUI {
     /**
      * @param {HTMLElement} container
@@ -78,7 +117,7 @@ export class ChessUI {
                 <!-- Row 1: Compact Material 3 Android App Bar (48px) -->
                 <header class="chess-mobile-appbar">
                     <button id="chess-nav-back" class="chess-nav-back-btn" aria-label="Volver al Portal" title="Volver al Portal">
-                        <svg class="chess-svg-icon" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                        <svg class="chess-svg-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
                     </button>
                     <div class="chess-appbar-title-group">
                         <span class="chess-appbar-title">Grandmaster Chess</span>
@@ -86,13 +125,13 @@ export class ChessUI {
                     </div>
                     <div class="chess-appbar-actions">
                         <button id="chess-btn-toggle-view" class="chess-pill-btn" aria-label="Cambiar vista 2D/3D" title="Alternar Vista 2D / 3D">
-                            <span id="chess-view-label">🎲 3D</span>
+                            <span id="chess-view-label">${M3_ICONS.cube3D} 3D</span>
                         </button>
                         <button id="chess-btn-flip" class="chess-icon-btn" aria-label="Girar tablero" title="Girar tablero">
-                            <svg class="chess-svg-icon" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+                            <svg class="chess-svg-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
                         </button>
                         <button id="chess-btn-options" class="chess-icon-btn" aria-label="Opciones de partida" title="Opciones de partida">
-                            <svg class="chess-svg-icon" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                            ${M3_ICONS.settings}
                         </button>
                     </div>
                 </header>
@@ -101,7 +140,7 @@ export class ChessUI {
                 <div class="chess-player-card top" id="chess-player-top">
                     <div class="chess-player-left">
                         <div class="chess-avatar-box">
-                            <span id="chess-top-avatar-icon">🤖</span>
+                            <span id="chess-top-avatar-icon">${M3_ICONS.smartToy}</span>
                             <span class="chess-status-dot bot" id="chess-top-status-dot"></span>
                         </div>
                         <div class="chess-player-meta">
@@ -136,10 +175,10 @@ export class ChessUI {
                             <div class="chess-promotion-box">
                                 <div class="chess-promo-title">Coronación de Peón</div>
                                 <div class="chess-promo-options">
-                                    <button class="chess-promo-btn" data-piece="q" title="Dama">♛</button>
-                                    <button class="chess-promo-btn" data-piece="n" title="Caballo">♞</button>
-                                    <button class="chess-promo-btn" data-piece="r" title="Torre">♜</button>
-                                    <button class="chess-promo-btn" data-piece="b" title="Alfil">♝</button>
+                                    <button class="chess-promo-btn" data-piece="q" title="Dama">${M3_ICONS.promoQueen}</button>
+                                    <button class="chess-promo-btn" data-piece="n" title="Caballo">${M3_ICONS.promoKnight}</button>
+                                    <button class="chess-promo-btn" data-piece="r" title="Torre">${M3_ICONS.promoRook}</button>
+                                    <button class="chess-promo-btn" data-piece="b" title="Alfil">${M3_ICONS.promoBishop}</button>
                                 </div>
                             </div>
                         </div>
@@ -150,7 +189,7 @@ export class ChessUI {
                 <div class="chess-player-card bottom" id="chess-player-bottom">
                     <div class="chess-player-left">
                         <div class="chess-avatar-box">
-                            <span id="chess-bottom-avatar-icon">♟</span>
+                            <span id="chess-bottom-avatar-icon">${M3_ICONS.person}</span>
                             <span class="chess-status-dot online" id="chess-bottom-status-dot"></span>
                         </div>
                         <div class="chess-player-meta">
@@ -169,34 +208,34 @@ export class ChessUI {
 
                 <!-- Row 5: 1-Line SAN Move Ticker & Traversal Controls (38px) -->
                 <div class="chess-move-ticker" id="chess-move-ticker">
-                    <button id="chess-ticker-first" class="chess-ticker-btn" title="Primera jugada" aria-label="Primera jugada">⏮</button>
-                    <button id="chess-ticker-prev" class="chess-ticker-btn" title="Jugada anterior" aria-label="Jugada anterior">◀</button>
+                    <button id="chess-ticker-first" class="chess-ticker-btn" title="Primera jugada" aria-label="Primera jugada">${M3_ICONS.skipFirst}</button>
+                    <button id="chess-ticker-prev" class="chess-ticker-btn" title="Jugada anterior" aria-label="Jugada anterior">${M3_ICONS.chevronPrev}</button>
                     <div class="chess-ticker-moves" id="chess-ticker-feed"></div>
-                    <button id="chess-ticker-next" class="chess-ticker-btn" title="Jugada siguiente" aria-label="Jugada siguiente">▶</button>
-                    <button id="chess-ticker-latest" class="chess-ticker-btn" title="Última jugada" aria-label="Última jugada">⏭</button>
-                    <button id="chess-ticker-undo" class="chess-ticker-undo" title="Deshacer última jugada">↩ Deshacer</button>
+                    <button id="chess-ticker-next" class="chess-ticker-btn" title="Jugada siguiente" aria-label="Jugada siguiente">${M3_ICONS.chevronNext}</button>
+                    <button id="chess-ticker-latest" class="chess-ticker-btn" title="Última jugada" aria-label="Última jugada">${M3_ICONS.skipLatest}</button>
+                    <button id="chess-ticker-undo" class="chess-ticker-undo" title="Deshacer última jugada">${M3_ICONS.undo} Deshacer</button>
                 </div>
 
                 <!-- Row 6: Docked Material 3 Bottom Navigation Bar (56px) -->
                 <nav class="chess-bottom-nav" id="chess-bottom-nav" role="navigation" aria-label="Navegación de ajedrez">
                     <button class="chess-nav-item active" data-sheet="none" data-tab="game">
                         <div class="chess-nav-indicator"></div>
-                        <span class="chess-nav-icon">♟️</span>
+                        <span class="chess-nav-icon">${M3_ICONS.navGame}</span>
                         <span class="chess-nav-label">Partida</span>
                     </button>
                     <button class="chess-nav-item" data-sheet="sheet-play" data-tab="play">
                         <div class="chess-nav-indicator"></div>
-                        <span class="chess-nav-icon">⚡</span>
+                        <span class="chess-nav-icon">${M3_ICONS.navPlay}</span>
                         <span class="chess-nav-label">Jugar</span>
                     </button>
                     <button class="chess-nav-item" data-sheet="sheet-analysis" data-tab="analysis">
                         <div class="chess-nav-indicator"></div>
-                        <span class="chess-nav-icon">📜</span>
+                        <span class="chess-nav-icon">${M3_ICONS.navAnalysis}</span>
                         <span class="chess-nav-label">Movimientos</span>
                     </button>
                     <button class="chess-nav-item" data-sheet="sheet-rooms" data-tab="rooms">
                         <div class="chess-nav-indicator"></div>
-                        <span class="chess-nav-icon">💬</span>
+                        <span class="chess-nav-icon">${M3_ICONS.navRooms}</span>
                         <span class="chess-nav-label">Salas & Chat</span>
                         <span class="chess-nav-badge" id="chess-chat-unread-badge">0</span>
                     </button>
@@ -209,11 +248,11 @@ export class ChessUI {
                 <div class="chess-bottom-sheet" id="sheet-play">
                     <div class="chess-sheet-drag-handle"></div>
                     <div class="chess-sheet-header">
-                        <div class="chess-sheet-title">⚡ Emparejamiento & Juego</div>
-                        <button class="chess-sheet-close" data-close="sheet-play">&times;</button>
+                        <div class="chess-sheet-title">${M3_ICONS.bolt} Emparejamiento & Juego</div>
+                        <button class="chess-sheet-close" data-close="sheet-play">${M3_ICONS.close}</button>
                     </div>
                     <div class="chess-sheet-body">
-                        <div class="chess-section-title">⚡ Partida Rápida Online</div>
+                        <div class="chess-section-title">${M3_ICONS.bolt} Partida Rápida Online</div>
                         <div class="chess-time-presets">
                             <button class="chess-preset-btn" data-tc="bullet_1_0">1+0 Bullet</button>
                             <button class="chess-preset-btn" data-tc="blitz_3_0">3+0 Blitz</button>
@@ -221,12 +260,12 @@ export class ChessUI {
                             <button class="chess-preset-btn" data-tc="rapid_10_0">10+0 Rápida</button>
                         </div>
                         <button id="chess-btn-queue-join" class="chess-btn chess-btn-success chess-full-width">
-                            🔍 Buscar Partida
+                            ${M3_ICONS.search} Buscar Partida
                         </button>
 
                         <div class="chess-divider"></div>
 
-                        <div class="chess-section-title">🔒 Sala Privada con PIN</div>
+                        <div class="chess-section-title">${M3_ICONS.lock} Sala Privada con PIN</div>
                         <div class="chess-private-row">
                             <button id="chess-btn-create-private" class="chess-btn chess-btn-primary">
                                 Crear Sala
@@ -240,7 +279,7 @@ export class ChessUI {
 
                         <div class="chess-divider"></div>
 
-                        <div class="chess-section-title">🤖 Jugar vs Motor IA</div>
+                        <div class="chess-section-title">${M3_ICONS.smartToy} Jugar vs Motor IA</div>
                         <div class="chess-ai-row">
                             <label for="chess-ai-select" style="font-weight:600; color:#cbd5e1;">Dificultad:</label>
                             <select id="chess-ai-select" class="chess-select">
@@ -252,8 +291,8 @@ export class ChessUI {
                             </select>
                         </div>
                         <div class="chess-ai-color-row">
-                            <button class="chess-btn chess-btn-outline" id="chess-btn-ai-white">♔ Jugar Blancas</button>
-                            <button class="chess-btn chess-btn-outline" id="chess-btn-ai-black">♚ Jugar Negras</button>
+                            <button class="chess-btn chess-btn-outline" id="chess-btn-ai-white">${M3_ICONS.kingWhite} Jugar Blancas</button>
+                            <button class="chess-btn chess-btn-outline" id="chess-btn-ai-black">${M3_ICONS.kingBlack} Jugar Negras</button>
                         </div>
                     </div>
                 </div>
@@ -262,20 +301,20 @@ export class ChessUI {
                 <div class="chess-bottom-sheet" id="sheet-options">
                     <div class="chess-sheet-drag-handle"></div>
                     <div class="chess-sheet-header">
-                        <div class="chess-sheet-title">⚙️ Opciones de Partida</div>
-                        <button class="chess-sheet-close" data-close="sheet-options">&times;</button>
+                        <div class="chess-sheet-title">${M3_ICONS.settings} Opciones de Partida</div>
+                        <button class="chess-sheet-close" data-close="sheet-options">${M3_ICONS.close}</button>
                     </div>
                     <div class="chess-sheet-body">
                         <div class="chess-section-title">Acciones de Partida</div>
                         <div class="chess-options-grid">
-                            <button id="chess-btn-draw" class="chess-btn chess-btn-outline">🤝 Ofrecer Tablas</button>
-                            <button id="chess-btn-resign" class="chess-btn chess-btn-danger">🏳️ Rendirse</button>
-                            <button id="chess-btn-rematch" class="chess-btn chess-btn-primary" style="display:none;">🔄 Solicitar Revancha</button>
+                            <button id="chess-btn-draw" class="chess-btn chess-btn-outline">${M3_ICONS.drawHandshake} Ofrecer Tablas</button>
+                            <button id="chess-btn-resign" class="chess-btn chess-btn-danger">${M3_ICONS.flagResign} Rendirse</button>
+                            <button id="chess-btn-rematch" class="chess-btn chess-btn-primary" style="display:none;">${M3_ICONS.replay} Revancha</button>
                         </div>
 
                         <div class="chess-divider"></div>
 
-                        <div class="chess-section-title">🎨 Tema del Tablero</div>
+                        <div class="chess-section-title">${M3_ICONS.palette} Tema del Tablero</div>
                         <div class="chess-ai-row">
                             <select id="chess-select-theme" class="chess-select">
                                 <option value="walnut_maple" selected>Nogal Oscuro y Arce Clásico (Madera de Lujo)</option>
@@ -286,18 +325,18 @@ export class ChessUI {
 
                         <div class="chess-divider"></div>
 
-                        <div class="chess-section-title">🎥 Ajuste de Cámara 3D</div>
+                        <div class="chess-section-title">${M3_ICONS.videocam} Ajuste de Cámara 3D</div>
                         <div class="chess-options-grid">
-                            <button id="chess-cam-angled" class="chess-btn chess-btn-outline">🎲 Vista 3D Dinámica (56°)</button>
-                            <button id="chess-cam-topdown" class="chess-btn chess-btn-outline">📐 Vista Cenital Torneo 2.5D (84°)</button>
-                            <button id="chess-cam-cinematic" class="chess-btn chess-btn-outline">🎬 Vista Heroica Cinemática (32°)</button>
+                            <button id="chess-cam-angled" class="chess-btn chess-btn-outline">Vista 3D Dinámica (56°)</button>
+                            <button id="chess-cam-topdown" class="chess-btn chess-btn-outline">Vista Cenital Torneo (84°)</button>
+                            <button id="chess-cam-cinematic" class="chess-btn chess-btn-outline">Vista Cinemática (32°)</button>
                         </div>
 
                         <div class="chess-divider"></div>
 
-                        <div class="chess-section-title">🔊 Efectos de Audio</div>
+                        <div class="chess-section-title">${M3_ICONS.volumeUp} Efectos de Audio</div>
                         <button id="chess-btn-toggle-sound" class="chess-btn chess-btn-outline chess-full-width">
-                            🔊 Sonido Activado
+                            ${M3_ICONS.volumeUp} Sonido Activado
                         </button>
                     </div>
                 </div>
@@ -306,8 +345,8 @@ export class ChessUI {
                 <div class="chess-bottom-sheet" id="sheet-analysis">
                     <div class="chess-sheet-drag-handle"></div>
                     <div class="chess-sheet-header">
-                        <div class="chess-sheet-title">📜 Notación de Jugadas & Exportación</div>
-                        <button class="chess-sheet-close" data-close="sheet-analysis">&times;</button>
+                        <div class="chess-sheet-title">${M3_ICONS.description} Notación & Exportación</div>
+                        <button class="chess-sheet-close" data-close="sheet-analysis">${M3_ICONS.close}</button>
                     </div>
                     <div class="chess-sheet-body">
                         <div class="chess-section-title">Tabla de Movimientos (SAN)</div>
@@ -327,13 +366,13 @@ export class ChessUI {
                         <div class="chess-section-title">Cadena FEN Actual</div>
                         <div class="chess-code-box" id="chess-fen-box">rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1</div>
                         <div class="chess-copy-row">
-                            <button id="chess-btn-copy-fen" class="chess-btn chess-btn-outline">📋 Copiar FEN</button>
+                            <button id="chess-btn-copy-fen" class="chess-btn chess-btn-outline">${M3_ICONS.copy} Copiar FEN</button>
                         </div>
 
                         <div class="chess-section-title">Notación PGN Completa</div>
                         <div class="chess-code-box" id="chess-pgn-box">[Event "Grandmaster Chess"]</div>
                         <div class="chess-copy-row">
-                            <button id="chess-btn-copy-pgn" class="chess-btn chess-btn-outline">📋 Copiar PGN</button>
+                            <button id="chess-btn-copy-pgn" class="chess-btn chess-btn-outline">${M3_ICONS.copy} Copiar PGN</button>
                         </div>
                     </div>
                 </div>
@@ -342,8 +381,8 @@ export class ChessUI {
                 <div class="chess-bottom-sheet" id="sheet-rooms">
                     <div class="chess-sheet-drag-handle"></div>
                     <div class="chess-sheet-header">
-                        <div class="chess-sheet-title">💬 Salas & Retransmisiones</div>
-                        <button class="chess-sheet-close" data-close="sheet-rooms">&times;</button>
+                        <div class="chess-sheet-title">${M3_ICONS.navRooms} Salas & Retransmisiones</div>
+                        <button class="chess-sheet-close" data-close="sheet-rooms">${M3_ICONS.close}</button>
                     </div>
                     <div class="chess-sheet-body">
                         <div class="chess-section-title">Chat de la Partida</div>
@@ -352,12 +391,12 @@ export class ChessUI {
                         </div>
                         <div class="chess-chat-bar">
                             <input type="text" id="chess-chat-input" placeholder="Escribe un mensaje..." maxlength="120">
-                            <button id="chess-btn-chat-send" class="chess-btn chess-btn-primary">Enviar</button>
+                            <button id="chess-btn-chat-send" class="chess-btn chess-btn-primary">${M3_ICONS.send}</button>
                         </div>
 
                         <div class="chess-divider"></div>
 
-                        <div class="chess-section-title">👁️ Retransmisiones en Directo</div>
+                        <div class="chess-section-title">${M3_ICONS.visibility} Retransmisiones en Directo</div>
                         <div class="chess-spectator-list" id="chess-spectator-games">
                             <span class="chess-empty-text">Buscando partidas públicas...</span>
                         </div>
@@ -420,7 +459,7 @@ export class ChessUI {
                 this.currentViewMode = '3d';
                 c2d.style.display = 'none';
                 c3d.style.display = 'block';
-                viewLabel.textContent = '♟️ 2D';
+                viewLabel.innerHTML = `${M3_ICONS.grid2D} 2D`;
                 this.view3D.resize();
                 this.view3D.syncPieces();
                 this.showToast('Vista 3D activada');
@@ -428,7 +467,7 @@ export class ChessUI {
                 this.currentViewMode = '2d';
                 c3d.style.display = 'none';
                 c2d.style.display = 'block';
-                viewLabel.textContent = '🎲 3D';
+                viewLabel.innerHTML = `${M3_ICONS.cube3D} 3D`;
                 this.view2D.resize();
                 this.view2D.render();
                 this.showToast('Vista 2D activada');
@@ -500,12 +539,12 @@ export class ChessUI {
             if (queueBtn.classList.contains('in-queue')) {
                 this.sendPacket('chess_leave_queue', {});
                 queueBtn.classList.remove('in-queue');
-                queueBtn.textContent = '🔍 Buscar Partida';
+                queueBtn.innerHTML = `${M3_ICONS.search} Buscar Partida`;
                 this.showToast('Búsqueda cancelada');
             } else {
                 this.sendPacket('chess_join_queue', { timeControl: tc, name: this.localPlayerName });
                 queueBtn.classList.add('in-queue');
-                queueBtn.textContent = '⏳ Cancelar Búsqueda...';
+                queueBtn.innerHTML = `${M3_ICONS.bolt} Cancelar Búsqueda...`;
                 this.showToast('Buscando oponente online...');
             }
         });
@@ -614,7 +653,7 @@ export class ChessUI {
         const soundBtn = this.container.querySelector('#chess-btn-toggle-sound');
         soundBtn.addEventListener('click', () => {
             this.soundEnabled = !this.soundEnabled;
-            soundBtn.textContent = this.soundEnabled ? '🔊 Sonido Activado' : '🔇 Sonido Desactivado';
+            soundBtn.innerHTML = this.soundEnabled ? `${M3_ICONS.volumeUp} Sonido Activado` : `${M3_ICONS.volumeOff} Sonido Desactivado`;
             this.showToast(this.soundEnabled ? 'Sonido activado' : 'Sonido silenciado');
         });
 
@@ -861,7 +900,7 @@ export class ChessUI {
                 const qBtn = this.container.querySelector('#chess-btn-queue-join');
                 if (qBtn) {
                     qBtn.classList.remove('in-queue');
-                    qBtn.textContent = '🔍 Buscar Partida';
+                    qBtn.innerHTML = `${M3_ICONS.search} Buscar Partida`;
                 }
 
                 // Close any open bottom sheet and return to board
@@ -1402,15 +1441,15 @@ export class ChessUI {
         if (isWhiteBottom) {
             if (topName) topName.textContent = blackName;
             if (bottomName) bottomName.textContent = whiteName;
-            if (topAvatar) topAvatar.textContent = this.gameMode === 'ai' ? '🤖' : '♚';
-            if (bottomAvatar) bottomAvatar.textContent = '♔';
+            if (topAvatar) topAvatar.innerHTML = this.gameMode === 'ai' ? M3_ICONS.smartToy : M3_ICONS.kingBlack;
+            if (bottomAvatar) bottomAvatar.innerHTML = M3_ICONS.kingWhite;
             if (topRating) topRating.textContent = this.opponentRating;
             if (bottomRating) bottomRating.textContent = this.localRating;
         } else {
             if (topName) topName.textContent = whiteName;
             if (bottomName) bottomName.textContent = blackName;
-            if (topAvatar) topAvatar.textContent = '♔';
-            if (bottomAvatar) bottomAvatar.textContent = this.gameMode === 'ai' ? '🤖' : '♚';
+            if (topAvatar) topAvatar.innerHTML = M3_ICONS.kingWhite;
+            if (bottomAvatar) bottomAvatar.innerHTML = this.gameMode === 'ai' ? M3_ICONS.smartToy : M3_ICONS.kingBlack;
             if (topRating) topRating.textContent = this.localRating;
             if (bottomRating) bottomRating.textContent = this.opponentRating;
         }
@@ -1436,7 +1475,7 @@ export class ChessUI {
         const inCheck = this.engine.isInCheck(this.engine.turn);
 
         if (inCheck) {
-            sub.textContent = `⚠️ ¡Jaque a ${turn}!`;
+            sub.textContent = `¡Jaque a ${turn}!`;
             sub.style.color = '#ef4444';
         } else {
             if (this.gameMode === 'ai') {
@@ -1671,11 +1710,11 @@ export class ChessUI {
         list.innerHTML = games.map(g => `
             <div class="chess-live-item">
                 <div class="chess-live-info">
-                    <span class="chess-live-players">⚔️ ${g.whiteName || g.whitePlayer} vs ${g.blackName || g.blackPlayer}</span>
+                    <span class="chess-live-players">${g.whiteName || g.whitePlayer} vs ${g.blackName || g.blackPlayer}</span>
                     <span class="chess-live-meta">${g.timeControlName || g.timeControl} • ${g.spectators} espectador(es)</span>
                 </div>
-                <button class="chess-btn chess-btn-outline" style="padding:4px 8px; font-size:11px;" onclick="window.chessJoinSpectate('${g.roomId}')">
-                    👁️ Ver
+                <button class="chess-btn chess-btn-outline" style="padding:6px 12px; font-size:11px;" onclick="window.chessJoinSpectate('${g.roomId}')">
+                    ${M3_ICONS.visibility} Ver
                 </button>
             </div>
         `).join('');

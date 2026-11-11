@@ -1540,6 +1540,18 @@ export class UIManager {
       });
     }
 
+    const switchToChessBtn = document.getElementById('switch-to-chess-btn');
+    if (switchToChessBtn) {
+      switchToChessBtn.addEventListener('click', () => {
+        sound.playClick();
+        if (this.pauseMenu) this.pauseMenu.classList.add('hidden');
+        if (this.controls) this.controls.unlock();
+        if (window.openChessApp) {
+          window.openChessApp();
+        }
+      });
+    }
+
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', () => {
         sound.playClick();
@@ -3250,6 +3262,17 @@ export class UIManager {
         this.multiplayer.requestRoomList();
       }
     };
+
+    const btnSwitchChess = document.getElementById('btn-switch-chess');
+    if (btnSwitchChess) {
+      btnSwitchChess.addEventListener('click', () => {
+        sound.playClick();
+        if (this.controls) this.controls.unlock();
+        if (window.openChessApp) {
+          window.openChessApp();
+        }
+      });
+    }
 
     if (btnRooms) {
       btnRooms.addEventListener('click', () => {

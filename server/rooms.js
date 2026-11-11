@@ -212,6 +212,9 @@ class RoomManager {
     }
 
     const { type, data } = parsed;
+    if (type && typeof type === 'string' && type.startsWith('chess_')) {
+      return; // Segregation invariant: chess packets never touch voxel world
+    }
     const meta = this.socketMeta.get(ws);
     if (!meta) return;
 

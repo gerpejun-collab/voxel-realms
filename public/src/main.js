@@ -20,6 +20,7 @@ import { BillboardManager } from './billboard.js';
 import { Avatar } from './avatar.js';
 import { AerialTargetManager } from './aerial_targets.js';
 import { FighterAircraftManager } from './fighter_aircraft.js';
+import { ChessUI } from './chess/chess_ui.js';
 import { BLOCKS } from './blocks.js';
 import { sound } from './audio.js';
 
@@ -731,5 +732,78 @@ if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', launchApp);
 } else {
   launchApp();
+}
+
+// Global Launcher & Switcher for Grandmaster Chess
+let chessAppInstance = null;
+
+window.openChessApp = function() {
+  const chessModal = document.getElementById('chess-app-modal');
+  const portalHub = document.getElementById('portal-hub-modal');
+  const lobbyOverlay = document.getElementById('lobby-overlay');
+
+  if (portalHub) portalHub.classList.add('hidden');
+  if (lobbyOverlay) lobbyOverlay.classList.add('hidden');
+  if (chessModal) chessModal.classList.remove('hidden');
+
+  if (!chessAppInstance) {
+    const rootContainer = document.getElementById('chess-root-container');
+    if (!rootContainer) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    const socket = new WebSocket(wsUrl);
+    window.chessSocket = socket;
+
+    const playerNameInput = document.getElementById('player-name-input');
+    const localName = (playerNameInput && playerNameInput.value.trim()) || 'GranMaestro';
+
+    let initialized = false;
+    const initUI = () => {
+      if (initialized) return;
+      initialized = true;
+      chessAppInstance = new ChessUI(rootContainer, socket, localName);
+
+      const menuBtn = rootContainer.querySelector('#chess-btn-menu');
+      if (menuBtn) {
+        menuBtn.addEventListener('click', () => {
+          chessModal.classList.add('hidden');
+          if (portalHub) portalHub.classList.remove('hidden');
+        });
+      }
+    };
+
+    socket.addEventListener('open', initUI);
+    socket.addEventListener('error', () => {
+      if (!chessAppInstance) {
+        initialized = true;
+        chessAppInstance = new ChessUI(rootContainer, null, localName);
+        const menuBtn = rootContainer.querySelector('#chess-btn-menu');
+        if (menuBtn) {
+          menuBtn.addEventListener('click', () => {
+            chessModal.classList.add('hidden');
+            if (portalHub) portalHub.classList.remove('hidden');
+          });
+        }
+      }
+    });
+
+    // In case socket is immediately open or offline
+    setTimeout(() => {
+      if (!initialized) initUI();
+    }, 500);
+  } else {
+    if (chessAppInstance.currentViewMode === '2d') {
+      chessAppInstance.view2D.resize();
+      chessAppInstance.view2D.render();
+    } else {
+      chessAppInstance.view3D.resize();
+      chessAppInstance.view3D.syncPieces();
+    }
+  }
+};
+
+if (window.__wantsChess) {
+  window.openChessApp();
 }
 

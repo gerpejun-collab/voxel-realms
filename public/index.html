@@ -82,6 +82,7 @@
 
     <!-- Top Right Quick Access Pill Actions -->
     <div id="hud-quick-actions">
+      <button id="btn-switch-chess" class="hud-action-pill mc-pill highlight-pill" title="Jugar al Ajedrez FIDE (2D / 3D)"><span class="hud-pill-icon">♟️</span><span class="hud-pill-txt"> Ajedrez</span></button>
       <button id="btn-rooms" class="hud-action-pill mc-pill highlight-pill" title="Salas de Jugadores y PIN Privado"><span class="hud-pill-icon">🚪</span><span class="hud-pill-txt"> Salas</span></button>
       <button id="btn-toggle-cam" class="hud-action-pill mc-pill" title="Alternar Vista de Cámara (F5)"><span class="hud-pill-icon">📷</span><span class="hud-pill-txt"> Vista</span></button>
       <button id="btn-map" class="hud-action-pill mc-pill" title="Mapa del Mundo y Viaje Rápido (M)"><span class="hud-pill-icon">🗺️</span><span class="hud-pill-txt"> Mapa</span></button>
@@ -857,7 +858,8 @@
 
       <div class="pause-actions">
         <button id="resume-btn" class="primary-btn mc-btn">Volver al Juego</button>
-        <button id="disconnect-btn" class="secondary-btn mc-btn">Salir a la Pantalla Principal</button>
+        <button id="switch-to-chess-btn" class="mc-btn highlight-btn" type="button">♟️ Ir a Grandmaster Chess</button>
+        <button id="disconnect-btn" class="secondary-btn mc-btn">Salir al Portal Principal</button>
       </div>
     </div>
   </div>
@@ -867,8 +869,73 @@
     <span>🖱️ Haz clic en la pantalla para mover la cámara (ESC para el menú)</span>
   </div>
 
+  <!-- Dual Game Portal Hub (Initial Screen) -->
+  <div id="portal-hub-modal">
+    <div class="portal-backdrop"></div>
+    <div class="portal-container">
+      <div class="portal-header">
+        <div class="portal-supertitle">PLATAFORMA MULTIJUGADOR DUAL</div>
+        <h1 class="portal-title">PORTAL DE JUEGOS</h1>
+        <p class="portal-subtitle">Elige tu experiencia: Exploración 3D hiperrealista o Gran Maestro de Ajedrez</p>
+      </div>
+
+      <div class="portal-cards-grid">
+        <!-- Game 1: Voxel Realms -->
+        <div class="portal-card voxel-card" id="portal-card-voxel">
+          <div class="portal-card-glow"></div>
+          <div class="portal-card-badge">MUNDO ABIERTO 3D</div>
+          <div class="portal-card-icon">⛏️</div>
+          <h2 class="portal-card-title">VOXEL REALMS</h2>
+          <p class="portal-card-desc">
+            Construcción libre infinita, monumentos mundiales, aviones caza acrobáticos, vehículos de carreras, combate aéreo de misiles y multijugador masivo online.
+          </p>
+          <ul class="portal-features-list">
+            <li>⚡ 30 Exploradores por sala</li>
+            <li>✈️ Aviones caza y combate de misiles</li>
+            <li>🏎️ Circuitos de carreras y vehículos</li>
+            <li>🏰 6 Sectores de monumentos épicos</li>
+          </ul>
+          <div class="portal-live-stat">
+            <span class="portal-stat-dot online"></span>
+            <span id="portal-voxel-players">Servidor En Línea</span>
+          </div>
+          <button id="portal-btn-launch-voxel" class="portal-launch-btn voxel-theme-btn" type="button">
+            <span>ENTRAR A VOXEL REALMS</span>
+            <span class="portal-btn-arrow">➔</span>
+          </button>
+        </div>
+
+        <!-- Game 2: Grandmaster Chess -->
+        <div class="portal-card chess-card" id="portal-card-chess">
+          <div class="portal-card-glow"></div>
+          <div class="portal-card-badge">ESTRATEGIA FIDE 2D / 3D</div>
+          <div class="portal-card-icon">♟️</div>
+          <h2 class="portal-card-title">GRANDMASTER CHESS</h2>
+          <p class="portal-card-desc">
+            Ajedrez profesional con reglas 100% FIDE. Alterna entre vista 2D vector y 3D Three.js Staunton con 1 clic. Emparejamiento por ritmos, salas privadas por PIN y motor IA.
+          </p>
+          <ul class="portal-features-list">
+            <li>🎲 Vista 2D clásica y 3D Staunton con 1 clic</li>
+            <li>⚡ Bullet (1m), Blitz (3m/5m), Rápida (10m)</li>
+            <li>🔒 Salas privadas con PIN de 4 dígitos</li>
+            <li>🤖 Motor IA de 5 niveles de dificultad</li>
+            <li>👁️ Retransmisión de partidas en directo</li>
+          </ul>
+          <div class="portal-live-stat">
+            <span class="portal-stat-dot chess-dot"></span>
+            <span id="portal-chess-games">Motor FIDE Listo</span>
+          </div>
+          <button id="portal-btn-launch-chess" class="portal-launch-btn chess-theme-btn" type="button">
+            <span>ENTRAR A GRANDMASTER CHESS</span>
+            <span class="portal-btn-arrow">➔</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Initial Lobby Overlay -->
-  <div id="lobby-overlay">
+  <div id="lobby-overlay" class="hidden">
     <div class="lobby-backdrop"></div>
     <div class="lobby-card">
       <div class="game-badge">HIPERREALISMO 3D • MULTIJUGADOR WEB (30 JUGADORES)</div>
@@ -944,12 +1011,24 @@
     </div>
   </div>
 
+  <!-- Grandmaster Chess Arena Container -->
+  <div id="chess-app-modal" class="hidden">
+    <div id="chess-root-container"></div>
+  </div>
+
   <!-- Fast Pre-Load Status Probe & Join Fallback -->
   <script>
     (function() {
+      const portalHub = document.getElementById('portal-hub-modal');
+      const launchVoxelBtn = document.getElementById('portal-btn-launch-voxel');
+      const launchChessBtn = document.getElementById('portal-btn-launch-chess');
+      const lobbyOverlay = document.getElementById('lobby-overlay');
+      const chessModal = document.getElementById('chess-app-modal');
       const statusPill = document.getElementById('server-status-pill');
       const lobbyCount = document.getElementById('lobby-players-count');
       const joinBtn = document.getElementById('join-btn');
+      const portalVoxelStat = document.getElementById('portal-voxel-players');
+      const portalChessStat = document.getElementById('portal-chess-games');
 
       // Fast status fetch before heavy 3D assets download
       fetch('/api/status')
@@ -961,12 +1040,37 @@
           if (lobbyCount) {
             lobbyCount.textContent = (d.onlinePlayers || 0) + ' / ' + (d.maxPlayers || 30) + ' conectados';
           }
+          if (portalVoxelStat) {
+            portalVoxelStat.textContent = (d.onlinePlayers || 0) + ' / ' + (d.maxPlayers || 30) + ' jugadores online';
+          }
+          if (portalChessStat) {
+            var active = (d.chess && d.chess.activeGames) || 0;
+            portalChessStat.textContent = active > 0 ? (active + ' partida(s) en curso') : 'Motor FIDE & Online Listo';
+          }
         })
         .catch(function() {
           if (statusPill && !statusPill.dataset.custom) {
             statusPill.innerHTML = '<span class="status-dot offline"></span> Reconectando...';
           }
         });
+
+      if (launchVoxelBtn) {
+        launchVoxelBtn.addEventListener('click', function() {
+          if (portalHub) portalHub.classList.add('hidden');
+          if (lobbyOverlay) lobbyOverlay.classList.remove('hidden');
+        });
+      }
+
+      if (launchChessBtn) {
+        launchChessBtn.addEventListener('click', function() {
+          if (portalHub) portalHub.classList.add('hidden');
+          if (lobbyOverlay) lobbyOverlay.classList.add('hidden');
+          if (chessModal) chessModal.classList.remove('hidden');
+          if (window.openChessApp) {
+            window.openChessApp();
+          }
+        });
+      }
 
       if (joinBtn) {
         joinBtn.addEventListener('click', function() {

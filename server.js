@@ -7,6 +7,7 @@ const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const { RoomManager } = require('./server/rooms');
+const { ChessRoomManager } = require('./server/chess-rooms');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = '0.0.0.0';
@@ -16,11 +17,12 @@ const WORLD_SEED = parseInt(process.env.WORLD_SEED, 10) || 48151623;
 const app = express();
 const server = http.createServer(app);
 
-// Initialize Room Manager
+// Initialize Room Manager (Voxel World) & Chess Room Manager (Independent Chess World)
 const roomManager = new RoomManager({
   maxPlayers: MAX_PLAYERS,
   seed: WORLD_SEED
 });
+const chessRoomManager = new ChessRoomManager();
 
 // Security & Caching middleware
 app.use((req, res, next) => {
@@ -68,7 +70,9 @@ app.get('/api/status', (req, res) => {
     status: 'online',
     onlinePlayers: roomManager.getTotalOnlineCount(),
     maxPlayers: roomManager.maxPlayers,
-    seed: roomManager.defaultSeed
+    seed: roomManager.defaultSeed,
+    chessActiveGames: chessRoomManager.rooms.size,
+    chessOnlinePlayers: chessRoomManager.socketMeta.size
   });
 });
 
@@ -167,6 +171,20 @@ wss.on('connection', (ws, req) => {
     ws.isAlive = true;
   });
 
+  // Segregated message listener for Chess packets
+  ws.on('message', (message) => {
+    try {
+      const parsed = typeof message === 'string' ? JSON.parse(message) : JSON.parse(message.toString());
+      if (parsed && typeof parsed.type === 'string' && parsed.type.startsWith('chess_')) {
+        chessRoomManager.handleMessage(ws, parsed);
+      }
+    } catch (_) {}
+  });
+
+  ws.on('close', () => {
+    chessRoomManager.handleDisconnect(ws);
+  });
+
   roomManager.handleConnection(ws);
 });
 
@@ -188,7 +206,7 @@ wss.on('close', () => {
 // Start listening
 server.listen(PORT, HOST, () => {
   console.log(`===============================================`);
-  console.log(`   VOXEL REALMS - SERVER STARTED`);
+  console.log(`   VOXEL REALMS & CHESS PORTAL - SERVER STARTED`);
   console.log(`   Port: ${PORT} | Host: ${HOST}`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`   Max Players: ${MAX_PLAYERS} | World Seed: ${WORLD_SEED}`);
@@ -201,6 +219,7 @@ function gracefulShutdown(signal) {
   console.log(`\nReceived ${signal}. Shutting down gracefully...`);
   clearInterval(heartbeatInterval);
   roomManager.destroy();
+  chessRoomManager.destroy();
 
   wss.close(() => {
     server.close(() => {

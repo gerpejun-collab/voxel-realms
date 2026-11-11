@@ -4853,7 +4853,8 @@ body.mobile-mode .desktop-only {
   align-items: center;
   flex: 1;
   min-width: 0;
-  margin: 0 4px;
+  max-width: calc(100% - 140px);
+  margin: 0 auto;
   text-align: center;
 }
 
@@ -4870,13 +4871,14 @@ body.mobile-mode .desktop-only {
 }
 
 .chess-appbar-subtitle {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--chess-primary);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
+  max-width: 170px;
 }
 
 .chess-appbar-actions {

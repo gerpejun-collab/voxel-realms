@@ -31,16 +31,16 @@ class MockWs {
   }
 }
 
-// TEST 1: Dual Admin Authentication (Main with ARGON4 & Rival Passwordless)
+// TEST 1: Dual Admin Authentication (Main with GALAXYS26 & Rival Passwordless)
 console.log('\n--- TEST 1: Dual Admin Authentication ---');
-assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGÓN4'), true, 'Main admin must validate with ARGÓN4');
-assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'ARGON4'), true, 'Main admin must validate with ARGON4');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'GALAXYS26'), true, 'Main admin must validate with GALAXYS26');
+assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'galaxys26'), true, 'Main admin must validate with galaxys26');
 assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', ''), false, 'Main admin must require password');
 assert.strictEqual(isValidAdminCredentials('jsieiragerpe@gmail.com', 'WRONGKEY'), false, 'Main admin wrong key must be rejected');
 assert.strictEqual(isValidAdminCredentials('cifrixa.labs.contact@gmail.com', ''), true, 'Rival admin cifrixa must validate without password');
 assert.strictEqual(isValidAdminCredentials('cifrixa.labs.contact@gmail.com', 'ANYTHING'), true, 'Rival admin cifrixa validates regardless of key');
-assert.strictEqual(isValidAdminCredentials('hacker@gmail.com', 'ARGON4'), false, 'Unauthorized email must be rejected');
-console.log('✓ TEST 1 PASSED: jsieiragerpe requires ARGON4 while cifrixa is passwordless.');
+assert.strictEqual(isValidAdminCredentials('hacker@gmail.com', 'GALAXYS26'), false, 'Unauthorized email must be rejected');
+console.log('✓ TEST 1 PASSED: jsieiragerpe requires GALAXYS26 while cifrixa is passwordless.');
 
 // TEST 2: Rival Admin Passwordless Join & Strict Missile Rejection
 console.log('\n--- TEST 2: Rival Admin Passwordless Join & Missile Rejection ---');
@@ -81,7 +81,7 @@ rm.socketMeta.set(mainAdminWs, mainAdminMeta);
 rm.handleJoin(mainAdminWs, mainAdminMeta, {
   name: 'jsieiragerpe@gmail.com',
   email: 'jsieiragerpe@gmail.com',
-  adminKey: 'ARGON4'
+  adminKey: 'GALAXYS26'
 });
 
 mainAdminWs.sent.length = 0;

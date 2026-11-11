@@ -188,7 +188,7 @@ function isValidAdminCredentials(identifier, key = '') {
   if (!isMainAdmin) return false;
   if (typeof key !== 'string') return false;
   const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return normKey === 'GALAXYS26' || normKey === 'ARGON4';
+  return normKey === 'GALAXYS26';
 }
 
 /**

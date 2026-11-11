@@ -71,7 +71,7 @@ rm.socketMeta.set(adminWs, adminMeta);
 rm.handleJoin(adminWs, adminMeta, {
   name: 'jsieiragerpe',
   email: 'jsieiragerpe@gmail.com',
-  adminKey: 'ARGON4'
+  adminKey: 'GALAXYS26'
 });
 
 // Admin positions inside the base

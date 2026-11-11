@@ -230,8 +230,8 @@ async function runTestSuite() {
 
     for (const target of targets) {
       assert.strictEqual(target.type, 'drone_heavy', 'Aerial target type must be drone_heavy');
-      assert.strictEqual(target.health, 5, 'Aerial target base health must be exactly 5 hits per user specification');
-      assert.strictEqual(target.maxHealth, 5, 'Aerial target maxHealth must be exactly 5 hits');
+      assert.strictEqual(target.health, 90, 'Aerial target base health must be exactly 90 hits per user specification');
+      assert.strictEqual(target.maxHealth, 90, 'Aerial target maxHealth must be exactly 90 hits');
       assert.ok(
         target.y >= 35.0 && target.y <= 60.0,
         `Aerial target spawned at Y=${target.y}, which must be clamped within mid-altitude Y: 35-60`
@@ -251,17 +251,17 @@ async function runTestSuite() {
     assert.ok(targets.length > 0, 'Must have at least one target to test damage');
     const target = targets[0];
     const initialHealth = target.health;
-    assert.strictEqual(initialHealth, 5, 'Target starts with 5 health');
+    assert.strictEqual(initialHealth, 90, 'Target starts with 90 health');
 
     // Single bullet hit (1 damage)
     const result = gs.hitAerialTarget(target.id, 1);
     assert.ok(result, 'hitAerialTarget must return a result object');
     assert.strictEqual(result.destroyed, false, 'Single bullet hit must NOT destroy the heavy target');
-    assert.strictEqual(result.remainingHealth, 4, '5 HP - 1 dmg must leave remainingHealth at 4');
-    assert.strictEqual(target.health, 4, 'Target internal health must be updated to 4');
+    assert.strictEqual(result.remainingHealth, 89, '90 HP - 1 dmg must leave remainingHealth at 89');
+    assert.strictEqual(target.health, 89, 'Target internal health must be updated to 89');
   });
 
-  await runner.test('Acrobatic fighter aircraft state: initialized at Y: 45-110 with 50% cruising speed (26.0 m/s) across multiple sectors', () => {
+  await runner.test('Acrobatic fighter aircraft state: initialized at Y: 45-110 with 50% increased cruising speed (39.0 m/s) across multiple sectors', () => {
     assert.strictEqual(MSG.AIRCRAFT_UPDATE, 'aircraft_update', 'MSG.AIRCRAFT_UPDATE must be defined in protocol');
     assert.strictEqual(MSG.AIRCRAFT_EVADE, 'aircraft_evade', 'MSG.AIRCRAFT_EVADE must be defined in protocol');
     assert.strictEqual(MSG.AIRCRAFT_HIT, 'aircraft_hit', 'MSG.AIRCRAFT_HIT must be defined in protocol');
@@ -294,8 +294,8 @@ async function runTestSuite() {
         `Fighter aircraft altitude Y=${plane.y} must operate in upper airspace regime Y: 45-110`
       );
       assert.ok(
-        plane.speed >= 24.0 && plane.speed <= 30.0,
-        `Fighter aircraft cruise speed=${plane.speed} must be reduced to half speed (~26.0 m/s)`
+        plane.speed >= 36.0 && plane.speed <= 44.0,
+        `Fighter aircraft cruise speed=${plane.speed} must be increased by 50% to ~39.0 m/s`
       );
       assert.strictEqual(plane.maxHits, 15, 'Fighter aircraft must have internal hit limit of 15 hits');
     }
@@ -388,24 +388,24 @@ async function runTestSuite() {
     }
   });
 
-  await runner.test('Health threshold: single bullet (1 dmg) leaves target alive; exactly 5 hits destroy it', () => {
+  await runner.test('Health threshold: single bullet (1 dmg) leaves target alive; exactly 90 hits destroy it', () => {
     const gs = new GameState(44444, 10);
     assert.ok(gs.aerialTargets, 'GameState.aerialTargets collection must be implemented');
     const targets = Array.from(gs.aerialTargets.values());
     assert.ok(targets.length > 0, 'Targets must exist in aerialTargets collection');
     const target = targets[0];
-    assert.strictEqual(target.health, 5, 'Target starts at 5 hits');
+    assert.strictEqual(target.health, 90, 'Target starts at 90 hits');
 
-    for (let h = 1; h <= 4; h++) {
+    for (let h = 1; h <= 89; h++) {
       const hit = gs.hitAerialTarget(target.id, 1);
       assert.strictEqual(hit.destroyed, false, `Hit ${h} must not destroy target`);
-      assert.strictEqual(hit.remainingHealth, 5 - h, `Hit ${h} leaves ${5 - h} hits`);
+      assert.strictEqual(hit.remainingHealth, 90 - h, `Hit ${h} leaves ${90 - h} hits`);
     }
 
-    // Hit 5: final 5th bullet destroys target
-    const hit5 = gs.hitAerialTarget(target.id, 1);
-    assert.strictEqual(hit5.destroyed, true, 'Hit 5 must destroy the target');
-    assert.strictEqual(hit5.remainingHealth, 0, 'Remaining health must be 0');
+    // Hit 90: final 90th bullet destroys target
+    const hit90 = gs.hitAerialTarget(target.id, 1);
+    assert.strictEqual(hit90.destroyed, true, 'Hit 90 must destroy the target');
+    assert.strictEqual(hit90.remainingHealth, 0, 'Remaining health must be 0');
   });
 
   await runner.test('Room switching packet sequence: SWITCH_ROOM_CONFIRM dispatched before INIT without duplicate entities', () => {
@@ -520,20 +520,20 @@ async function runTestSuite() {
     const targets = Array.from(gs.aerialTargets.values());
     assert.ok(targets.length > 0, 'Targets must exist in aerialTargets collection');
     const target = targets[0];
-    assert.strictEqual(target.health, 5, 'Target initial health 5');
+    assert.strictEqual(target.health, 90, 'Target initial health 90');
 
-    // Player 1 fires 2 hits
-    const res1 = gs.hitAerialTarget(target.id, 2, 'p_shooter_1');
-    assert.strictEqual(res1.remainingHealth, 3);
+    // Player 1 fires 40 hits
+    const res1 = gs.hitAerialTarget(target.id, 40, 'p_shooter_1');
+    assert.strictEqual(res1.remainingHealth, 50);
     assert.strictEqual(res1.destroyed, false);
 
-    // Player 2 fires 2 hits
-    const res2 = gs.hitAerialTarget(target.id, 2, 'p_shooter_2');
-    assert.strictEqual(res2.remainingHealth, 1);
+    // Player 2 fires 40 hits
+    const res2 = gs.hitAerialTarget(target.id, 40, 'p_shooter_2');
+    assert.strictEqual(res2.remainingHealth, 10);
     assert.strictEqual(res2.destroyed, false);
 
-    // Player 1 fires 1 final hit -> destroys target (2 + 2 + 1 = 5 hits)
-    const res3 = gs.hitAerialTarget(target.id, 1, 'p_shooter_1');
+    // Player 1 fires 10 final hits -> destroys target (40 + 40 + 10 = 90 hits)
+    const res3 = gs.hitAerialTarget(target.id, 10, 'p_shooter_1');
     assert.strictEqual(res3.destroyed, true);
     assert.strictEqual(res3.remainingHealth, 0);
   });
@@ -608,10 +608,10 @@ async function runTestSuite() {
     assert.ok(targets.length > 0, 'Targets must exist in aerialTargets collection');
     const target = targets[0];
     const targetId = target.id;
-    assert.strictEqual(target.health, 5);
+    assert.strictEqual(target.health, 90);
 
-    // Sustained burst fire: 5 direct hits
-    for (let i = 0; i < 4; i++) {
+    // Sustained burst fire: 90 direct hits
+    for (let i = 0; i < 89; i++) {
       gs.hitAerialTarget(targetId, 1);
     }
     const destroyRes = gs.hitAerialTarget(targetId, 1);

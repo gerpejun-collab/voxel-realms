@@ -135,7 +135,7 @@ class GameState {
   /**
    * Initializes server-synchronized heavy aerial targets (flying practice drones/missiles)
    * Clamped strictly to mid-altitude (Y: 35-60) and 50% reduced cruising speed (<= 5.0 m/s)
-   * 3x enlarged hull and destroyed after receiving 5 bullet hits in the air.
+   * 3x enlarged hull and destroyed after receiving 90 bullet hits in the air.
    */
   initAerialTargets() {
     const targets = [
@@ -150,8 +150,8 @@ class GameState {
         ampY: 6,
         omega: 0.055, // ~3.8 m/s calm cruising speed (strictly <= 5.0 m/s)
         phase: 0,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       },
@@ -166,8 +166,8 @@ class GameState {
         ampY: 5,
         omega: 0.055, // 3.8 m/s calm cruising speed
         phase: Math.PI * 0.5,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       },
@@ -182,8 +182,8 @@ class GameState {
         ampY: 5,
         omega: 0.055,
         phase: Math.PI,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       },
@@ -198,8 +198,8 @@ class GameState {
         ampY: 5,
         omega: 0.055,
         phase: Math.PI * 1.5,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       },
@@ -214,8 +214,8 @@ class GameState {
         ampY: 5,
         omega: 0.055,
         phase: Math.PI * 0.25,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       },
@@ -230,8 +230,8 @@ class GameState {
         ampY: 6,
         omega: 0.055,
         phase: Math.PI * 0.75,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       },
@@ -246,8 +246,8 @@ class GameState {
         ampY: 5,
         omega: 0.055,
         phase: Math.PI * 1.25,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       },
@@ -262,8 +262,8 @@ class GameState {
         ampY: 5,
         omega: 0.055,
         phase: Math.PI * 1.75,
-        health: 5,
-        maxHealth: 5,
+        health: 90,
+        maxHealth: 90,
         speed: 3.8,
         state: 'patrol'
       }
@@ -317,8 +317,8 @@ class GameState {
   }
 
   /**
-   * Deducts damage from heavy aerial target. Base health: 5 hits.
-   * Single bullet deducts 1 hit. On receiving 5 hits (health <= 0),
+   * Deducts damage from heavy aerial target. Base health: 90 hits.
+   * Single bullet deducts 1 hit. On receiving 90 hits (health <= 0),
    * marks state = 'destroyed', returns { destroyed: true, remainingHealth: 0 },
    * and schedules authoritative 12-second respawn.
    */
@@ -367,9 +367,9 @@ class GameState {
         yaw: Math.round((t.yaw || 0) * 100) / 100,
         pitch: Math.round((t.pitch || 0) * 100) / 100,
         roll: Math.round((t.roll || 0) * 100) / 100,
-        speed: t.speed || 4.2,
+        speed: t.speed || 3.8,
         health: t.health,
-        maxHealth: t.maxHealth || 250,
+        maxHealth: t.maxHealth || 90,
         state: t.state || 'patrol'
       });
     }
@@ -398,18 +398,19 @@ class GameState {
 
   /**
    * Initializes server-synchronized acrobatic fighter aircraft across ALL world sectors
-   * Operating at 50% reduced cruising speed (26.0 m/s) with 2x model size and internal bullet hit counters.
+   * Operating at 50% increased cruising speed (39.0 m/s, sprint 61.5 m/s) with 2x model size,
+   * high model variety across sectors, and internal bullet hit counters (15 hits to destroy).
    */
   initFighterAircraft() {
     const sectorConfigs = [
-      { id: 'fighter_1', cx: 0, cz: 0, baseY: 72, radius: 95, phase: 0 },
-      { id: 'fighter_shanghai', cx: -250, cz: 250, baseY: 78, radius: 85, phase: 0.25 },
-      { id: 'fighter_nyc', cx: -250, cz: -250, baseY: 76, radius: 85, phase: 0.5 },
-      { id: 'fighter_paris', cx: 250, cz: -250, baseY: 76, radius: 85, phase: 0.75 },
-      { id: 'fighter_japan', cx: 250, cz: 250, baseY: 78, radius: 85, phase: 0.125 },
-      { id: 'fighter_norway', cx: 0, cz: 500, baseY: 84, radius: 95, phase: 0.375 },
-      { id: 'fighter_bunker', cx: -450, cz: 200, baseY: 88, radius: 90, phase: 0.625 },
-      { id: 'fighter_ocean', cx: 0, cz: -450, baseY: 70, radius: 95, phase: 0.875 }
+      { id: 'fighter_1', variant: 'stealth_raptor', cx: 0, cz: 0, baseY: 72, radius: 95, phase: 0 },
+      { id: 'fighter_shanghai', variant: 'cyber_phantom', cx: -250, cz: 250, baseY: 78, radius: 85, phase: 0.25 },
+      { id: 'fighter_nyc', variant: 'delta_mirage', cx: -250, cz: -250, baseY: 76, radius: 85, phase: 0.5 },
+      { id: 'fighter_paris', variant: 'euro_canard', cx: 250, cz: -250, baseY: 76, radius: 85, phase: 0.75 },
+      { id: 'fighter_japan', variant: 'forward_swept', cx: 250, cz: 250, baseY: 78, radius: 85, phase: 0.125 },
+      { id: 'fighter_norway', variant: 'arctic_ghost', cx: 0, cz: 500, baseY: 84, radius: 95, phase: 0.375 },
+      { id: 'fighter_bunker', variant: 'heavy_fortress', cx: -450, cz: 200, baseY: 88, radius: 90, phase: 0.625 },
+      { id: 'fighter_ocean', variant: 'naval_corsair', cx: 0, cz: -450, baseY: 70, radius: 95, phase: 0.875 }
     ];
 
     for (const cfg of sectorConfigs) {
@@ -428,9 +429,10 @@ class GameState {
 
       const plane = {
         id: cfg.id,
-        speed: 26.0, // 50% reduced cruising speed (strictly half speed)
-        baseSpeed: 26.0,
-        sprintSpeed: 41.0,
+        variant: cfg.variant || 'stealth_raptor',
+        speed: 39.0, // 50% increased cruising speed (39.0 m/s base)
+        baseSpeed: 39.0,
+        sprintSpeed: 61.5,
         hitCount: 0,
         maxHits: 15,
         state: 'patrol',
@@ -520,8 +522,8 @@ class GameState {
     for (const aircraft of this.fighterAircraft.values()) {
       if (aircraft.state === 'destroyed') continue;
 
-      // 1. Advance distance along spline (half speed)
-      const currentSpeed = aircraft.state === 'evading' ? (aircraft.sprintSpeed || 41.0) : (aircraft.baseSpeed || 26.0);
+      // 1. Advance distance along spline (39.0 m/s cruise, 61.5 m/s sprint)
+      const currentSpeed = aircraft.state === 'evading' ? (aircraft.sprintSpeed || 61.5) : (aircraft.baseSpeed || 39.0);
       aircraft.speed = currentSpeed;
       aircraft.pathDistance = (aircraft.pathDistance + currentSpeed * delta) % aircraft.totalLength;
 
@@ -571,7 +573,7 @@ class GameState {
           // Evasion maneuver completed cleanly
           aircraft.state = 'patrol';
           aircraft.evasionManeuver = null;
-          aircraft.speed = aircraft.baseSpeed || 26.0;
+          aircraft.speed = aircraft.baseSpeed || 39.0;
         } else {
           // Quintic smoothstep S(tau) = 6*tau^5 - 15*tau^4 + 10*tau^3
           const tau2 = tau * tau;
@@ -704,7 +706,7 @@ class GameState {
     aircraft.evasionDuration = duration;
     aircraft.evasionDirection = direction;
     aircraft.evasionProgress = 0;
-    aircraft.speed = aircraft.sprintSpeed || 41.0;
+    aircraft.speed = aircraft.sprintSpeed || 61.5;
 
     return {
       aircraftId: aircraft.id,
@@ -742,7 +744,7 @@ class GameState {
           aircraft.hitCount = 0;
           aircraft.state = 'patrol';
           aircraft.evasionManeuver = null;
-          aircraft.speed = aircraft.baseSpeed || 26.0;
+          aircraft.speed = aircraft.baseSpeed || 39.0;
           if (typeof this.onAircraftRespawn === 'function') {
             this.onAircraftRespawn(aircraft);
           }
@@ -780,14 +782,17 @@ class GameState {
     for (const a of this.fighterAircraft.values()) {
       list.push({
         id: a.id,
+        variant: a.variant || 'stealth_raptor',
+        type: a.variant || 'stealth_raptor',
         x: Math.round(a.x * 100) / 100,
         y: Math.round(a.y * 100) / 100,
         z: Math.round(a.z * 100) / 100,
         yaw: Math.round((a.yaw || 0) * 100) / 100,
         pitch: Math.round((a.pitch || 0) * 100) / 100,
         roll: Math.round((a.roll || 0) * 100) / 100,
-        speed: Math.round((a.speed || 26.0) * 10) / 10,
-        baseSpeed: a.baseSpeed || 26.0,
+        speed: Math.round((a.speed || 39.0) * 10) / 10,
+        baseSpeed: a.baseSpeed || 39.0,
+        sprintSpeed: a.sprintSpeed || 61.5,
         state: a.state || 'patrol',
         hitCount: a.hitCount || 0,
         maxHits: a.maxHits || 15,

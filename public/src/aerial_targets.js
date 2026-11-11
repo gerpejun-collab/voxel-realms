@@ -18,8 +18,8 @@ export class HeavyAerialTarget {
     this.particles = particleManager;
     this.sound = sound;
 
-    this.health = typeof data.health === 'number' ? data.health : 5;
-    this.maxHealth = typeof data.maxHealth === 'number' ? data.maxHealth : 5;
+    this.health = typeof data.health === 'number' ? data.health : 90;
+    this.maxHealth = typeof data.maxHealth === 'number' ? data.maxHealth : 90;
     this.state = data.state || 'patrol';
     this.speed = typeof data.speed === 'number' ? data.speed : 3.8;
 
@@ -329,7 +329,7 @@ export class HeavyAerialTarget {
       // Reactor core pulsing
       this.corePulseTime += delta * 3.0;
       if (this.coreMat) {
-        if (this.health <= 2) {
+        if (this.health <= 30) {
           // Warning red pulse
           this.coreMat.color.setHex(0xef4444);
           this.coreMat.emissive.setHex(0xdc2626);
@@ -350,17 +350,17 @@ export class HeavyAerialTarget {
         }
       }
 
-      // Progressive damage smoke/fire trails (triggered at <= 3 hits)
+      // Progressive damage smoke/fire trails (triggered at <= 55 hits remaining)
       this.smokeTimer += delta;
       if (this.smokeTimer >= 0.15) {
         this.smokeTimer = 0;
-        if (this.health <= 3 && this.particles) {
+        if (this.health <= 55 && this.particles) {
           const spawnPt = {
             x: this.currentPos.x + (Math.random() - 0.5) * 1.5,
             y: this.currentPos.y + 0.5,
             z: this.currentPos.z - 1.8
           };
-          if (this.health <= 1 && typeof this.particles.spawnMuzzleFlash === 'function') {
+          if (this.health <= 20 && typeof this.particles.spawnMuzzleFlash === 'function') {
             this.particles.spawnMuzzleFlash(spawnPt);
           }
           if (typeof this.particles.spawnBlockDebris === 'function') {

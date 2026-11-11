@@ -546,7 +546,6 @@ export class FighterAircraft {
     this.machLeft = this.machDiamonds[0];
     this.machRight = this.machDiamonds[this.machDiamonds.length - 1];
   }
-  }
 
   /**
    * Synchronizes authoritative server state

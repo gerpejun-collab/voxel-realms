@@ -213,7 +213,7 @@ async function runTestSuite() {
     assert.strictEqual(initPlayer.isFlying, true, 'getInitialState() must include isFlying field');
   });
 
-  await runner.test('Heavy aerial target spawning: entities initialized in GameState at Y: 35-60, health 250, cruising speed <= 5.0 m/s', () => {
+  await runner.test('Heavy aerial target spawning: entities initialized in GameState at Y: 35-60, health 5, cruising speed <= 5.0 m/s', () => {
     // Protocol message definitions
     assert.strictEqual(MSG.AERIAL_TARGETS_UPDATE, 'aerial_targets_update', 'MSG.AERIAL_TARGETS_UPDATE must be defined in protocol');
     assert.strictEqual(MSG.AERIAL_TARGET_HIT, 'aerial_target_hit', 'MSG.AERIAL_TARGET_HIT must be defined in protocol');
@@ -230,15 +230,15 @@ async function runTestSuite() {
 
     for (const target of targets) {
       assert.strictEqual(target.type, 'drone_heavy', 'Aerial target type must be drone_heavy');
-      assert.strictEqual(target.health, 250, 'Aerial target base health must be exactly 250 HP');
-      assert.strictEqual(target.maxHealth, 250, 'Aerial target maxHealth must be exactly 250 HP');
+      assert.strictEqual(target.health, 5, 'Aerial target base health must be exactly 5 hits per user specification');
+      assert.strictEqual(target.maxHealth, 5, 'Aerial target maxHealth must be exactly 5 hits');
       assert.ok(
         target.y >= 35.0 && target.y <= 60.0,
         `Aerial target spawned at Y=${target.y}, which must be clamped within mid-altitude Y: 35-60`
       );
       assert.ok(
-        target.speed <= 5.0 && target.speed >= 3.0,
-        `Aerial target cruising speed=${target.speed} must be constrained to 50% speed (3.5 - 4.8 m/s, strictly <= 5.0 m/s)`
+        target.speed <= 5.0 && target.speed >= 2.5,
+        `Aerial target cruising speed=${target.speed} must be constrained to 50% speed (strictly <= 5.0 m/s)`
       );
     }
   });
@@ -251,19 +251,21 @@ async function runTestSuite() {
     assert.ok(targets.length > 0, 'Must have at least one target to test damage');
     const target = targets[0];
     const initialHealth = target.health;
-    assert.strictEqual(initialHealth, 250, 'Target starts with 250 health');
+    assert.strictEqual(initialHealth, 5, 'Target starts with 5 health');
 
-    // Single hit with 95 damage (Bazooka RPG hit)
-    const result = gs.hitAerialTarget(target.id, 95);
+    // Single bullet hit (1 damage)
+    const result = gs.hitAerialTarget(target.id, 1);
     assert.ok(result, 'hitAerialTarget must return a result object');
-    assert.strictEqual(result.destroyed, false, 'Single Bazooka hit must NOT destroy the heavy target');
-    assert.strictEqual(result.remainingHealth, 155, '250 HP - 95 dmg must leave remainingHealth at 155');
-    assert.strictEqual(target.health, 155, 'Target internal health must be updated to 155');
+    assert.strictEqual(result.destroyed, false, 'Single bullet hit must NOT destroy the heavy target');
+    assert.strictEqual(result.remainingHealth, 4, '5 HP - 1 dmg must leave remainingHealth at 4');
+    assert.strictEqual(target.health, 4, 'Target internal health must be updated to 4');
   });
 
-  await runner.test('Acrobatic fighter aircraft state: initialized at Y: 45-110 with swift patrol speed (48-64 m/s)', () => {
+  await runner.test('Acrobatic fighter aircraft state: initialized at Y: 45-110 with 50% cruising speed (26.0 m/s) across multiple sectors', () => {
     assert.strictEqual(MSG.AIRCRAFT_UPDATE, 'aircraft_update', 'MSG.AIRCRAFT_UPDATE must be defined in protocol');
     assert.strictEqual(MSG.AIRCRAFT_EVADE, 'aircraft_evade', 'MSG.AIRCRAFT_EVADE must be defined in protocol');
+    assert.strictEqual(MSG.AIRCRAFT_HIT, 'aircraft_hit', 'MSG.AIRCRAFT_HIT must be defined in protocol');
+    assert.strictEqual(MSG.AIRCRAFT_DESTROYED, 'aircraft_destroyed', 'MSG.AIRCRAFT_DESTROYED must be defined in protocol');
 
     // Valid weapon shoot packet accepts targetAircraftId and targetAerialId
     assert.strictEqual(
@@ -284,7 +286,7 @@ async function runTestSuite() {
     );
 
     const aircraftList = Array.from(gs.fighterAircraft instanceof Map ? gs.fighterAircraft.values() : gs.fighterAircraft);
-    assert.ok(aircraftList.length > 0, 'GameState must initialize fighter aircraft');
+    assert.ok(aircraftList.length >= 6, 'GameState must initialize multiple fighter aircraft across all world sectors');
 
     for (const plane of aircraftList) {
       assert.ok(
@@ -292,9 +294,10 @@ async function runTestSuite() {
         `Fighter aircraft altitude Y=${plane.y} must operate in upper airspace regime Y: 45-110`
       );
       assert.ok(
-        plane.speed >= 45.0 && plane.speed <= 65.0,
-        `Fighter aircraft cruise speed=${plane.speed} must be in swift patrol range (48 - 64 m/s)`
+        plane.speed >= 24.0 && plane.speed <= 30.0,
+        `Fighter aircraft cruise speed=${plane.speed} must be reduced to half speed (~26.0 m/s)`
       );
+      assert.strictEqual(plane.maxHits, 15, 'Fighter aircraft must have internal hit limit of 15 hits');
     }
   });
 
@@ -385,28 +388,24 @@ async function runTestSuite() {
     }
   });
 
-  await runner.test('Health threshold: single Bazooka RPG hit (95 HP) leaves target alive; exactly 3 hits destroy it', () => {
+  await runner.test('Health threshold: single bullet (1 dmg) leaves target alive; exactly 5 hits destroy it', () => {
     const gs = new GameState(44444, 10);
     assert.ok(gs.aerialTargets, 'GameState.aerialTargets collection must be implemented');
     const targets = Array.from(gs.aerialTargets.values());
     assert.ok(targets.length > 0, 'Targets must exist in aerialTargets collection');
     const target = targets[0];
-    assert.strictEqual(target.health, 250, 'Target starts at 250 HP');
+    assert.strictEqual(target.health, 5, 'Target starts at 5 hits');
 
-    // Hit 1: 95 HP
-    const hit1 = gs.hitAerialTarget(target.id, 95);
-    assert.strictEqual(hit1.destroyed, false, 'Hit 1 must not destroy target');
-    assert.strictEqual(hit1.remainingHealth, 155, 'Hit 1 leaves 155 HP');
+    for (let h = 1; h <= 4; h++) {
+      const hit = gs.hitAerialTarget(target.id, 1);
+      assert.strictEqual(hit.destroyed, false, `Hit ${h} must not destroy target`);
+      assert.strictEqual(hit.remainingHealth, 5 - h, `Hit ${h} leaves ${5 - h} hits`);
+    }
 
-    // Hit 2: 95 HP
-    const hit2 = gs.hitAerialTarget(target.id, 95);
-    assert.strictEqual(hit2.destroyed, false, 'Hit 2 must not destroy target');
-    assert.strictEqual(hit2.remainingHealth, 60, 'Hit 2 leaves 60 HP');
-
-    // Hit 3: 95 HP (Total damage: 285 >= 250)
-    const hit3 = gs.hitAerialTarget(target.id, 95);
-    assert.strictEqual(hit3.destroyed, true, 'Hit 3 must destroy the target');
-    assert.ok(hit3.remainingHealth <= 0, 'Remaining health must be <= 0');
+    // Hit 5: final 5th bullet destroys target
+    const hit5 = gs.hitAerialTarget(target.id, 1);
+    assert.strictEqual(hit5.destroyed, true, 'Hit 5 must destroy the target');
+    assert.strictEqual(hit5.remainingHealth, 0, 'Remaining health must be 0');
   });
 
   await runner.test('Room switching packet sequence: SWITCH_ROOM_CONFIRM dispatched before INIT without duplicate entities', () => {
@@ -521,27 +520,22 @@ async function runTestSuite() {
     const targets = Array.from(gs.aerialTargets.values());
     assert.ok(targets.length > 0, 'Targets must exist in aerialTargets collection');
     const target = targets[0];
-    assert.strictEqual(target.health, 250, 'Target initial health 250');
+    assert.strictEqual(target.health, 5, 'Target initial health 5');
 
-    // Player 1 fires Bazooka (95 dmg)
-    const res1 = gs.hitAerialTarget(target.id, 95, 'p_shooter_1');
-    assert.strictEqual(res1.remainingHealth, 155);
+    // Player 1 fires 2 hits
+    const res1 = gs.hitAerialTarget(target.id, 2, 'p_shooter_1');
+    assert.strictEqual(res1.remainingHealth, 3);
     assert.strictEqual(res1.destroyed, false);
 
-    // Player 2 fires Plasma (50 dmg)
-    const res2 = gs.hitAerialTarget(target.id, 50, 'p_shooter_2');
-    assert.strictEqual(res2.remainingHealth, 105);
+    // Player 2 fires 2 hits
+    const res2 = gs.hitAerialTarget(target.id, 2, 'p_shooter_2');
+    assert.strictEqual(res2.remainingHealth, 1);
     assert.strictEqual(res2.destroyed, false);
 
-    // Player 1 fires Bazooka again (95 dmg)
-    const res3 = gs.hitAerialTarget(target.id, 95, 'p_shooter_1');
-    assert.strictEqual(res3.remainingHealth, 10);
-    assert.strictEqual(res3.destroyed, false);
-
-    // Player 2 fires Plasma again (50 dmg) -> destroys target
-    const res4 = gs.hitAerialTarget(target.id, 50, 'p_shooter_2');
-    assert.strictEqual(res4.destroyed, true);
-    assert.ok(res4.remainingHealth <= 0);
+    // Player 1 fires 1 final hit -> destroys target (2 + 2 + 1 = 5 hits)
+    const res3 = gs.hitAerialTarget(target.id, 1, 'p_shooter_1');
+    assert.strictEqual(res3.destroyed, true);
+    assert.strictEqual(res3.remainingHealth, 0);
   });
 
   // --------------------------------------------------------------------------
@@ -614,12 +608,13 @@ async function runTestSuite() {
     assert.ok(targets.length > 0, 'Targets must exist in aerialTargets collection');
     const target = targets[0];
     const targetId = target.id;
-    assert.strictEqual(target.health, 250);
+    assert.strictEqual(target.health, 5);
 
-    // Sustained burst fire: 3 direct hits with Bazooka
-    gs.hitAerialTarget(targetId, 100);
-    gs.hitAerialTarget(targetId, 100);
-    const destroyRes = gs.hitAerialTarget(targetId, 100);
+    // Sustained burst fire: 5 direct hits
+    for (let i = 0; i < 4; i++) {
+      gs.hitAerialTarget(targetId, 1);
+    }
+    const destroyRes = gs.hitAerialTarget(targetId, 1);
 
     assert.strictEqual(destroyRes.destroyed, true, 'Target must report destroyed: true');
 
@@ -628,15 +623,27 @@ async function runTestSuite() {
       target.state === 'destroyed' || target.state === 'respawning' || !gs.aerialTargets.has(targetId) || target.health <= 0,
       'Target must enter destroyed / respawn lifecycle state'
     );
+  });
 
-    // Check if respawn timer or method exists
-    if (typeof gs.respawnAerialTarget === 'function') {
-      const respawned = gs.respawnAerialTarget(targetId);
-      assert.ok(respawned, 'Target should respawn');
-      assert.strictEqual(respawned.health, 250, 'Respawned target must have reset 250 HP');
-      assert.ok(respawned.y >= 35 && respawned.y <= 60, 'Respawned target must be at mid-altitude Y: 35-60');
-      assert.ok(respawned.speed <= 5.0, 'Respawned target must maintain 50% speed constraint');
+  await runner.test('Fighter aircraft bullet hit counter, explosion threshold and respawn lifecycle', () => {
+    const gs = new GameState(99991, 10);
+    const plane = gs.fighterAircraft.get('fighter_1');
+    assert.ok(plane, 'fighter_1 must exist in GameState');
+    assert.strictEqual(plane.hitCount, 0, 'Plane initial hitCount must be 0');
+    assert.strictEqual(plane.maxHits, 15, 'Plane maxHits must be 15');
+
+    // Fire 14 shots at aircraft
+    for (let shot = 1; shot <= 14; shot++) {
+      const res = gs.hitFighterAircraft(plane.id, 1, 'p_shooter');
+      assert.strictEqual(res.destroyed, false, `Shot ${shot} must not destroy plane`);
+      assert.strictEqual(res.hitCount, shot, `hitCount must equal ${shot}`);
+      assert.strictEqual(res.remainingHits, 15 - shot);
     }
+
+    // 15th shot triggers explosion / destruction
+    const destroyRes = gs.hitFighterAircraft(plane.id, 1, 'p_shooter');
+    assert.strictEqual(destroyRes.destroyed, true, '15th shot must destroy aircraft');
+    assert.strictEqual(plane.state, 'destroyed', 'Aircraft state must be "destroyed"');
   });
 
   // ==========================================================================

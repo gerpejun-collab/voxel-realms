@@ -18,6 +18,7 @@ class GameState {
     this.aerialTargets = new Map(); // targetId -> { id, type, x, y, z, ... }
     this.targetRespawnTimers = new Map(); // targetId -> Timeout
     this.fighterAircraft = new Map(); // aircraftId -> { id, x, y, z, ... }
+    this.aircraftRespawnTimers = new Map(); // aircraftId -> Timeout
 
     this.initAmbientAnimals();
     this.initAerialTargets();
@@ -134,6 +135,7 @@ class GameState {
   /**
    * Initializes server-synchronized heavy aerial targets (flying practice drones/missiles)
    * Clamped strictly to mid-altitude (Y: 35-60) and 50% reduced cruising speed (<= 5.0 m/s)
+   * 3x enlarged hull and destroyed after receiving 5 bullet hits in the air.
    */
   initAerialTargets() {
     const targets = [
@@ -146,27 +148,123 @@ class GameState {
         rz: 60,
         baseY: 45,
         ampY: 6,
-        omega: 0.060, // ~4.2 m/s calm cruising speed (strictly <= 5.0 m/s)
+        omega: 0.055, // ~3.8 m/s calm cruising speed (strictly <= 5.0 m/s)
         phase: 0,
-        health: 250,
-        maxHealth: 250,
-        speed: 4.2,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
         state: 'patrol'
       },
       {
         id: 'target_drone_2',
         type: 'drone_heavy',
-        cx: -180,
-        cz: 180,
+        cx: -250,
+        cz: 250,
         rx: 70,
         rz: 70,
         baseY: 48,
         ampY: 5,
-        omega: 0.060, // 4.2 m/s calm cruising speed (strictly <= 5.0 m/s)
+        omega: 0.055, // 3.8 m/s calm cruising speed
+        phase: Math.PI * 0.5,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
+        state: 'patrol'
+      },
+      {
+        id: 'target_drone_nyc',
+        type: 'drone_heavy',
+        cx: -250,
+        cz: -250,
+        rx: 65,
+        rz: 65,
+        baseY: 46,
+        ampY: 5,
+        omega: 0.055,
         phase: Math.PI,
-        health: 250,
-        maxHealth: 250,
-        speed: 4.2,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
+        state: 'patrol'
+      },
+      {
+        id: 'target_drone_paris',
+        type: 'drone_heavy',
+        cx: 250,
+        cz: -250,
+        rx: 70,
+        rz: 60,
+        baseY: 47,
+        ampY: 5,
+        omega: 0.055,
+        phase: Math.PI * 1.5,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
+        state: 'patrol'
+      },
+      {
+        id: 'target_drone_japan',
+        type: 'drone_heavy',
+        cx: 250,
+        cz: 250,
+        rx: 65,
+        rz: 65,
+        baseY: 49,
+        ampY: 5,
+        omega: 0.055,
+        phase: Math.PI * 0.25,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
+        state: 'patrol'
+      },
+      {
+        id: 'target_drone_norway',
+        type: 'drone_heavy',
+        cx: 0,
+        cz: 500,
+        rx: 75,
+        rz: 65,
+        baseY: 50,
+        ampY: 6,
+        omega: 0.055,
+        phase: Math.PI * 0.75,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
+        state: 'patrol'
+      },
+      {
+        id: 'target_drone_bunker',
+        type: 'drone_heavy',
+        cx: -450,
+        cz: 200,
+        rx: 70,
+        rz: 60,
+        baseY: 48,
+        ampY: 5,
+        omega: 0.055,
+        phase: Math.PI * 1.25,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
+        state: 'patrol'
+      },
+      {
+        id: 'target_drone_ocean',
+        type: 'drone_heavy',
+        cx: 0,
+        cz: -450,
+        rx: 75,
+        rz: 65,
+        baseY: 45,
+        ampY: 5,
+        omega: 0.055,
+        phase: Math.PI * 1.75,
+        health: 5,
+        maxHealth: 5,
+        speed: 3.8,
         state: 'patrol'
       }
     ];
@@ -219,16 +317,16 @@ class GameState {
   }
 
   /**
-   * Deducts damage from heavy aerial target. Base health: 250 HP.
-   * Single hits (e.g. Bazooka 95 HP) leave target alive.
-   * On health <= 0, marks state = 'destroyed', returns { destroyed: true, remainingHealth: 0 },
+   * Deducts damage from heavy aerial target. Base health: 5 hits.
+   * Single bullet deducts 1 hit. On receiving 5 hits (health <= 0),
+   * marks state = 'destroyed', returns { destroyed: true, remainingHealth: 0 },
    * and schedules authoritative 12-second respawn.
    */
-  hitAerialTarget(targetId, damage = 20, shooterId = null) {
+  hitAerialTarget(targetId, damage = 1, shooterId = null) {
     const target = this.aerialTargets.get(targetId);
     if (!target || target.state !== 'patrol') return null;
 
-    const dmg = typeof damage === 'number' && Number.isFinite(damage) ? damage : 20;
+    const dmg = typeof damage === 'number' && Number.isFinite(damage) ? damage : 1;
     target.health = Math.max(0, target.health - dmg);
 
     if (target.health <= 0) {
@@ -279,45 +377,67 @@ class GameState {
   }
 
   /**
-   * Initializes server-synchronized acrobatic fighter aircraft
-   * Patrols upper airspace (Y: 45-110, e.g. Y=72) at swift cruising speed (48-64 m/s, e.g. 52.0 m/s)
+   * Generates smooth closed-loop patrol waypoints centered around (cx, cz)
+   */
+  generateAircraftSectorWaypoints(cx, cz, baseY = 72, radius = 90) {
+    const pts = [];
+    const count = 8;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const wave = Math.sin(angle * 2) * 5;
+      const y = Math.max(50, Math.min(105, baseY + wave));
+      const r = radius * (1 + 0.12 * Math.sin(angle * 3));
+      pts.push({
+        x: Math.round(cx + Math.cos(angle) * r),
+        y: Math.round(y * 10) / 10,
+        z: Math.round(cz + Math.sin(angle) * r)
+      });
+    }
+    return pts;
+  }
+
+  /**
+   * Initializes server-synchronized acrobatic fighter aircraft across ALL world sectors
+   * Operating at 50% reduced cruising speed (26.0 m/s) with 2x model size and internal bullet hit counters.
    */
   initFighterAircraft() {
-    const waypoints = [
-      { x: 0, y: 72, z: 0 },         // Central Plaza (Y: 72)
-      { x: -250, y: 76, z: -250 },   // NYC Quadrant (Y: 76)
-      { x: -420, y: 92, z: 150 },    // Military Air Base Overflight (safe Y: 92 > 85 forcefield)
-      { x: -250, y: 80, z: 250 },    // Shanghai Quadrant (Y: 80)
-      { x: 0, y: 84, z: 450 },       // North Fjords (Y: 84)
-      { x: 250, y: 78, z: 250 },     // Japan Pagoda (Y: 78)
-      { x: 250, y: 76, z: -250 },    // Paris Eiffel (Y: 76)
-      { x: 0, y: 70, z: -450 }       // South Ocean (Y: 70)
+    const sectorConfigs = [
+      { id: 'fighter_1', cx: 0, cz: 0, baseY: 72, radius: 95, phase: 0 },
+      { id: 'fighter_shanghai', cx: -250, cz: 250, baseY: 78, radius: 85, phase: 0.25 },
+      { id: 'fighter_nyc', cx: -250, cz: -250, baseY: 76, radius: 85, phase: 0.5 },
+      { id: 'fighter_paris', cx: 250, cz: -250, baseY: 76, radius: 85, phase: 0.75 },
+      { id: 'fighter_japan', cx: 250, cz: 250, baseY: 78, radius: 85, phase: 0.125 },
+      { id: 'fighter_norway', cx: 0, cz: 500, baseY: 84, radius: 95, phase: 0.375 },
+      { id: 'fighter_bunker', cx: -450, cz: 200, baseY: 88, radius: 90, phase: 0.625 },
+      { id: 'fighter_ocean', cx: 0, cz: -450, baseY: 70, radius: 95, phase: 0.875 }
     ];
 
-    // Compute cumulative loop distances for Centripetal Catmull-Rom spline
-    const segmentDistances = [];
-    let totalLength = 0;
-    for (let i = 0; i < waypoints.length; i++) {
-      const nextIdx = (i + 1) % waypoints.length;
-      const dx = waypoints[nextIdx].x - waypoints[i].x;
-      const dy = waypoints[nextIdx].y - waypoints[i].y;
-      const dz = waypoints[nextIdx].z - waypoints[i].z;
-      const dist = Math.hypot(dx, dy, dz);
-      segmentDistances.push(dist);
-      totalLength += dist;
-    }
+    for (const cfg of sectorConfigs) {
+      const waypoints = this.generateAircraftSectorWaypoints(cfg.cx, cfg.cz, cfg.baseY, cfg.radius);
+      const segmentDistances = [];
+      let totalLength = 0;
+      for (let i = 0; i < waypoints.length; i++) {
+        const nextIdx = (i + 1) % waypoints.length;
+        const dx = waypoints[nextIdx].x - waypoints[i].x;
+        const dy = waypoints[nextIdx].y - waypoints[i].y;
+        const dz = waypoints[nextIdx].z - waypoints[i].z;
+        const dist = Math.hypot(dx, dy, dz);
+        segmentDistances.push(dist);
+        totalLength += dist;
+      }
 
-    const aircraftData = [
-      {
-        id: 'fighter_1',
-        speed: 52.0, // Swift patrol cruise speed (48-64 m/s)
-        baseSpeed: 52.0,
-        sprintSpeed: 82.0,
+      const plane = {
+        id: cfg.id,
+        speed: 26.0, // 50% reduced cruising speed (strictly half speed)
+        baseSpeed: 26.0,
+        sprintSpeed: 41.0,
+        hitCount: 0,
+        maxHits: 15,
         state: 'patrol',
         waypoints,
         segmentDistances,
         totalLength,
-        pathDistance: 0,
+        pathDistance: (cfg.phase || 0) * totalLength,
         x: waypoints[0].x,
         y: waypoints[0].y,
         z: waypoints[0].z,
@@ -331,11 +451,9 @@ class GameState {
         evasionDuration: 0,
         evasionDirection: 1,
         evasionProgress: 0
-      }
-    ];
+      };
 
-    for (const a of aircraftData) {
-      this.fighterAircraft.set(a.id, a);
+      this.fighterAircraft.set(plane.id, plane);
     }
   }
 
@@ -400,8 +518,10 @@ class GameState {
     const now = Date.now();
 
     for (const aircraft of this.fighterAircraft.values()) {
-      // 1. Advance distance along spline
-      const currentSpeed = aircraft.state === 'evading' ? (aircraft.sprintSpeed || 82.0) : (aircraft.baseSpeed || 52.0);
+      if (aircraft.state === 'destroyed') continue;
+
+      // 1. Advance distance along spline (half speed)
+      const currentSpeed = aircraft.state === 'evading' ? (aircraft.sprintSpeed || 41.0) : (aircraft.baseSpeed || 26.0);
       aircraft.speed = currentSpeed;
       aircraft.pathDistance = (aircraft.pathDistance + currentSpeed * delta) % aircraft.totalLength;
 
@@ -451,7 +571,7 @@ class GameState {
           // Evasion maneuver completed cleanly
           aircraft.state = 'patrol';
           aircraft.evasionManeuver = null;
-          aircraft.speed = aircraft.baseSpeed || 52.0;
+          aircraft.speed = aircraft.baseSpeed || 26.0;
         } else {
           // Quintic smoothstep S(tau) = 6*tau^5 - 15*tau^4 + 10*tau^3
           const tau2 = tau * tau;
@@ -534,7 +654,7 @@ class GameState {
     if (!aircraft && this.fighterAircraft.size > 0) {
       aircraft = this.fighterAircraft.values().next().value;
     }
-    if (!aircraft) return null;
+    if (!aircraft || aircraft.state === 'destroyed') return null;
 
     // Guard against burst fire retriggering: if aircraft is already actively evading,
     // do not interrupt or reset evasionStartTime to prevent mid-air teleportation
@@ -584,7 +704,7 @@ class GameState {
     aircraft.evasionDuration = duration;
     aircraft.evasionDirection = direction;
     aircraft.evasionProgress = 0;
-    aircraft.speed = aircraft.sprintSpeed || 82.0;
+    aircraft.speed = aircraft.sprintSpeed || 41.0;
 
     return {
       aircraftId: aircraft.id,
@@ -592,6 +712,63 @@ class GameState {
       startTime: aircraft.evasionStartTime,
       duration,
       direction
+    };
+  }
+
+  /**
+   * Registers a bullet hit against fighter aircraft.
+   * Increments internal hit counter. When hitCount reaches maxHits (15 hits),
+   * aircraft is destroyed, enters 'destroyed' state, and schedules 12s respawn.
+   */
+  hitFighterAircraft(aircraftId, damage = 1, shooterId = null) {
+    let aircraft = this.fighterAircraft.get(aircraftId);
+    if (!aircraft && this.fighterAircraft.size > 0) {
+      aircraft = this.fighterAircraft.values().next().value;
+    }
+    if (!aircraft || aircraft.state === 'destroyed') return null;
+
+    const dmg = typeof damage === 'number' && Number.isFinite(damage) ? damage : 1;
+    aircraft.hitCount = (aircraft.hitCount || 0) + dmg;
+    const maxHits = aircraft.maxHits || 15;
+
+    if (aircraft.hitCount >= maxHits) {
+      aircraft.state = 'destroyed';
+      aircraft.destroyedAt = Date.now();
+
+      // Schedule authoritative respawn after 12 seconds
+      if (!this.aircraftRespawnTimers.has(aircraft.id)) {
+        const timer = setTimeout(() => {
+          this.aircraftRespawnTimers.delete(aircraft.id);
+          aircraft.hitCount = 0;
+          aircraft.state = 'patrol';
+          aircraft.evasionManeuver = null;
+          aircraft.speed = aircraft.baseSpeed || 26.0;
+          if (typeof this.onAircraftRespawn === 'function') {
+            this.onAircraftRespawn(aircraft);
+          }
+        }, 12000);
+        this.aircraftRespawnTimers.set(aircraft.id, timer);
+      }
+
+      return {
+        destroyed: true,
+        aircraft,
+        damage: dmg,
+        hitCount: aircraft.hitCount,
+        maxHits,
+        remainingHits: 0,
+        shooterId
+      };
+    }
+
+    return {
+      destroyed: false,
+      aircraft,
+      damage: dmg,
+      hitCount: aircraft.hitCount,
+      maxHits,
+      remainingHits: Math.max(0, maxHits - aircraft.hitCount),
+      shooterId
     };
   }
 
@@ -609,8 +786,11 @@ class GameState {
         yaw: Math.round((a.yaw || 0) * 100) / 100,
         pitch: Math.round((a.pitch || 0) * 100) / 100,
         roll: Math.round((a.roll || 0) * 100) / 100,
-        speed: Math.round((a.speed || 52.0) * 10) / 10,
+        speed: Math.round((a.speed || 26.0) * 10) / 10,
+        baseSpeed: a.baseSpeed || 26.0,
         state: a.state || 'patrol',
+        hitCount: a.hitCount || 0,
+        maxHits: a.maxHits || 15,
         evasionManeuver: a.evasionManeuver || null,
         evasionStartTime: a.evasionStartTime || 0,
         evasionDuration: a.evasionDuration || 0,
@@ -973,6 +1153,13 @@ class GameState {
     this.targetRespawnTimers.clear();
     this.aerialTargets.clear();
     this.initAerialTargets();
+
+    for (const timer of this.aircraftRespawnTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.aircraftRespawnTimers.clear();
+    this.fighterAircraft.clear();
+    this.initFighterAircraft();
   }
 
   spawnAnimal(type, x, y, z) {

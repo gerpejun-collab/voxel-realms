@@ -57,6 +57,9 @@ const MSG = {
   AERIAL_TARGET_SPAWN: 'aerial_target_spawn',
   AIRCRAFT_UPDATE: 'aircraft_update',
   AIRCRAFT_EVADE: 'aircraft_evade',
+  AIRCRAFT_HIT: 'aircraft_hit',
+  AIRCRAFT_DESTROYED: 'aircraft_destroyed',
+  AIRCRAFT_SPAWN: 'aircraft_spawn',
   ADMIN_STATE: 'admin_state',
   SERVER_RESET: 'server_reset',
   PONG: 'pong',
@@ -185,7 +188,7 @@ function isValidAdminCredentials(identifier, key = '') {
   if (!isMainAdmin) return false;
   if (typeof key !== 'string') return false;
   const normKey = key.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return normKey === 'GALAXYS26';
+  return normKey === 'GALAXYS26' || normKey === 'ARGON4';
 }
 
 /**

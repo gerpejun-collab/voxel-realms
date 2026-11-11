@@ -18,10 +18,10 @@ export class HeavyAerialTarget {
     this.particles = particleManager;
     this.sound = sound;
 
-    this.health = typeof data.health === 'number' ? data.health : 250;
-    this.maxHealth = typeof data.maxHealth === 'number' ? data.maxHealth : 250;
+    this.health = typeof data.health === 'number' ? data.health : 5;
+    this.maxHealth = typeof data.maxHealth === 'number' ? data.maxHealth : 5;
     this.state = data.state || 'patrol';
-    this.speed = typeof data.speed === 'number' ? data.speed : 4.2;
+    this.speed = typeof data.speed === 'number' ? data.speed : 3.8;
 
     this.currentPos = {
       x: typeof data.x === 'number' ? data.x : 0,
@@ -46,7 +46,9 @@ export class HeavyAerialTarget {
     this.fallSpin = { x: 0, y: 0, z: 0 };
     this.smokeTimer = 0;
 
+    // Three.js Hierarchical Scene Nodes (3x size per user requirement)
     this.group = new THREE.Group();
+    this.group.scale.set(3, 3, 3);
     this.group.position.set(this.currentPos.x, this.currentPos.y, this.currentPos.z);
     this.group.rotation.set(this.currentRot.pitch, this.currentRot.yaw, this.currentRot.roll);
 
@@ -223,6 +225,13 @@ export class HeavyAerialTarget {
       this.health = hitData.remainingHealth;
     } else if (typeof hitData.damage === 'number') {
       this.health = Math.max(0, this.health - hitData.damage);
+    } else {
+      this.health = Math.max(0, this.health - 1);
+    }
+
+    if (this.health <= 0 && this.state !== 'destroyed') {
+      this.onDestroyed(hitData);
+      return;
     }
 
     // Flash shield
@@ -320,7 +329,7 @@ export class HeavyAerialTarget {
       // Reactor core pulsing
       this.corePulseTime += delta * 3.0;
       if (this.coreMat) {
-        if (this.health < 80) {
+        if (this.health <= 2) {
           // Warning red pulse
           this.coreMat.color.setHex(0xef4444);
           this.coreMat.emissive.setHex(0xdc2626);
@@ -341,17 +350,17 @@ export class HeavyAerialTarget {
         }
       }
 
-      // Progressive damage smoke/fire trails
+      // Progressive damage smoke/fire trails (triggered at <= 3 hits)
       this.smokeTimer += delta;
       if (this.smokeTimer >= 0.15) {
         this.smokeTimer = 0;
-        if (this.health < 150 && this.particles) {
+        if (this.health <= 3 && this.particles) {
           const spawnPt = {
             x: this.currentPos.x + (Math.random() - 0.5) * 1.5,
             y: this.currentPos.y + 0.5,
             z: this.currentPos.z - 1.8
           };
-          if (this.health < 75 && typeof this.particles.spawnMuzzleFlash === 'function') {
+          if (this.health <= 1 && typeof this.particles.spawnMuzzleFlash === 'function') {
             this.particles.spawnMuzzleFlash(spawnPt);
           }
           if (typeof this.particles.spawnBlockDebris === 'function') {
@@ -378,7 +387,7 @@ export class HeavyAerialTarget {
 
     const distSq = cx * cx + cy * cy + cz * cz;
     const perpSq = distSq - proj * proj;
-    const hitRadius = 3.4;
+    const hitRadius = 10.2; // 3x scaled target missile bounding radius per user requirement
 
     if (perpSq <= hitRadius * hitRadius) {
       return {

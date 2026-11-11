@@ -81,6 +81,22 @@ class RoomManager {
           state: target.state
         });
       };
+      gameState.onAircraftRespawn = (aircraft) => {
+        this.broadcast(room, MSG.AIRCRAFT_SPAWN, {
+          id: aircraft.id,
+          x: aircraft.x,
+          y: aircraft.y,
+          z: aircraft.z,
+          yaw: aircraft.yaw,
+          pitch: aircraft.pitch,
+          roll: aircraft.roll,
+          speed: aircraft.speed,
+          baseSpeed: aircraft.baseSpeed,
+          hitCount: aircraft.hitCount,
+          maxHits: aircraft.maxHits,
+          state: aircraft.state
+        });
+      };
       this.rooms.set(roomId, room);
       if (!this.roomMetadata.has(roomId)) {
         this.roomMetadata.set(roomId, {
@@ -839,14 +855,7 @@ class RoomManager {
 
     // 2b. Check if shot targeted a synchronized heavy aerial target
     if (data.targetAerialId && room.gameState && typeof room.gameState.hitAerialTarget === 'function') {
-      const damageTable = {
-        bazooka: 95,
-        plasma: 45,
-        rifle: 20,
-        sniper: 25,
-        shotgun: 30
-      };
-      const damage = damageTable[data.weaponType] || 20;
+      const damage = 1; // 5 bullets to burst and explode in mid-air
       const result = room.gameState.hitAerialTarget(data.targetAerialId, damage, shooter.id);
 
       if (result) {
@@ -878,19 +887,26 @@ class RoomManager {
 
     // 2c. Check if shot targeted or passed near a synchronized acrobatic fighter aircraft
     let targetedAircraft = null;
+    let isDirectAircraftHit = false;
     if (data.targetAircraftId && room.gameState && room.gameState.fighterAircraft) {
       targetedAircraft = room.gameState.fighterAircraft.get(data.targetAircraftId);
+      if (targetedAircraft) isDirectAircraftHit = true;
     }
-    // Also check if projectile passed near any aircraft in airspace
+    // Also check if projectile passed near any aircraft in airspace (doubled size hitbox: radius ~25m)
     if (!targetedAircraft && room.gameState && room.gameState.fighterAircraft && data.origin && data.dir) {
       const ox = data.origin[0], oy = data.origin[1], oz = data.origin[2];
       const dx = data.dir[0], dy = data.dir[1], dz = data.dir[2];
       for (const plane of room.gameState.fighterAircraft.values()) {
+        if (plane.state === 'destroyed') continue;
         const vx = plane.x - ox, vy = plane.y - oy, vz = plane.z - oz;
         const proj = vx * dx + vy * dy + vz * dz;
         if (proj > 0 && proj < 1500) {
           const distSq = (vx * vx + vy * vy + vz * vz) - proj * proj;
-          if (distSq < 45 * 45) { // within 45m threat cylinder
+          if (distSq < 22 * 22) { // within doubled 2x aircraft hull
+            targetedAircraft = plane;
+            isDirectAircraftHit = true;
+            break;
+          } else if (distSq < 50 * 50) { // threat evasion zone
             targetedAircraft = plane;
             break;
           }
@@ -898,27 +914,63 @@ class RoomManager {
       }
     }
 
-    if (targetedAircraft && room.gameState && typeof room.gameState.triggerAircraftEvasion === 'function') {
-      const isEvading = targetedAircraft.state === 'evading' && (targetedAircraft.evasionProgress === undefined || targetedAircraft.evasionProgress < 0.9);
-      if (!isEvading) {
-        const evasionResult = room.gameState.triggerAircraftEvasion(targetedAircraft.id, {
-          threatSource: shooter.id,
-          weaponType: data.weaponType,
-          origin: data.origin,
-          dir: data.dir
-        });
+    if (targetedAircraft && room.gameState) {
+      let isDestroyed = false;
 
-        if (evasionResult) {
-          this.broadcast(room, MSG.AIRCRAFT_EVADE, {
-            aircraftId: targetedAircraft.id,
-            evasionType: evasionResult.maneuver,
-            evasionManeuver: evasionResult.maneuver,
-            threatType: data.weaponType || 'rifle',
-            threatOrigin: data.origin || null,
-            startTime: evasionResult.startTime || Date.now(),
-            durationMs: (evasionResult.duration || 2.2) * 1000,
-            direction: evasionResult.direction || 1
+      // Register bullet hit in internal counter
+      if (isDirectAircraftHit && typeof room.gameState.hitFighterAircraft === 'function') {
+        const hitResult = room.gameState.hitFighterAircraft(targetedAircraft.id, 1, shooter.id);
+        if (hitResult) {
+          if (hitResult.destroyed) {
+            isDestroyed = true;
+            this.broadcast(room, MSG.AIRCRAFT_DESTROYED, {
+              aircraftId: targetedAircraft.id,
+              killerId: shooter.id,
+              killerName: shooter.name,
+              weaponType: data.weaponType || 'rifle',
+              x: targetedAircraft.x,
+              y: targetedAircraft.y,
+              z: targetedAircraft.z,
+              respawnDelaySeconds: 12
+            });
+          } else {
+            this.broadcast(room, MSG.AIRCRAFT_HIT, {
+              aircraftId: targetedAircraft.id,
+              shooterId: shooter.id,
+              shooterName: shooter.name,
+              weaponType: data.weaponType || 'rifle',
+              hitCount: hitResult.hitCount,
+              maxHits: hitResult.maxHits,
+              remainingHits: hitResult.remainingHits,
+              hitPos: data.hitPos || [targetedAircraft.x, targetedAircraft.y, targetedAircraft.z]
+            });
+          }
+        }
+      }
+
+      // If not destroyed, trigger evasive maneuver under fire
+      if (!isDestroyed && typeof room.gameState.triggerAircraftEvasion === 'function') {
+        const isEvading = targetedAircraft.state === 'evading' && (targetedAircraft.evasionProgress === undefined || targetedAircraft.evasionProgress < 0.9);
+        if (!isEvading) {
+          const evasionResult = room.gameState.triggerAircraftEvasion(targetedAircraft.id, {
+            threatSource: shooter.id,
+            weaponType: data.weaponType,
+            origin: data.origin,
+            dir: data.dir
           });
+
+          if (evasionResult) {
+            this.broadcast(room, MSG.AIRCRAFT_EVADE, {
+              aircraftId: targetedAircraft.id,
+              evasionType: evasionResult.maneuver,
+              evasionManeuver: evasionResult.maneuver,
+              threatType: data.weaponType || 'rifle',
+              threatOrigin: data.origin || null,
+              startTime: evasionResult.startTime || Date.now(),
+              durationMs: (evasionResult.duration || 2.2) * 1000,
+              direction: evasionResult.direction || 1
+            });
+          }
         }
       }
     }
@@ -1331,11 +1383,10 @@ class RoomManager {
     const startYaw = typeof data.yaw === 'number' ? data.yaw : (launcher.rot ? launcher.rot[0] : 0);
 
     const isLauncherMainAdmin = Boolean(
-      meta.isAdmin ||
       meta.adminEmail === ADMIN_EMAIL ||
       meta.adminEmail === 'ZFOLD7' ||
       meta.adminEmail === 'zfold7' ||
-      launcher.isAdmin ||
+      (launcher.isAdmin && (launcher.name === 'ZFOLD7' || launcher.name === 'zfold7' || launcher.name === 'jsieiragerpe')) ||
       launcher.name === 'ZFOLD7' ||
       launcher.name === 'jsieiragerpe' ||
       meta.id === 'p_main_admin'

@@ -503,8 +503,8 @@ export class GuidedMissile {
       // Adaptive Turning Rate:
       // As distance to target decreases (< 45m), dynamically scale up maxTurnRate (from base up to 12.0 - 16.0 rad/s)
       let currentTurnRate = this.maxTurnRate;
-      if (rawDist < 45.0) {
-        const t = 1.0 - Math.max(0, Math.min(1.0, (rawDist - 2.0) / 43.0));
+      if (rawDist < 50.0) {
+        const t = 1.0 - Math.max(0, Math.min(1.0, (rawDist - 2.0) / 48.0));
         const maxCloseTurn = this.isInterceptor ? 16.0 : 12.0;
         currentTurnRate = THREE.MathUtils.lerp(this.maxTurnRate, maxCloseTurn, t);
         // Moderate terminal speed inside close range (< 18m) so turning circle radius shrinks

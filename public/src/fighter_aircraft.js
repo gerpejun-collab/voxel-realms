@@ -17,10 +17,12 @@ export class FighterAircraft {
     this.particles = particleManager;
     this.sound = sound;
 
-    this.speed = typeof data.speed === 'number' ? data.speed : 52.0;
-    this.baseSpeed = 52.0;
-    this.sprintSpeed = 82.0;
+    this.speed = typeof data.speed === 'number' ? data.speed : 26.0;
+    this.baseSpeed = 26.0;
+    this.sprintSpeed = 41.0;
     this.state = data.state || 'patrol';
+    this.hitCount = typeof data.hitCount === 'number' ? data.hitCount : 0;
+    this.maxHits = typeof data.maxHits === 'number' ? data.maxHits : 15;
 
     const initX = typeof data.x === 'number' ? data.x : (Array.isArray(data.pos) ? data.pos[0] : 0);
     const initY = typeof data.y === 'number' ? data.y : (Array.isArray(data.pos) ? data.pos[1] : 72);
@@ -40,9 +42,10 @@ export class FighterAircraft {
     this.afterburnerIntensity = 0.8;
     this.wingtipTimer = 0;
 
-    // Three.js Hierarchical Scene Nodes
+    // Three.js Hierarchical Scene Nodes (2x size per user requirement)
     this.group = new THREE.Group();
     this.modelGroup = new THREE.Group();
+    this.modelGroup.scale.set(2, 2, 2);
     this.group.add(this.modelGroup);
 
     this.group.position.set(this.currentPos.x, this.currentPos.y, this.currentPos.z);
@@ -264,7 +267,17 @@ export class FighterAircraft {
     else if (Array.isArray(data.rot)) this.targetRot.roll = data.rot[2];
 
     if (typeof data.speed === 'number') this.speed = data.speed;
-    if (data.state) this.state = data.state;
+    if (typeof data.hitCount === 'number') this.hitCount = data.hitCount;
+    if (typeof data.maxHits === 'number') this.maxHits = data.maxHits;
+
+    if (data.state) {
+      this.state = data.state;
+      if (this.state === 'destroyed') {
+        this.group.visible = false;
+      } else if (this.state === 'patrol') {
+        this.group.visible = true;
+      }
+    }
 
     // Trigger evasion if indicated by server
     if (data.evasionManeuver && (!this.evasionState || this.evasionState.maneuver !== data.evasionManeuver)) {
@@ -280,7 +293,7 @@ export class FighterAircraft {
    * Initiates local evasive maneuver triggered by burst fire or server packet
    */
   handleEvade(data) {
-    if (!data) return;
+    if (!data || this.state === 'destroyed') return;
     if (this.state === 'evading' && this.evasionState) {
       const elapsed = Date.now() - (this.evasionState.startTime || 0);
       const dur = this.evasionState.durationMs || 2200;
@@ -299,9 +312,63 @@ export class FighterAircraft {
   }
 
   /**
+   * Registers a bullet hit against this aircraft
+   */
+  onHit(hitData) {
+    if (!hitData) return;
+    if (typeof hitData.hitCount === 'number') {
+      this.hitCount = hitData.hitCount;
+    } else {
+      this.hitCount = (this.hitCount || 0) + 1;
+    }
+    if (typeof hitData.maxHits === 'number') {
+      this.maxHits = hitData.maxHits;
+    }
+
+    if (this.particles && typeof this.particles.spawnMuzzleFlash === 'function') {
+      const hitPt = hitData.hitPos
+        ? (Array.isArray(hitData.hitPos) ? { x: hitData.hitPos[0], y: hitData.hitPos[1], z: hitData.hitPos[2] } : hitData.hitPos)
+        : this.group.position;
+      this.particles.spawnMuzzleFlash(hitPt);
+    }
+  }
+
+  /**
+   * Triggers explosion effect when aircraft accumulates bullet hits threshold
+   */
+  onDestroyed(destroyedData) {
+    this.state = 'destroyed';
+    const pos = destroyedData && typeof destroyedData.x === 'number'
+      ? { x: destroyedData.x, y: destroyedData.y, z: destroyedData.z }
+      : this.group.position;
+
+    if (this.particles && typeof this.particles.spawnExplosion === 'function') {
+      this.particles.spawnExplosion(pos.x, pos.y, pos.z);
+    }
+    if (this.sound && typeof this.sound.playExplosion === 'function') {
+      this.sound.playExplosion();
+    }
+    this.group.visible = false;
+  }
+
+  /**
+   * Resets aircraft to active patrol after server respawn
+   */
+  handleSpawn(data) {
+    this.state = 'patrol';
+    this.hitCount = 0;
+    this.group.visible = true;
+    if (data) this.updateServerState(data);
+  }
+
+  /**
    * Kinematic update loop with quintic smoothstep evasion blending and zero visual jitter
    */
   update(dt = 0.016) {
+    if (this.state === 'destroyed') {
+      this.group.visible = false;
+      return;
+    }
     const delta = typeof dt === 'number' && Number.isFinite(dt) && dt > 0 ? dt : 0.016;
     const now = Date.now();
 
@@ -476,7 +543,7 @@ export class FighterAircraft {
 
     const distSq = cx * cx + cy * cy + cz * cz;
     const perpSq = distSq - proj * proj;
-    const hitRadius = 5.5; // Supersonic jet bounding radius
+    const hitRadius = 11.0; // 2x supersonic jet bounding radius per user requirement
 
     if (perpSq <= hitRadius * hitRadius) {
       return {
@@ -556,6 +623,42 @@ export class FighterAircraftManager {
         plane.dispose();
         this.aircraft.delete(id);
       }
+    }
+  }
+
+  /**
+   * Handles bullet hit packet on matching aircraft
+   */
+  handleHit(data) {
+    if (!data) return;
+    const plane = this.aircraft.get(data.aircraftId);
+    if (plane) {
+      plane.onHit(data);
+    }
+  }
+
+  /**
+   * Handles aircraft destruction packet
+   */
+  handleDestroyed(data) {
+    if (!data) return;
+    const plane = this.aircraft.get(data.aircraftId);
+    if (plane) {
+      plane.onDestroyed(data);
+    }
+  }
+
+  /**
+   * Handles aircraft respawn packet
+   */
+  handleSpawn(data) {
+    if (!data || !data.id) return;
+    let plane = this.aircraft.get(data.id);
+    if (!plane) {
+      plane = new FighterAircraft(data, this.scene, this.particles, this.sound);
+      this.aircraft.set(data.id, plane);
+    } else {
+      plane.handleSpawn(data);
     }
   }
 

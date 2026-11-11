@@ -642,6 +642,30 @@ export class MultiplayerClient {
         }
         break;
 
+      case 'aircraft_hit':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleHit(data);
+        }
+        if (typeof this.onAircraftHit === 'function') {
+          this.onAircraftHit(data);
+        }
+        break;
+
+      case 'aircraft_destroyed':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleDestroyed(data);
+        }
+        if (typeof this.onAircraftDestroyed === 'function') {
+          this.onAircraftDestroyed(data);
+        }
+        break;
+
+      case 'aircraft_spawn':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleSpawn(data);
+        }
+        break;
+
       case 'weapon_shot_fx':
         if (data && data.shooterId !== this.myId) {
           const o = Array.isArray(data.origin)

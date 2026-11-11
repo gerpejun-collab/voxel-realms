@@ -445,33 +445,22 @@ async function runAdversarialStressSuite() {
   // ---------------------------------------------------------------------------
   console.log('\n--- SUITE 3: Heavy Aerial Target Health & Sustained Burst Fire ---');
 
-  runTest('Single weapon hits (Bazooka, Plasma, Sniper, Rifle, Shotgun) NEVER destroy a heavy target from full health', () => {
-    const weaponDamages = [
-      { weapon: 'bazooka', damage: 95, expectedRemaining: 155 },
-      { weapon: 'plasma',  damage: 45, expectedRemaining: 205 },
-      { weapon: 'sniper',  damage: 25, expectedRemaining: 225 },
-      { weapon: 'shotgun', damage: 30, expectedRemaining: 220 },
-      { weapon: 'rifle',   damage: 20, expectedRemaining: 230 }
-    ];
+  runTest('Single weapon hits (1 bullet) NEVER destroy a heavy target from full health (starts at 5 hits)', () => {
+    const gameState = new GameState();
+    const targetId = 'target_drone_1';
+    const target = gameState.aerialTargets.get(targetId);
+    assert.strictEqual(target.health, 5, 'Target must start with 5 hits');
 
-    for (const w of weaponDamages) {
-      const gameState = new GameState();
-      const targetId = 'target_drone_1';
-      const target = gameState.aerialTargets.get(targetId);
-      assert.strictEqual(target.health, 250, 'Target must start with 250 HP');
+    // Deliver single hit
+    const result = gameState.hitAerialTarget(targetId, 1, 'attacker_single_hit');
 
-      // Deliver single hit
-      const result = gameState.hitAerialTarget(targetId, w.damage, 'attacker_single_hit');
-
-      assert(result !== null, `Hit result for ${w.weapon} must not be null`);
-      assert.strictEqual(result.destroyed, false, `Single hit from ${w.weapon} (${w.damage} dmg) must NOT destroy target`);
-      assert.strictEqual(result.remainingHealth, w.expectedRemaining,
-        `Single hit from ${w.weapon} must leave ${w.expectedRemaining} HP`);
-      assert.strictEqual(target.state, 'patrol', `Target must remain in 'patrol' state`);
-    }
+    assert(result !== null, `Hit result must not be null`);
+    assert.strictEqual(result.destroyed, false, `Single hit must NOT destroy target`);
+    assert.strictEqual(result.remainingHealth, 4, `Single hit must leave 4 hits`);
+    assert.strictEqual(target.state, 'patrol', `Target must remain in 'patrol' state`);
   });
 
-  runTest('Sustained Bazooka RPG burst fire (3 direct hits) consistently destroys target and triggers 12s respawn', () => {
+  runTest('Sustained burst fire (5 direct hits) consistently destroys target and triggers 12s respawn', () => {
     const gameState = new GameState();
     const targetId = 'target_drone_1';
 
@@ -479,24 +468,21 @@ async function runAdversarialStressSuite() {
     gameState.onTargetRespawn = (respawnedTarget) => {
       respawnEventFired = true;
       assert.strictEqual(respawnedTarget.id, targetId);
-      assert.strictEqual(respawnedTarget.health, 250, 'Respawned target must have 250 HP');
+      assert.strictEqual(respawnedTarget.health, 5, 'Respawned target must have 5 hits');
       assert.strictEqual(respawnedTarget.state, 'patrol', 'Respawned target must be in patrol');
     };
 
-    // Shot 1: Bazooka 95 dmg -> 155 HP
-    const r1 = gameState.hitAerialTarget(targetId, 95, 'shooter_1');
-    assert.strictEqual(r1.destroyed, false);
-    assert.strictEqual(r1.remainingHealth, 155);
+    // Shots 1-4: non-lethal
+    for (let s = 1; s <= 4; s++) {
+      const r = gameState.hitAerialTarget(targetId, 1, 'shooter_1');
+      assert.strictEqual(r.destroyed, false);
+      assert.strictEqual(r.remainingHealth, 5 - s);
+    }
 
-    // Shot 2: Bazooka 95 dmg -> 60 HP
-    const r2 = gameState.hitAerialTarget(targetId, 95, 'shooter_1');
-    assert.strictEqual(r2.destroyed, false);
-    assert.strictEqual(r2.remainingHealth, 60);
-
-    // Shot 3: Bazooka 95 dmg -> 0 HP (Destruction!)
-    const r3 = gameState.hitAerialTarget(targetId, 95, 'shooter_1');
-    assert.strictEqual(r3.destroyed, true, 'Third Bazooka shot must destroy target');
-    assert.strictEqual(r3.remainingHealth, 0);
+    // Shot 5: 1 hit -> 0 HP (Destruction on 5th bullet!)
+    const r5 = gameState.hitAerialTarget(targetId, 1, 'shooter_1');
+    assert.strictEqual(r5.destroyed, true, 'Fifth shot must destroy target');
+    assert.strictEqual(r5.remainingHealth, 0);
     assert.strictEqual(gameState.aerialTargets.get(targetId).state, 'destroyed');
 
     // Verify 12-second respawn timer registered
@@ -509,37 +495,15 @@ async function runAdversarialStressSuite() {
 
     // Manually trigger the respawn callback routine
     const target = gameState.aerialTargets.get(targetId);
-    target.health = target.maxHealth;
+    target.health = target.maxHealth || 5;
     target.state = 'patrol';
     if (typeof gameState.onTargetRespawn === 'function') {
       gameState.onTargetRespawn(target);
     }
 
     assert.strictEqual(respawnEventFired, true, 'Respawn event must fire');
-    assert.strictEqual(target.health, 250);
+    assert.strictEqual(target.health, 5);
     assert.strictEqual(target.state, 'patrol');
-  });
-
-  runTest('Sustained Plasma burst fire (6 direct hits) consistently destroys target', () => {
-    const gameState = new GameState();
-    const targetId = 'target_drone_2';
-
-    // 5 Plasma hits: 5 * 45 = 225 dmg -> 25 HP remaining (still alive!)
-    for (let i = 1; i <= 5; i++) {
-      const res = gameState.hitAerialTarget(targetId, 45, 'plasma_gunner');
-      assert.strictEqual(res.destroyed, false, `Plasma hit ${i} must not destroy target`);
-      assert.strictEqual(res.remainingHealth, 250 - (i * 45));
-    }
-
-    // 6th Plasma hit: 45 dmg -> 0 HP (Destruction!)
-    const resFinal = gameState.hitAerialTarget(targetId, 45, 'plasma_gunner');
-    assert.strictEqual(resFinal.destroyed, true, '6th Plasma hit must destroy target');
-    assert.strictEqual(resFinal.remainingHealth, 0);
-
-    // Clear respawn timer
-    if (gameState.targetRespawnTimers.has(targetId)) {
-      clearTimeout(gameState.targetRespawnTimers.get(targetId));
-    }
   });
 
   runTest('Multiplayer RoomManager weapon shoot broadcasts AERIAL_TARGET_HIT and AERIAL_TARGET_DESTROYED packets', () => {
@@ -562,7 +526,7 @@ async function runAdversarialStressSuite() {
     shooterWs.clearMessages();
     spectatorWs.clearMessages();
 
-    // 1. Fire Bazooka shot at drone 1 (non-lethal hit: 95 dmg, 155 HP remaining)
+    // 1. Fire shot 1 at drone 1 (non-lethal hit: 1 dmg, 4 HP remaining)
     roomManager.handleWeaponShoot(shooterWs, shooterMeta, {
       weaponType: 'bazooka',
       targetAerialId: 'target_drone_1',
@@ -574,19 +538,21 @@ async function runAdversarialStressSuite() {
     const hitMsg = spectatorWs.getLastMessageByType(MSG.AERIAL_TARGET_HIT);
     assert(hitMsg && hitMsg.data, 'Spectator must receive AERIAL_TARGET_HIT broadcast');
     assert.strictEqual(hitMsg.data.targetId, 'target_drone_1');
-    assert.strictEqual(hitMsg.data.damage, 95);
-    assert.strictEqual(hitMsg.data.remainingHealth, 155);
-    assert.strictEqual(hitMsg.data.maxHealth, 250);
+    assert.strictEqual(hitMsg.data.damage, 1);
+    assert.strictEqual(hitMsg.data.remainingHealth, 4);
+    assert.strictEqual(hitMsg.data.maxHealth, 5);
 
-    // 2. Fire 2nd Bazooka shot (60 HP remaining)
-    roomManager.handleWeaponShoot(shooterWs, shooterMeta, {
-      weaponType: 'bazooka',
-      targetAerialId: 'target_drone_1',
-      origin: [0, 40, 0],
-      dir: [1, 0, 0]
-    });
+    // 2. Fire shots 2, 3, 4
+    for (let s = 2; s <= 4; s++) {
+      roomManager.handleWeaponShoot(shooterWs, shooterMeta, {
+        weaponType: 'rifle',
+        targetAerialId: 'target_drone_1',
+        origin: [0, 40, 0],
+        dir: [1, 0, 0]
+      });
+    }
 
-    // 3. Fire 3rd Bazooka shot (Lethal hit -> AERIAL_TARGET_DESTROYED)
+    // 3. Fire 5th shot (Lethal hit -> AERIAL_TARGET_DESTROYED)
     roomManager.handleWeaponShoot(shooterWs, shooterMeta, {
       weaponType: 'bazooka',
       targetAerialId: 'target_drone_1',

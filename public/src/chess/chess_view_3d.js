@@ -401,11 +401,11 @@ export class ChessView3D {
         const height = this.canvas.clientHeight || 560;
         const aspect = width / height;
 
-        // Auto distance math: ensure full 10.4 unit board and tall 1.92 unit King fit inside mobile portrait framing
+        // Auto distance math: ensure full board and tall King fit cleanly inside mobile portrait framing
         const fovRad = (this.camera.fov * Math.PI) / 180;
-        const boardRadius = 5.25;
-        const autoDist = (boardRadius / Math.sin(fovRad / 2)) * (1.0 / Math.min(1.0, aspect)) * 1.10;
-        const baseRadius = Math.max(16.5, Math.min(32.0, autoDist));
+        const boardRadius = 4.65;
+        const autoDist = (boardRadius / Math.sin(fovRad / 2)) * (1.0 / Math.min(1.0, aspect)) * 1.02;
+        const baseRadius = Math.max(13.8, Math.min(28.0, autoDist));
 
         let targetPitchDeg = 56; // Default Angled 3D (Spec 94)
         let distMult = 1.0;

@@ -746,6 +746,13 @@ window.openChessApp = function() {
   if (lobbyOverlay) lobbyOverlay.classList.add('hidden');
   if (chessModal) chessModal.classList.remove('hidden');
 
+  if (window.VoxelAndroid && typeof window.VoxelAndroid.setOrientation === 'function') {
+    window.VoxelAndroid.setOrientation('portrait');
+  }
+  if (screen.orientation && typeof screen.orientation.lock === 'function') {
+    screen.orientation.lock('portrait').catch(() => {});
+  }
+
   if (!chessAppInstance) {
     const rootContainer = document.getElementById('chess-root-container');
     if (!rootContainer) return;

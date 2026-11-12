@@ -445,6 +445,12 @@ export class ChessUI {
                 if (modal) modal.classList.add('hidden');
                 const portal = document.getElementById('portal-hub-modal');
                 if (portal) portal.classList.remove('hidden');
+                if (window.VoxelAndroid && typeof window.VoxelAndroid.setOrientation === 'function') {
+                    window.VoxelAndroid.setOrientation('auto');
+                }
+                if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+                    try { screen.orientation.unlock(); } catch (_) {}
+                }
             });
         }
 
@@ -712,11 +718,22 @@ export class ChessUI {
             if (e.key === 'Enter') sendChat();
         });
 
-        // Window resize
+        // Window & container resize
         window.addEventListener('resize', () => {
             this.view2D.resize();
             this.view3D.resize();
         });
+        const canvasBox = this.container.querySelector('#chess-canvas-box');
+        if (canvasBox && typeof ResizeObserver !== 'undefined') {
+            this._resizeObserver = new ResizeObserver(() => {
+                if (this.currentViewMode === '2d') {
+                    this.view2D.resize();
+                } else {
+                    this.view3D.resize();
+                }
+            });
+            this._resizeObserver.observe(canvasBox);
+        }
     }
 
     setupSheetGestures() {
@@ -1479,15 +1496,15 @@ export class ChessUI {
             sub.style.color = '#ef4444';
         } else {
             if (this.gameMode === 'ai') {
-                sub.textContent = `vs ${this.opponentName} • Mueven ${turn}`;
+                sub.textContent = `IA Nv.${this.aiLevel} • ${turn}`;
             } else if (this.gameMode === 'online') {
-                sub.textContent = `Partida Online • Mueven ${turn}`;
+                sub.textContent = `Online • ${turn}`;
             } else if (this.gameMode === 'spectate') {
-                sub.textContent = `Retransmisión en Directo • Mueven ${turn}`;
+                sub.textContent = `En Directo • ${turn}`;
             } else {
                 sub.textContent = `Mueven ${turn}`;
             }
-            sub.style.color = '#38bdf8';
+            sub.style.color = '#8ab4f8';
         }
     }
 

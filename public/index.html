@@ -1060,6 +1060,12 @@
         launchVoxelBtn.addEventListener('click', function() {
           if (portalHub) portalHub.classList.add('hidden');
           if (lobbyOverlay) lobbyOverlay.classList.remove('hidden');
+          if (window.VoxelAndroid && typeof window.VoxelAndroid.setOrientation === 'function') {
+            window.VoxelAndroid.setOrientation('landscape');
+          }
+          if (screen.orientation && typeof screen.orientation.lock === 'function') {
+            screen.orientation.lock('landscape').catch(function() {});
+          }
         });
       }
 
@@ -1068,6 +1074,12 @@
           if (portalHub) portalHub.classList.add('hidden');
           if (lobbyOverlay) lobbyOverlay.classList.add('hidden');
           if (chessModal) chessModal.classList.remove('hidden');
+          if (window.VoxelAndroid && typeof window.VoxelAndroid.setOrientation === 'function') {
+            window.VoxelAndroid.setOrientation('portrait');
+          }
+          if (screen.orientation && typeof screen.orientation.lock === 'function') {
+            screen.orientation.lock('portrait').catch(function() {});
+          }
           if (window.openChessApp) {
             window.openChessApp();
           }

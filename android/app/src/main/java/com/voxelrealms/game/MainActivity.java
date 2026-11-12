@@ -36,9 +36,9 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Keep screen awake and lock sensor landscape
+        // Keep screen awake; allow dynamic orientation (Portrait for Chess/Portal, Landscape for Voxel Realms)
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
 
         // Apply true immersive sticky fullscreen
         applyImmersiveSticky();
@@ -282,6 +282,27 @@ class RequestPermissionsTask implements Runnable {
     }
 }
 
+class SetOrientationTask implements Runnable {
+    private final MainActivity activity;
+    private final String mode;
+
+    SetOrientationTask(MainActivity activity, String mode) {
+        this.activity = activity;
+        this.mode = mode;
+    }
+
+    @Override
+    public void run() {
+        if ("landscape".equalsIgnoreCase(mode)) {
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        } else if ("portrait".equalsIgnoreCase(mode)) {
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+        } else {
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        }
+    }
+}
+
 class GameWebChromeClient extends WebChromeClient {
     private final MainActivity activity;
 
@@ -343,5 +364,10 @@ class VoxelAndroidBridge {
     @JavascriptInterface
     public void requestStoragePermission() {
         activity.runOnUiThread(new RequestPermissionsTask(activity));
+    }
+
+    @JavascriptInterface
+    public void setOrientation(final String mode) {
+        activity.runOnUiThread(new SetOrientationTask(activity, mode));
     }
 }

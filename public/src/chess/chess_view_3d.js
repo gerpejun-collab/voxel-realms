@@ -38,6 +38,7 @@ export class ChessView3D {
         this.preset = options.preset || 'angled'; // 'angled' | 'topdown' | 'cinematic'
         this.onMoveAttempt = options.onMoveAttempt || (() => {});
         this.onPromotionNeeded = options.onPromotionNeeded || null;
+        this.canInteract = options.canInteract || (() => true);
 
         this.engine = null;
         this.selectedSquare = null; // { row, col }
@@ -551,7 +552,9 @@ export class ChessView3D {
                     this.lastTapTime = 0;
                 } else {
                     this.lastTapTime = now;
-                    this.handleRaycastTap(pointer.x, pointer.y);
+                    if (this.canInteract()) {
+                        this.handleRaycastTap(pointer.x, pointer.y);
+                    }
                 }
             }
 

@@ -51,6 +51,10 @@ export const M3_ICONS = {
     description: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`,
     send: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`,
     close: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`,
+    play: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>`,
+    pause: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`,
+    speed: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>`,
+    infinity: `<svg class="chess-m3-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M18.6 6.62c-1.44 0-2.8.56-3.77 1.53L12 10.66 10.48 12h.01L7.8 14.39c-.64.64-1.49.99-2.4.99-1.87 0-3.39-1.51-3.39-3.38S3.53 8.62 5.4 8.62c.91 0 1.76.35 2.44 1.03l1.13 1 1.51-1.34L9.22 8.2A5.37 5.37 0 0 0 5.4 6.62C2.42 6.62 0 9.04 0 12s2.42 5.38 5.4 5.38c1.44 0 2.8-.56 3.77-1.53l2.83-2.5.01.01L13.52 12h-.01l2.69-2.39c.64-.64 1.49-.99 2.4-.99 1.87 0 3.39 1.51 3.39 3.38s-1.52 3.38-3.39 3.38c-.9 0-1.76-.35-2.44-1.03l-1.14-1.01-1.51 1.34 1.27 1.12a5.386 5.386 0 0 0 3.82 1.57c2.98 0 5.4-2.41 5.4-5.38s-2.42-5.37-5.4-5.37z"/></svg>`,
     // Vector Chess Pieces for Promotion Modal
     promoQueen: `<svg class="chess-promo-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M18 3l-3 4-3-4-3 4-3-4-1 9h16l-1-9zm-6 12c-2.76 0-5 2.24-5 5h10c0-2.76-2.24-5-5-5z"/></svg>`,
     promoKnight: `<svg class="chess-promo-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 22H5v-2h14v2M17 19H7v-2h10v2M16.5 10.5c0-.29-.12-.56-.32-.75.52-.63.82-1.4.82-2.25 0-1.93-1.57-3.5-3.5-3.5-.44 0-.85.08-1.23.23L12 2h-2l-.27 2.23C9.35 4.08 8.94 4 8.5 4 6.57 4 5 5.57 5 7.5c0 .85.3 1.62.82 2.25-.2.19-.32.46-.32.75 0 .55.45 1 1 1h.63L8 16h6l.87-4.5h.63c.55 0 1-.45 1-1z"/></svg>`,
@@ -73,8 +77,14 @@ export class ChessUI {
         this.ai = new ChessAI();
 
         // Game mode state
-        this.gameMode = 'ai'; // 'ai', 'online', 'pass_and_play', 'spectate'
+        this.gameMode = 'ai'; // 'ai', 'ai_vs_ai', 'online', 'pass_and_play', 'spectate'
         this.aiLevel = 3;
+        this.aiWhiteLevel = 5;
+        this.aiBlackLevel = 5;
+        this.aiSpeedMode = 'natural'; // 'normal' | 'natural'
+        this.aiPaused = false;
+        this.aiMatchToken = 0;
+        this.aiMoveTimer = null;
         this.playerColor = 'w'; // 'w', 'b', or 'both'
         this.currentViewMode = '2d'; // '2d' or '3d'
         this.currentRoomId = null;
@@ -90,6 +100,8 @@ export class ChessUI {
         this.localRating = '1500';
 
         // Clocks
+        this.localTimeMode = 'unlimited'; // 'unlimited' | 'rapid_10_0' | 'blitz_5_3'
+        this.unlimitedTime = false;
         this.whiteTimeMs = 300000;
         this.blackTimeMs = 300000;
         this.incrementMs = 0;
@@ -214,6 +226,10 @@ export class ChessUI {
                     <button id="chess-ticker-next" class="chess-ticker-btn" title="Jugada siguiente" aria-label="Jugada siguiente">${M3_ICONS.chevronNext}</button>
                     <button id="chess-ticker-latest" class="chess-ticker-btn" title="Última jugada" aria-label="Última jugada">${M3_ICONS.skipLatest}</button>
                     <button id="chess-ticker-undo" class="chess-ticker-undo" title="Deshacer última jugada">${M3_ICONS.undo} Deshacer</button>
+                    <div id="chess-aivsai-controls" class="chess-aivsai-controls hidden">
+                        <button id="chess-aivsai-pause" class="chess-aivsai-pill" title="Pausar / Reanudar">${M3_ICONS.pause}<span>Pausar</span></button>
+                        <button id="chess-aivsai-speed" class="chess-aivsai-pill tonal" title="Cambiar velocidad">${M3_ICONS.speed}<span>Natural</span></button>
+                    </div>
                 </div>
 
                 <!-- Row 6: Docked Material 3 Bottom Navigation Bar (56px) -->
@@ -252,47 +268,100 @@ export class ChessUI {
                         <button class="chess-sheet-close" data-close="sheet-play">${M3_ICONS.close}</button>
                     </div>
                     <div class="chess-sheet-body">
-                        <div class="chess-section-title">${M3_ICONS.bolt} Partida Rápida Online</div>
-                        <div class="chess-time-presets">
-                            <button class="chess-preset-btn" data-tc="bullet_1_0">1+0 Bullet</button>
-                            <button class="chess-preset-btn" data-tc="blitz_3_0">3+0 Blitz</button>
-                            <button class="chess-preset-btn selected" data-tc="blitz_5_3">5+3 Blitz</button>
-                            <button class="chess-preset-btn" data-tc="rapid_10_0">10+0 Rápida</button>
+                        <div class="chess-m3-card">
+                            <div class="chess-section-title">${M3_ICONS.infinity} Control de Tiempo (Local / IA)</div>
+                            <div class="chess-segmented-group" id="chess-local-tc-group">
+                                <button class="chess-seg-btn chess-local-tc-btn selected" data-local-tc="unlimited">∞ Sin límite</button>
+                                <button class="chess-seg-btn chess-local-tc-btn" data-local-tc="rapid_10_0">10+0 Rápida</button>
+                                <button class="chess-seg-btn chess-local-tc-btn" data-local-tc="blitz_5_3">5+3 Blitz</button>
+                            </div>
                         </div>
-                        <button id="chess-btn-queue-join" class="chess-btn chess-btn-success chess-full-width">
-                            ${M3_ICONS.search} Buscar Partida
-                        </button>
 
-                        <div class="chess-divider"></div>
+                        <div class="chess-m3-card">
+                            <div class="chess-section-title">${M3_ICONS.smartToy} Jugar vs Motor IA</div>
+                            <div class="chess-ai-row">
+                                <label for="chess-ai-select" class="chess-field-label">Dificultad</label>
+                                <div class="chess-select-wrap">
+                                    <select id="chess-ai-select" class="chess-select">
+                                        <option value="1">Nivel 1: Principiante (ELO 800)</option>
+                                        <option value="2">Nivel 2: Casual (ELO 1200)</option>
+                                        <option value="3" selected>Nivel 3: Intermedio (ELO 1600)</option>
+                                        <option value="4">Nivel 4: Avanzado (ELO 2000)</option>
+                                        <option value="5">Nivel 5: Gran Maestro (ELO 2400)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="chess-ai-color-row">
+                                <button class="chess-btn chess-btn-outline" id="chess-btn-ai-white">${M3_ICONS.kingWhite} Jugar Blancas</button>
+                                <button class="chess-btn chess-btn-outline" id="chess-btn-ai-black">${M3_ICONS.kingBlack} Jugar Negras</button>
+                            </div>
+                        </div>
 
-                        <div class="chess-section-title">${M3_ICONS.lock} Sala Privada con PIN</div>
-                        <div class="chess-private-row">
-                            <button id="chess-btn-create-private" class="chess-btn chess-btn-primary">
-                                Crear Sala
+                        <div class="chess-m3-card chess-m3-card-accent">
+                            <div class="chess-section-title">${M3_ICONS.visibility} Modo Visualización: IA vs IA</div>
+                            <div class="chess-ai-vs-ai-grid">
+                                <div class="chess-ai-field">
+                                    <label for="chess-ai-white-select" class="chess-field-label">${M3_ICONS.kingWhite} IA Blancas</label>
+                                    <div class="chess-select-wrap">
+                                        <select id="chess-ai-white-select" class="chess-select">
+                                            <option value="1">Nv.1 Principiante (800)</option>
+                                            <option value="2">Nv.2 Casual (1200)</option>
+                                            <option value="3">Nv.3 Intermedio (1600)</option>
+                                            <option value="4">Nv.4 Avanzado (2000)</option>
+                                            <option value="5" selected>Nv.5 Gran Maestro (2400)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="chess-ai-field">
+                                    <label for="chess-ai-black-select" class="chess-field-label">${M3_ICONS.kingBlack} IA Negras</label>
+                                    <div class="chess-select-wrap">
+                                        <select id="chess-ai-black-select" class="chess-select">
+                                            <option value="1">Nv.1 Principiante (800)</option>
+                                            <option value="2">Nv.2 Casual (1200)</option>
+                                            <option value="3">Nv.3 Intermedio (1600)</option>
+                                            <option value="4">Nv.4 Avanzado (2000)</option>
+                                            <option value="5" selected>Nv.5 Gran Maestro (2400)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chess-ai-row" style="margin-top: 10px;">
+                                <span class="chess-field-label">${M3_ICONS.speed} Velocidad</span>
+                                <div class="chess-segmented-group" id="chess-speed-group" style="flex:1;">
+                                    <button class="chess-seg-btn chess-speed-btn" data-speed="normal">Normal</button>
+                                    <button class="chess-seg-btn chess-speed-btn selected" data-speed="natural">Natural (3–6s)</button>
+                                </div>
+                            </div>
+                            <button id="chess-btn-ai-vs-ai" class="chess-btn chess-btn-primary chess-full-width" style="margin-top: 6px;">
+                                ${M3_ICONS.play} Ver Partida IA vs IA
                             </button>
-                            <input type="text" id="chess-input-pin" maxlength="4" placeholder="PIN 4 dígitos" class="chess-pin-input">
-                            <button id="chess-btn-join-pin" class="chess-btn chess-btn-outline">
-                                Unirse
+                        </div>
+
+                        <div class="chess-m3-card">
+                            <div class="chess-section-title">${M3_ICONS.bolt} Partida Rápida Online</div>
+                            <div class="chess-time-presets">
+                                <button class="chess-preset-btn" data-tc="bullet_1_0">1+0 Bullet</button>
+                                <button class="chess-preset-btn" data-tc="blitz_3_0">3+0 Blitz</button>
+                                <button class="chess-preset-btn selected" data-tc="blitz_5_3">5+3 Blitz</button>
+                                <button class="chess-preset-btn" data-tc="rapid_10_0">10+0 Rápida</button>
+                            </div>
+                            <button id="chess-btn-queue-join" class="chess-btn chess-btn-success chess-full-width">
+                                ${M3_ICONS.search} Buscar Partida
                             </button>
                         </div>
-                        <div id="chess-private-info" class="chess-help-text"></div>
 
-                        <div class="chess-divider"></div>
-
-                        <div class="chess-section-title">${M3_ICONS.smartToy} Jugar vs Motor IA</div>
-                        <div class="chess-ai-row">
-                            <label for="chess-ai-select" style="font-weight:600; color:#cbd5e1;">Dificultad:</label>
-                            <select id="chess-ai-select" class="chess-select">
-                                <option value="1">Nivel 1: Principiante (ELO 800)</option>
-                                <option value="2">Nivel 2: Casual (ELO 1200)</option>
-                                <option value="3" selected>Nivel 3: Intermedio (ELO 1600)</option>
-                                <option value="4">Nivel 4: Avanzado (ELO 2000)</option>
-                                <option value="5">Nivel 5: Gran Maestro (ELO 2400)</option>
-                            </select>
-                        </div>
-                        <div class="chess-ai-color-row">
-                            <button class="chess-btn chess-btn-outline" id="chess-btn-ai-white">${M3_ICONS.kingWhite} Jugar Blancas</button>
-                            <button class="chess-btn chess-btn-outline" id="chess-btn-ai-black">${M3_ICONS.kingBlack} Jugar Negras</button>
+                        <div class="chess-m3-card">
+                            <div class="chess-section-title">${M3_ICONS.lock} Sala Privada con PIN</div>
+                            <div class="chess-private-row">
+                                <button id="chess-btn-create-private" class="chess-btn chess-btn-primary">
+                                    Crear Sala
+                                </button>
+                                <input type="text" id="chess-input-pin" maxlength="4" placeholder="PIN 4 dígitos" class="chess-pin-input">
+                                <button id="chess-btn-join-pin" class="chess-btn chess-btn-outline">
+                                    Unirse
+                                </button>
+                            </div>
+                            <div id="chess-private-info" class="chess-help-text"></div>
                         </div>
                     </div>
                 </div>
@@ -316,11 +385,13 @@ export class ChessUI {
 
                         <div class="chess-section-title">${M3_ICONS.palette} Tema del Tablero</div>
                         <div class="chess-ai-row">
-                            <select id="chess-select-theme" class="chess-select">
-                                <option value="walnut_maple" selected>Nogal Oscuro y Arce Clásico (Madera de Lujo)</option>
-                                <option value="carrara_marquina">Mármol Carrara & Marquina Negro (Mármol Pulido)</option>
-                                <option value="midnight_obsidian">Obsidiana & Amatista Medianoche</option>
-                            </select>
+                            <div class="chess-select-wrap">
+                                <select id="chess-select-theme" class="chess-select">
+                                    <option value="walnut_maple" selected>Nogal Oscuro y Arce Clásico (Madera de Lujo)</option>
+                                    <option value="carrara_marquina">Mármol Carrara & Marquina Negro (Mármol Pulido)</option>
+                                    <option value="midnight_obsidian">Obsidiana & Amatista Medianoche</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="chess-divider"></div>
@@ -413,8 +484,15 @@ export class ChessUI {
         const c2d = this.container.querySelector('#chess-canvas-2d');
         const c3d = this.container.querySelector('#chess-canvas-3d');
 
+        const canInteract = () => {
+            if (this.isSpectator || this.gameMode === 'ai_vs_ai') return false;
+            if (this.gameMode === 'ai' && this.engine.turn !== this.playerColor) return false;
+            return true;
+        };
+
         this.view2D = new ChessView2D(c2d, {
             orientation: this.playerColor === 'b' ? 'b' : 'w',
+            canInteract,
             onMoveAttempt: (from, to, promo, res) => {
                 if (this.isProcessingRemoteMove) return;
                 this.handleLocalMove(from, to, promo, res);
@@ -424,6 +502,7 @@ export class ChessUI {
 
         this.view3D = new ChessView3D(c3d, {
             orientation: this.playerColor === 'b' ? 'b' : 'w',
+            canInteract,
             onMoveAttempt: (from, to, promo, res) => {
                 if (this.isProcessingRemoteMove) return;
                 this.handleLocalMove(from, to, promo, res);
@@ -574,6 +653,24 @@ export class ChessUI {
             }
         });
 
+        // Local Time Control selector (Sin límite / 10+0 / 5+3)
+        const localTcBtns = this.container.querySelectorAll('.chess-local-tc-btn');
+        localTcBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                localTcBtns.forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                this.localTimeMode = btn.dataset.localTc || 'unlimited';
+            });
+        });
+
+        // AI vs AI Speed selector (Normal / Natural 3-6s)
+        const speedBtns = this.container.querySelectorAll('.chess-speed-btn');
+        speedBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setAISpeedMode(btn.dataset.speed || 'natural');
+            });
+        });
+
         // AI Game buttons
         this.container.querySelector('#chess-btn-ai-white').addEventListener('click', () => {
             this.startAIGame('w');
@@ -583,6 +680,24 @@ export class ChessUI {
             this.startAIGame('b');
             this.closeSheets();
         });
+
+        // AI vs AI Spectator Mode button
+        this.container.querySelector('#chess-btn-ai-vs-ai').addEventListener('click', () => {
+            this.startAIVsAIGame();
+            this.closeSheets();
+        });
+
+        // Live AI vs AI Pause/Resume & Speed toggle
+        const aiPauseBtn = this.container.querySelector('#chess-aivsai-pause');
+        if (aiPauseBtn) {
+            aiPauseBtn.addEventListener('click', () => this.toggleAIVsAIPause());
+        }
+        const aiSpeedBtn = this.container.querySelector('#chess-aivsai-speed');
+        if (aiSpeedBtn) {
+            aiSpeedBtn.addEventListener('click', () => {
+                this.setAISpeedMode(this.aiSpeedMode === 'natural' ? 'normal' : 'natural');
+            });
+        }
 
         // Draw & Resign & Rematch
         this.container.querySelector('#chess-btn-draw').addEventListener('click', () => {
@@ -597,6 +712,15 @@ export class ChessUI {
         });
 
         this.container.querySelector('#chess-btn-resign').addEventListener('click', () => {
+            if (this.gameMode === 'ai_vs_ai') {
+                this.clearAITimers();
+                this.stopClock();
+                this.aiPaused = true;
+                this.updateStatusBanner('IA vs IA detenida');
+                this.showToast('Partida IA vs IA detenida');
+                this.closeSheets();
+                return;
+            }
             if (confirm('¿Estás seguro de que deseas rendirte?')) {
                 if (this.gameMode === 'online') {
                     this.sendPacket('chess_resign', {});
@@ -615,6 +739,8 @@ export class ChessUI {
                 rematchBtn.style.display = 'none';
             } else if (this.gameMode === 'ai') {
                 this.startAIGame(this.playerColor === 'w' ? 'b' : 'w');
+            } else if (this.gameMode === 'ai_vs_ai') {
+                this.startAIVsAIGame();
             }
             this.closeSheets();
         });
@@ -928,6 +1054,9 @@ export class ChessUI {
                 this.view3D.setOrientation(this.playerColor);
 
                 // Setup Clocks
+                this.clearAITimers();
+                this.unlimitedTime = false;
+                this.updateTickerModeUI();
                 const wSec = d.whiteTime !== undefined ? d.whiteTime : 300;
                 const bSec = d.blackTime !== undefined ? d.blackTime : 300;
                 this.whiteTimeMs = wSec * 1000;
@@ -1119,10 +1248,82 @@ export class ChessUI {
         }
     }
 
+    clearAITimers() {
+        this.aiMatchToken++;
+        if (this.aiMoveTimer) {
+            clearTimeout(this.aiMoveTimer);
+            this.aiMoveTimer = null;
+        }
+    }
+
+    getLocalTimeSettings() {
+        if (this.localTimeMode === 'rapid_10_0') {
+            return { unlimited: false, timeMs: 600000, incrementMs: 0 };
+        }
+        if (this.localTimeMode === 'blitz_5_3') {
+            return { unlimited: false, timeMs: 300000, incrementMs: 3000 };
+        }
+        return { unlimited: true, timeMs: Infinity, incrementMs: 0 };
+    }
+
+    setAISpeedMode(mode) {
+        this.aiSpeedMode = mode === 'normal' ? 'normal' : 'natural';
+        const speedBtns = this.container.querySelectorAll('.chess-speed-btn');
+        speedBtns.forEach(b => {
+            b.classList.toggle('selected', b.dataset.speed === this.aiSpeedMode);
+        });
+        const liveSpeedBtn = this.container.querySelector('#chess-aivsai-speed');
+        if (liveSpeedBtn) {
+            const label = this.aiSpeedMode === 'natural' ? 'Natural 3-6s' : 'Normal';
+            liveSpeedBtn.innerHTML = `${M3_ICONS.speed}<span>${label}</span>`;
+        }
+    }
+
+    toggleAIVsAIPause() {
+        if (this.gameMode !== 'ai_vs_ai' || this.engine.isGameOver) return;
+        this.aiPaused = !this.aiPaused;
+        const pauseBtn = this.container.querySelector('#chess-aivsai-pause');
+        if (pauseBtn) {
+            pauseBtn.innerHTML = this.aiPaused
+                ? `${M3_ICONS.play}<span>Reanudar</span>`
+                : `${M3_ICONS.pause}<span>Pausar</span>`;
+        }
+        if (this.aiPaused) {
+            this.clearAITimers();
+            this.stopClock();
+            this.updateStatusBanner('IA vs IA • Pausado');
+        } else {
+            this.startClock();
+            const token = this.aiMatchToken;
+            this.scheduleNextAIVsAIMove(token);
+        }
+    }
+
+    updateTickerModeUI() {
+        const undoBtn = this.container.querySelector('#chess-ticker-undo');
+        const aiControls = this.container.querySelector('#chess-aivsai-controls');
+        if (this.gameMode === 'ai_vs_ai') {
+            if (undoBtn) undoBtn.classList.add('hidden');
+            if (aiControls) aiControls.classList.remove('hidden');
+            const pauseBtn = this.container.querySelector('#chess-aivsai-pause');
+            if (pauseBtn) {
+                pauseBtn.innerHTML = this.aiPaused
+                    ? `${M3_ICONS.play}<span>Reanudar</span>`
+                    : `${M3_ICONS.pause}<span>Pausar</span>`;
+            }
+            this.setAISpeedMode(this.aiSpeedMode);
+        } else {
+            if (undoBtn) undoBtn.classList.remove('hidden');
+            if (aiControls) aiControls.classList.add('hidden');
+        }
+    }
+
     startAIGame(color = 'w') {
+        this.clearAITimers();
         this.gameMode = 'ai';
         this.playerColor = color;
         this.isSpectator = false;
+        this.aiPaused = false;
         this.aiLevel = parseInt(this.container.querySelector('#chess-ai-select').value, 10) || 3;
 
         const aiNames = {
@@ -1145,10 +1346,12 @@ export class ChessUI {
         this.view2D.render();
         this.view3D.syncPieces();
 
-        // 10-minute clocks for local play
-        this.whiteTimeMs = 600000;
-        this.blackTimeMs = 600000;
-        this.incrementMs = 0;
+        // Apply selected local time control (Sin límite / 10+0 / 5+3)
+        const tc = this.getLocalTimeSettings();
+        this.unlimitedTime = tc.unlimited;
+        this.whiteTimeMs = tc.timeMs;
+        this.blackTimeMs = tc.timeMs;
+        this.incrementMs = tc.incrementMs;
         this.startClock();
 
         this.updatePlayerLabels(
@@ -1156,16 +1359,150 @@ export class ChessUI {
             color === 'b' ? this.localPlayerName : this.opponentName
         );
 
+        this.updateTickerModeUI();
         this.clearMovesTable();
         this.updateMoveTicker();
         this.updateCapturedTray();
         this.updateEvaluationBar();
         this.updateStatusBanner();
-        this.showToast(`Partida iniciada vs ${this.opponentName}`);
+        this.showToast(`Partida iniciada vs ${this.opponentName}${tc.unlimited ? ' (Sin límite)' : ''}`);
 
         // If AI plays White, trigger opening move
         if (color === 'b') {
             this.triggerAIMove();
+        }
+    }
+
+    startAIVsAIGame() {
+        this.clearAITimers();
+        this.gameMode = 'ai_vs_ai';
+        this.playerColor = 'w';
+        this.isSpectator = false;
+        this.aiPaused = false;
+
+        this.aiWhiteLevel = parseInt(this.container.querySelector('#chess-ai-white-select')?.value, 10) || 5;
+        this.aiBlackLevel = parseInt(this.container.querySelector('#chess-ai-black-select')?.value, 10) || 5;
+
+        const ratings = { 1: '800', 2: '1200', 3: '1600', 4: '2000', 5: '2400' };
+        const wName = `IA Blancas (Nv.${this.aiWhiteLevel})`;
+        const bName = `IA Negras (Nv.${this.aiBlackLevel})`;
+        this.localRating = ratings[this.aiWhiteLevel] || '2400';
+        this.opponentRating = ratings[this.aiBlackLevel] || '2400';
+
+        // Reset Engine & Views
+        this.engine.reset();
+        this.view2D.setOrientation('w');
+        this.view3D.setOrientation('w');
+        this.view2D.attachEngine(this.engine);
+        this.view3D.attachEngine(this.engine);
+        this.view2D.render();
+        this.view3D.syncPieces();
+
+        // Apply selected local time control
+        const tc = this.getLocalTimeSettings();
+        this.unlimitedTime = tc.unlimited;
+        this.whiteTimeMs = tc.timeMs;
+        this.blackTimeMs = tc.timeMs;
+        this.incrementMs = tc.incrementMs;
+        this.startClock();
+
+        this.updatePlayerLabels(wName, bName);
+        this.updateTickerModeUI();
+        this.clearMovesTable();
+        this.updateMoveTicker();
+        this.updateCapturedTray();
+        this.updateEvaluationBar();
+        this.updateStatusBanner();
+
+        const speedText = this.aiSpeedMode === 'natural' ? 'Natural (3–6s)' : 'Normal';
+        this.showToast(`IA Nv.${this.aiWhiteLevel} vs IA Nv.${this.aiBlackLevel} • ${speedText}`);
+
+        const token = this.aiMatchToken;
+        this.scheduleNextAIVsAIMove(token);
+    }
+
+    scheduleNextAIVsAIMove(token) {
+        if (token !== this.aiMatchToken || this.gameMode !== 'ai_vs_ai' || this.aiPaused || this.engine.isGameOver) {
+            return;
+        }
+        const delayMs = this.aiSpeedMode === 'natural'
+            ? Math.round(3000 + Math.random() * 3000)
+            : 450;
+
+        const turnLabel = this.engine.turn === 'w'
+            ? `IA Blancas (Nv.${this.aiWhiteLevel})`
+            : `IA Negras (Nv.${this.aiBlackLevel})`;
+        this.updateStatusBanner(`${turnLabel} pensando...`);
+
+        this.aiMoveTimer = setTimeout(() => {
+            this.aiMoveTimer = null;
+            this.triggerAIVsAIMove(token);
+        }, delayMs);
+    }
+
+    async triggerAIVsAIMove(token) {
+        if (token !== this.aiMatchToken || this.gameMode !== 'ai_vs_ai' || this.aiPaused || this.engine.isGameOver) {
+            return;
+        }
+
+        const movingColor = this.engine.turn;
+        const level = movingColor === 'w' ? this.aiWhiteLevel : this.aiBlackLevel;
+        const bestMove = await this.ai.findBestMove(this.engine, level);
+
+        if (token !== this.aiMatchToken || this.gameMode !== 'ai_vs_ai' || this.engine.isGameOver) {
+            return;
+        }
+
+        if (bestMove) {
+            this.isProcessingRemoteMove = true;
+            try {
+                const executed = this.engine.makeMove(bestMove.from, bestMove.to, bestMove.promotion);
+                if (executed) {
+                    if (!this.unlimitedTime && this.incrementMs > 0) {
+                        if (movingColor === 'w') this.whiteTimeMs += this.incrementMs;
+                        else this.blackTimeMs += this.incrementMs;
+                    }
+                    this.view2D.setLastMove(bestMove.from, bestMove.to);
+                    if (typeof this.view3D.animateRemoteMove === 'function') {
+                        this.view3D.animateRemoteMove(
+                            ChessEngine.squareToCoords(bestMove.from),
+                            ChessEngine.squareToCoords(bestMove.to),
+                            bestMove.from,
+                            bestMove.to,
+                            bestMove.promotion
+                        );
+                    } else {
+                        this.view3D.syncPieces();
+                    }
+                    this.view2D.render();
+                    this.addMoveToTable(executed);
+                    this.updateMoveTicker();
+                    this.updateCapturedTray();
+                    this.updateEvaluationBar();
+                    this.updateClockDisplays();
+                    this.updateStatusBanner();
+
+                    if (executed.isCheckmate) {
+                        this.triggerHaptic('gameover');
+                        if (this.soundEnabled) this.audio.playGameEnd(true);
+                    } else if (executed.isCheck) {
+                        this.triggerHaptic('check');
+                        if (this.soundEnabled) this.audio.playCheck();
+                    } else if (executed.captured) {
+                        this.triggerHaptic('capture');
+                        if (this.soundEnabled) this.audio.playCapture();
+                    } else {
+                        this.triggerHaptic('move');
+                        if (this.soundEnabled) this.audio.playMove();
+                    }
+
+                    if (!this.checkLocalGameOver() && !this.aiPaused) {
+                        this.scheduleNextAIVsAIMove(token);
+                    }
+                }
+            } finally {
+                this.isProcessingRemoteMove = false;
+            }
         }
     }
 
@@ -1358,10 +1695,15 @@ export class ChessUI {
 
     startClock() {
         this.stopClock();
+        if (this.unlimitedTime) {
+            this.updateClockDisplays();
+            return;
+        }
         this.lastClockTick = performance.now();
         this.lastCountdownBeepSec = null;
 
         this.clockInterval = setInterval(() => {
+            if (this.unlimitedTime) return;
             const now = performance.now();
             const delta = now - this.lastClockTick;
             this.lastClockTick = now;
@@ -1387,7 +1729,7 @@ export class ChessUI {
 
             if (this.whiteTimeMs === 0 || this.blackTimeMs === 0) {
                 this.stopClock();
-                if (this.gameMode === 'ai') {
+                if (this.gameMode === 'ai' || this.gameMode === 'ai_vs_ai') {
                     this.endGame('Tiempo agotado', this.whiteTimeMs === 0 ? 'b' : 'w');
                 }
             }
@@ -1407,6 +1749,9 @@ export class ChessUI {
         if (!topEl || !bottomEl) return;
 
         const formatTime = (ms) => {
+            if (this.unlimitedTime || !Number.isFinite(ms)) {
+                return '∞';
+            }
             if (ms < 20000) {
                 // Tenths of a second format when < 20s
                 const sec = (ms / 1000).toFixed(1);
@@ -1435,11 +1780,11 @@ export class ChessUI {
             topEl.classList.remove('active');
         }
 
-        // Low time pulsing alert (<30s)
-        if (topMs < 30000 && isTopTurn) topEl.classList.add('low-time');
+        // Low time pulsing alert (<30s), disabled in unlimited mode
+        if (!this.unlimitedTime && topMs < 30000 && isTopTurn) topEl.classList.add('low-time');
         else topEl.classList.remove('low-time');
 
-        if (bottomMs < 30000 && !isTopTurn) bottomEl.classList.add('low-time');
+        if (!this.unlimitedTime && bottomMs < 30000 && !isTopTurn) bottomEl.classList.add('low-time');
         else bottomEl.classList.remove('low-time');
     }
 
@@ -1454,28 +1799,29 @@ export class ChessUI {
         const bottomDot = this.container.querySelector('#chess-bottom-status-dot');
 
         const isWhiteBottom = this.view2D.orientation === 'w';
+        const isAIvsAI = this.gameMode === 'ai_vs_ai';
 
         if (isWhiteBottom) {
             if (topName) topName.textContent = blackName;
             if (bottomName) bottomName.textContent = whiteName;
-            if (topAvatar) topAvatar.innerHTML = this.gameMode === 'ai' ? M3_ICONS.smartToy : M3_ICONS.kingBlack;
-            if (bottomAvatar) bottomAvatar.innerHTML = M3_ICONS.kingWhite;
+            if (topAvatar) topAvatar.innerHTML = (this.gameMode === 'ai' || isAIvsAI) ? M3_ICONS.smartToy : M3_ICONS.kingBlack;
+            if (bottomAvatar) bottomAvatar.innerHTML = isAIvsAI ? M3_ICONS.smartToy : M3_ICONS.kingWhite;
             if (topRating) topRating.textContent = this.opponentRating;
             if (bottomRating) bottomRating.textContent = this.localRating;
         } else {
             if (topName) topName.textContent = whiteName;
             if (bottomName) bottomName.textContent = blackName;
-            if (topAvatar) topAvatar.innerHTML = M3_ICONS.kingWhite;
-            if (bottomAvatar) bottomAvatar.innerHTML = this.gameMode === 'ai' ? M3_ICONS.smartToy : M3_ICONS.kingBlack;
+            if (topAvatar) topAvatar.innerHTML = isAIvsAI ? M3_ICONS.smartToy : M3_ICONS.kingWhite;
+            if (bottomAvatar) bottomAvatar.innerHTML = (this.gameMode === 'ai' || isAIvsAI) ? M3_ICONS.smartToy : M3_ICONS.kingBlack;
             if (topRating) topRating.textContent = this.localRating;
             if (bottomRating) bottomRating.textContent = this.opponentRating;
         }
 
         if (topDot) {
-            topDot.className = 'chess-status-dot ' + (this.gameMode === 'ai' ? 'bot' : 'online');
+            topDot.className = 'chess-status-dot ' + ((this.gameMode === 'ai' || isAIvsAI) ? 'bot' : 'online');
         }
         if (bottomDot) {
-            bottomDot.className = 'chess-status-dot online';
+            bottomDot.className = 'chess-status-dot ' + (isAIvsAI ? 'bot' : 'online');
         }
     }
 
@@ -1495,7 +1841,9 @@ export class ChessUI {
             sub.textContent = `¡Jaque a ${turn}!`;
             sub.style.color = '#ef4444';
         } else {
-            if (this.gameMode === 'ai') {
+            if (this.gameMode === 'ai_vs_ai') {
+                sub.textContent = `IA Nv.${this.aiWhiteLevel} vs Nv.${this.aiBlackLevel} • ${turn}`;
+            } else if (this.gameMode === 'ai') {
                 sub.textContent = `IA Nv.${this.aiLevel} • ${turn}`;
             } else if (this.gameMode === 'online') {
                 sub.textContent = `Online • ${turn}`;

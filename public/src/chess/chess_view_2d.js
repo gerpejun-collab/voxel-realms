@@ -184,6 +184,7 @@ export class ChessView2D {
         // Callbacks
         this.onMoveAttempt = options.onMoveAttempt || (() => {});
         this.onPromotionNeeded = options.onPromotionNeeded || null;
+        this.canInteract = options.canInteract || (() => true);
 
         this.setupEventListeners();
         this.resize();
@@ -266,6 +267,7 @@ export class ChessView2D {
         const handlePointerDown = (e) => {
             e.preventDefault();
             this.audio.init();
+            if (!this.canInteract()) return;
             const { x, y } = getCanvasCoords(e);
             const coords = this.screenToCoords(x, y);
             if (!coords || !this.engine) return;

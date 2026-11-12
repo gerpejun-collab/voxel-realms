@@ -1662,10 +1662,13 @@ export class ChessUI {
     checkLocalGameOver() {
         const status = this.engine.getGameStatus();
         if (status.isGameOver) {
+            if (status.result === 'threefold_repetition') {
+                return false;
+            }
             this.stopClock();
             let msg = '';
-            if (status.winner === 'draw') {
-                msg = `Tablas: ${status.reason}`;
+            if (!status.winner || status.winner === 'draw') {
+                msg = status.reason || 'Tablas';
             } else {
                 const winColor = status.winner === 'w' ? 'Blancas' : 'Negras';
                 msg = `¡Victoria para ${winColor}! Motivo: ${status.reason}`;

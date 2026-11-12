@@ -221,6 +221,10 @@ export class ChessAI {
             clone.makeMove(move.from, move.to, move.promotion || 'q');
             let score = this.evaluatePosition(clone);
             if (!isWhite) score = -score;
+            const repCount = clone.positionCounts ? (clone.positionCounts.get(clone.getPositionKey()) || 0) : 0;
+            if (repCount >= 2 && score > -80) {
+                score -= repCount >= 3 ? 120 : 45;
+            }
             score += (Math.random() - 0.5) * 20;
             if (score > bestScore) {
                 bestScore = score;
@@ -301,10 +305,15 @@ export class ChessAI {
             const clone = engine.clone();
             clone.makeMove(move.from, move.to, move.promotion || 'q');
 
-            const score = -this.minimax(clone, depth - 1, -beta, -alpha, !isWhite, useQuiescence, depth - 1);
+            let score = -this.minimax(clone, depth - 1, -beta, -alpha, !isWhite, useQuiescence, depth - 1);
 
             if (this.timeUp) {
                 break;
+            }
+
+            const repCount = clone.positionCounts ? (clone.positionCounts.get(clone.getPositionKey()) || 0) : 0;
+            if (repCount >= 2 && score > -80) {
+                score -= repCount >= 3 ? 120 : 45;
             }
 
             if (score > bestScore) {

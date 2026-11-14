@@ -63,8 +63,16 @@ export class ChessZobrist {
    * Returns piece index 0..11
    */
   static getPieceIndex(type, color) {
-    const key = `${color}_${type}`;
-    return PIECE_INDICES[key] !== undefined ? PIECE_INDICES[key] : -1;
+    const base = color === 'w' ? 0 : 6;
+    switch (type) {
+      case 'p': return base;
+      case 'n': return base + 1;
+      case 'b': return base + 2;
+      case 'r': return base + 3;
+      case 'q': return base + 4;
+      case 'k': return base + 5;
+      default: return -1;
+    }
   }
 
   /**
@@ -255,23 +263,32 @@ export class RepetitionTracker {
   constructor() {
     this.history = [];
     this.counts = new Map();
+    this.searchStack = [];
   }
 
   clear() {
     this.history = [];
     this.counts.clear();
+    this.searchStack = [];
   }
 
   push(hash) {
-    this.history.push(hash);
-    const c = (this.counts.get(hash) || 0) + 1;
-    this.counts.set(hash, c);
-    return c;
+    this.searchStack.push(hash);
+    if (this.counts.size > 0) {
+      const c = (this.counts.get(hash) || 0) + 1;
+      this.counts.set(hash, c);
+      return c;
+    }
+    let count = 0;
+    for (let i = 0; i < this.searchStack.length; i++) {
+      if (this.searchStack[i] === hash) count++;
+    }
+    return count;
   }
 
   pop() {
-    const hash = this.history.pop();
-    if (hash !== undefined) {
+    const hash = this.searchStack.pop();
+    if (hash !== undefined && this.counts.size > 0) {
       const c = this.counts.get(hash) || 1;
       if (c <= 1) {
         this.counts.delete(hash);
@@ -283,11 +300,28 @@ export class RepetitionTracker {
   }
 
   isThreefold(hash) {
-    return (this.counts.get(hash) || 0) >= 3;
+    if (this.counts.size > 0) {
+      return (this.counts.get(hash) || 0) >= 3;
+    }
+    let count = 0;
+    for (let i = this.searchStack.length - 1; i >= 0; i--) {
+      if (this.searchStack[i] === hash) {
+        count++;
+        if (count >= 3) return true;
+      }
+    }
+    return false;
   }
 
   getCount(hash) {
-    return this.counts.get(hash) || 0;
+    if (this.counts.size > 0) {
+      return this.counts.get(hash) || 0;
+    }
+    let count = 0;
+    for (let i = this.searchStack.length - 1; i >= 0; i--) {
+      if (this.searchStack[i] === hash) count++;
+    }
+    return count;
   }
 }
 

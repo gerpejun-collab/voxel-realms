@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "description": "Grandmaster 2400 ELO Chess Training Dataset Index",
+  "updatedAt": "2026-11-14T17:00:00Z",
+  "totalSessions": 0,
+  "totalGames": 0,
+  "aggregateStats": {
+    "whiteWins": 0,
+    "blackWins": 0,
+    "draws": 0,
+    "whiteWinPct": 0,
+    "blackWinPct": 0,
+    "drawPct": 0,
+    "avgDurationMs": 0,
+    "avgMoveCount": 0,
+    "avgMoveTimeMs": 0
+  },
+  "sessions": []
+}

@@ -757,19 +757,27 @@ window.openChessApp = function() {
     const rootContainer = document.getElementById('chess-root-container');
     if (!rootContainer) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
-    const socket = new WebSocket(wsUrl);
-    window.chessSocket = socket;
+    const wsUrl = (window.app && window.app.multiplayer && typeof window.app.multiplayer.getResolvedServerWsUrl === 'function')
+      ? window.app.multiplayer.getResolvedServerWsUrl()
+      : ((window.location.protocol === 'https:' || window.location.protocol === 'http:')
+          ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+          : 'wss://voxel-realms-w9l3.onrender.com');
+    let socket = null;
+    try {
+      socket = new WebSocket(wsUrl);
+      window.chessSocket = socket;
+    } catch (_) {
+      socket = null;
+    }
 
     const playerNameInput = document.getElementById('player-name-input');
     const localName = (playerNameInput && playerNameInput.value.trim()) || 'GranMaestro';
 
     let initialized = false;
-    const initUI = () => {
+    const initUI = (useSocket = socket) => {
       if (initialized) return;
       initialized = true;
-      chessAppInstance = new ChessUI(rootContainer, socket, localName);
+      chessAppInstance = new ChessUI(rootContainer, useSocket, localName);
 
       const menuBtn = rootContainer.querySelector('#chess-btn-menu');
       if (menuBtn) {
@@ -780,25 +788,21 @@ window.openChessApp = function() {
       }
     };
 
-    socket.addEventListener('open', initUI);
-    socket.addEventListener('error', () => {
-      if (!chessAppInstance) {
-        initialized = true;
-        chessAppInstance = new ChessUI(rootContainer, null, localName);
-        const menuBtn = rootContainer.querySelector('#chess-btn-menu');
-        if (menuBtn) {
-          menuBtn.addEventListener('click', () => {
-            chessModal.classList.add('hidden');
-            if (portalHub) portalHub.classList.remove('hidden');
-          });
+    if (socket) {
+      socket.addEventListener('open', () => initUI(socket));
+      socket.addEventListener('error', () => {
+        if (!chessAppInstance) {
+          initUI(null);
         }
-      }
-    });
+      });
+    } else {
+      initUI(null);
+    }
 
-    // In case socket is immediately open or offline
+    // Immediate local initialization (<= 300ms) so offline play never waits on network timeouts
     setTimeout(() => {
-      if (!initialized) initUI();
-    }, 500);
+      if (!initialized) initUI(socket);
+    }, 250);
   } else {
     if (chessAppInstance.currentViewMode === '2d') {
       chessAppInstance.view2D.resize();

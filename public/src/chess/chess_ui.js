@@ -75,6 +75,10 @@ export class ChessUI {
 
         this.engine = new ChessEngine();
         this.ai = new ChessAI();
+        this.aiWorker = null;
+        this.workerRequestId = 0;
+        this.pendingWorkerResolvers = new Map();
+        this.initAIWorker();
 
         // Game mode state
         this.gameMode = 'ai'; // 'ai', 'ai_vs_ai', 'online', 'pass_and_play', 'spectate'
@@ -308,7 +312,8 @@ export class ChessUI {
                                             <option value="2">Nv.2 Casual (1200)</option>
                                             <option value="3">Nv.3 Intermedio (1600)</option>
                                             <option value="4">Nv.4 Avanzado (2000)</option>
-                                            <option value="5" selected>Nv.5 Gran Maestro (2400)</option>
+                                            <option value="5" selected>Nv.5+ Nuevo Modelo (2400+)</option>
+                                            <option value="5_classic">Nv.5 Modelo Clásico (2400)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -320,7 +325,8 @@ export class ChessUI {
                                             <option value="2">Nv.2 Casual (1200)</option>
                                             <option value="3">Nv.3 Intermedio (1600)</option>
                                             <option value="4">Nv.4 Avanzado (2000)</option>
-                                            <option value="5" selected>Nv.5 Gran Maestro (2400)</option>
+                                            <option value="5" selected>Nv.5+ Nuevo Modelo (2400+)</option>
+                                            <option value="5_classic">Nv.5 Modelo Clásico (2400)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1248,12 +1254,95 @@ export class ChessUI {
         }
     }
 
+    initAIWorker() {
+        if (typeof Worker !== 'undefined') {
+            try {
+                this.aiWorker = new Worker(new URL('./chess_ai_worker.js', import.meta.url), { type: 'module' });
+                this.aiWorker.onmessage = (event) => {
+                    const data = event.data;
+                    if (!data) return;
+                    if (data.type === 'SEARCH_RESULT' || data.type === 'SEARCH_ERROR') {
+                        const resolver = this.pendingWorkerResolvers.get(data.id);
+                        if (resolver) {
+                            this.pendingWorkerResolvers.delete(data.id);
+                            if (data.type === 'SEARCH_RESULT') {
+                                resolver.resolve(data.bestMove);
+                            } else {
+                                resolver.reject(new Error(data.error));
+                            }
+                        }
+                    }
+                };
+                this.aiWorker.onerror = (err) => {
+                    console.warn('[ChessUI] AI Worker error, falling back to sync search:', err);
+                };
+            } catch (e) {
+                console.warn('[ChessUI] Web Worker initialization failed, fallback active:', e);
+                this.aiWorker = null;
+            }
+        }
+    }
+
+    stopAISearch() {
+        if (this.aiWorker) {
+            try {
+                this.aiWorker.postMessage({ type: 'STOP' });
+            } catch (_) {}
+        }
+        if (this.ai) {
+            this.ai.stopSearch();
+        }
+    }
+
+    async findAIMoveAsync(engine, level = 3, timeLimitMs = null) {
+        if (this.aiWorker) {
+            return new Promise((resolve) => {
+                const id = ++this.workerRequestId;
+                const fen = engine.getFen();
+                const timeoutTimer = setTimeout(() => {
+                    if (this.pendingWorkerResolvers.has(id)) {
+                        this.pendingWorkerResolvers.delete(id);
+                        this.ai.findBestMove(engine, level, timeLimitMs).then(resolve).catch(() => resolve(null));
+                    }
+                }, Math.max(5000, (timeLimitMs || 2000) * 2));
+
+                this.pendingWorkerResolvers.set(id, {
+                    resolve: (bestMove) => {
+                        clearTimeout(timeoutTimer);
+                        resolve(bestMove);
+                    },
+                    reject: () => {
+                        clearTimeout(timeoutTimer);
+                        this.ai.findBestMove(engine, level, timeLimitMs).then(resolve).catch(() => resolve(null));
+                    }
+                });
+
+                try {
+                    this.aiWorker.postMessage({
+                        type: 'SEARCH',
+                        id,
+                        fen,
+                        level,
+                        timeLimitMs
+                    });
+                } catch (postErr) {
+                    clearTimeout(timeoutTimer);
+                    this.pendingWorkerResolvers.delete(id);
+                    this.ai.findBestMove(engine, level, timeLimitMs).then(resolve).catch(() => resolve(null));
+                }
+            });
+        }
+        // Fallback: synchronous local thread search
+        return this.ai.findBestMove(engine, level, timeLimitMs);
+    }
+
     clearAITimers() {
         this.aiMatchToken++;
         if (this.aiMoveTimer) {
             clearTimeout(this.aiMoveTimer);
             this.aiMoveTimer = null;
         }
+        this.stopAISearch();
     }
 
     getLocalTimeSettings() {
@@ -1380,12 +1469,15 @@ export class ChessUI {
         this.isSpectator = false;
         this.aiPaused = false;
 
-        this.aiWhiteLevel = parseInt(this.container.querySelector('#chess-ai-white-select')?.value, 10) || 5;
-        this.aiBlackLevel = parseInt(this.container.querySelector('#chess-ai-black-select')?.value, 10) || 5;
+        const rawWhite = this.container.querySelector('#chess-ai-white-select')?.value || '5';
+        const rawBlack = this.container.querySelector('#chess-ai-black-select')?.value || '5';
+        this.aiWhiteLevel = rawWhite === '5_classic' ? '5_classic' : (parseInt(rawWhite, 10) || 5);
+        this.aiBlackLevel = rawBlack === '5_classic' ? '5_classic' : (parseInt(rawBlack, 10) || 5);
 
-        const ratings = { 1: '800', 2: '1200', 3: '1600', 4: '2000', 5: '2400' };
-        const wName = `IA Blancas (Nv.${this.aiWhiteLevel})`;
-        const bName = `IA Negras (Nv.${this.aiBlackLevel})`;
+        const ratings = { 1: '800', 2: '1200', 3: '1600', 4: '2000', 5: '2400+', '5_classic': '2400' };
+        const formatLabel = (lvl) => lvl === '5_classic' ? 'Nv.5 Clásico (2400)' : (lvl === 5 || lvl === '5' ? 'Nv.5+ Nuevo (2400+)' : `Nv.${lvl}`);
+        const wName = `IA Blancas (${formatLabel(this.aiWhiteLevel)})`;
+        const bName = `IA Negras (${formatLabel(this.aiBlackLevel)})`;
         this.localRating = ratings[this.aiWhiteLevel] || '2400';
         this.opponentRating = ratings[this.aiBlackLevel] || '2400';
 
@@ -1415,7 +1507,7 @@ export class ChessUI {
         this.updateStatusBanner();
 
         const speedText = this.aiSpeedMode === 'natural' ? 'Natural (3–6s)' : 'Normal';
-        this.showToast(`IA Nv.${this.aiWhiteLevel} vs IA Nv.${this.aiBlackLevel} • ${speedText}`);
+        this.showToast(`IA ${formatLabel(this.aiWhiteLevel)} vs IA ${formatLabel(this.aiBlackLevel)} • ${speedText}`);
 
         const token = this.aiMatchToken;
         this.scheduleNextAIVsAIMove(token);
@@ -1429,9 +1521,10 @@ export class ChessUI {
             ? Math.round(3000 + Math.random() * 3000)
             : 450;
 
+        const formatLabel = (lvl) => lvl === '5_classic' ? 'Nv.5 Clásico' : (lvl === 5 || lvl === '5' ? 'Nv.5+ Nuevo' : `Nv.${lvl}`);
         const turnLabel = this.engine.turn === 'w'
-            ? `IA Blancas (Nv.${this.aiWhiteLevel})`
-            : `IA Negras (Nv.${this.aiBlackLevel})`;
+            ? `IA Blancas (${formatLabel(this.aiWhiteLevel)})`
+            : `IA Negras (${formatLabel(this.aiBlackLevel)})`;
         this.updateStatusBanner(`${turnLabel} pensando...`);
 
         this.aiMoveTimer = setTimeout(() => {
@@ -1447,7 +1540,7 @@ export class ChessUI {
 
         const movingColor = this.engine.turn;
         const level = movingColor === 'w' ? this.aiWhiteLevel : this.aiBlackLevel;
-        const bestMove = await this.ai.findBestMove(this.engine, level);
+        const bestMove = await this.findAIMoveAsync(this.engine, level);
 
         if (token !== this.aiMatchToken || this.gameMode !== 'ai_vs_ai' || this.engine.isGameOver) {
             return;
@@ -1510,7 +1603,8 @@ export class ChessUI {
         if (this.gameMode !== 'ai' || this.engine.isGameOver) return;
         this.updateStatusBanner('Motor IA pensando...');
 
-        const bestMove = await this.ai.findBestMove(this.engine, this.aiLevel);
+        const bestMove = await this.findAIMoveAsync(this.engine, this.aiLevel);
+        if (this.gameMode !== 'ai' || this.engine.isGameOver) return;
         if (bestMove) {
             this.isProcessingRemoteMove = true;
             try {
@@ -1845,7 +1939,9 @@ export class ChessUI {
             sub.style.color = '#ef4444';
         } else {
             if (this.gameMode === 'ai_vs_ai') {
-                sub.textContent = `IA Nv.${this.aiWhiteLevel} vs Nv.${this.aiBlackLevel} • ${turn}`;
+                const wL = this.aiWhiteLevel === '5_classic' ? '5 Clásico' : (this.aiWhiteLevel === 5 ? '5+ Nuevo' : this.aiWhiteLevel);
+                const bL = this.aiBlackLevel === '5_classic' ? '5 Clásico' : (this.aiBlackLevel === 5 ? '5+ Nuevo' : this.aiBlackLevel);
+                sub.textContent = `IA Nv.${wL} vs Nv.${bL} • ${turn}`;
             } else if (this.gameMode === 'ai') {
                 sub.textContent = `IA Nv.${this.aiLevel} • ${turn}`;
             } else if (this.gameMode === 'online') {

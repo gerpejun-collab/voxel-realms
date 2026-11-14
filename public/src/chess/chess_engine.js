@@ -15,6 +15,30 @@ export const PIECE_VALUES = {
   k: 20000
 };
 
+const KNIGHT_OFFSETS = [
+  [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+  [1, -2], [1, 2], [2, -1], [2, 1]
+];
+const DIAG_DIRS = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+const ORTHO_DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const QUEEN_DIRS = [[-1, -1], [-1, 1], [1, -1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]];
+const KING_OFFSETS = [
+  [-1, -1], [-1, 0], [-1, 1],
+  [0, -1],           [0, 1],
+  [1, -1],  [1, 0],  [1, 1]
+];
+
+const SQUARES = [
+  ['a8', 'b8', 'c8', 'd8', 'e8', 'f8', 'g8', 'h8'],
+  ['a7', 'b7', 'c7', 'd7', 'e7', 'f7', 'g7', 'h7'],
+  ['a6', 'b6', 'c6', 'd6', 'e6', 'f6', 'g6', 'h6'],
+  ['a5', 'b5', 'c5', 'd5', 'e5', 'f5', 'g5', 'h5'],
+  ['a4', 'b4', 'c4', 'd4', 'e4', 'f4', 'g4', 'h4'],
+  ['a3', 'b3', 'c3', 'd3', 'e3', 'f3', 'g3', 'h3'],
+  ['a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2'],
+  ['a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1']
+];
+
 export class ChessEngine {
   constructor(fen = INITIAL_FEN) {
     this.board = Array(8).fill(null).map(() => Array(8).fill(null));
@@ -25,6 +49,7 @@ export class ChessEngine {
     this.fullmoveNumber = 1;
     this.history = [];
     this.positionCounts = new Map();
+    this.kingPos = { w: null, b: null };
 
     this.loadFen(fen);
   }
@@ -53,6 +78,10 @@ export class ChessEngine {
     copy.halfmoveClock = this.halfmoveClock;
     copy.fullmoveNumber = this.fullmoveNumber;
     copy.positionCounts = new Map(this.positionCounts);
+    copy.kingPos = {
+      w: this.kingPos && this.kingPos.w ? { ...this.kingPos.w } : null,
+      b: this.kingPos && this.kingPos.b ? { ...this.kingPos.b } : null
+    };
     return copy;
   }
 
@@ -72,9 +101,7 @@ export class ChessEngine {
    */
   static coordsToSquare(row, col) {
     if (row < 0 || row > 7 || col < 0 || col > 7) return null;
-    const file = String.fromCharCode(97 + col);
-    const rank = 8 - row;
-    return `${file}${rank}`;
+    return SQUARES[row][col];
   }
 
   /**
@@ -124,6 +151,16 @@ export class ChessEngine {
     this.fullmoveNumber = isNaN(fullmove) ? 1 : fullmove;
     this.history = [];
     this.positionCounts.clear();
+
+    this.kingPos = { w: null, b: null };
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const p = newBoard[r][c];
+        if (p && p.type === 'k') {
+          this.kingPos[p.color] = { row: r, col: c };
+        }
+      }
+    }
 
     const posKey = this.getPositionKey();
     this.positionCounts.set(posKey, 1);
@@ -204,13 +241,9 @@ export class ChessEngine {
     }
 
     // 2. Knight attacks
-    const knightOffsets = [
-      [-2, -1], [-2, 1], [-1, -2], [-1, 2],
-      [1, -2], [1, 2], [2, -1], [2, 1]
-    ];
-    for (const [dr, dc] of knightOffsets) {
-      const nr = row + dr;
-      const nc = col + dc;
+    for (let i = 0; i < 8; i++) {
+      const nr = row + KNIGHT_OFFSETS[i][0];
+      const nc = col + KNIGHT_OFFSETS[i][1];
       if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
         const p = this.board[nr][nc];
         if (p && p.color === attackerColor && p.type === 'n') return true;
@@ -218,8 +251,9 @@ export class ChessEngine {
     }
 
     // 3. Bishop & Queen diagonal ray attacks
-    const diagDirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
-    for (const [dr, dc] of diagDirs) {
+    for (let i = 0; i < 4; i++) {
+      const dr = DIAG_DIRS[i][0];
+      const dc = DIAG_DIRS[i][1];
       let r = row + dr;
       let c = col + dc;
       while (r >= 0 && r < 8 && c >= 0 && c < 8) {
@@ -234,8 +268,9 @@ export class ChessEngine {
     }
 
     // 4. Rook & Queen orthogonal ray attacks
-    const orthoDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const [dr, dc] of orthoDirs) {
+    for (let i = 0; i < 4; i++) {
+      const dr = ORTHO_DIRS[i][0];
+      const dc = ORTHO_DIRS[i][1];
       let r = row + dr;
       let c = col + dc;
       while (r >= 0 && r < 8 && c >= 0 && c < 8) {
@@ -250,14 +285,9 @@ export class ChessEngine {
     }
 
     // 5. King adjacent attacks
-    const kingOffsets = [
-      [-1, -1], [-1, 0], [-1, 1],
-      [0, -1],           [0, 1],
-      [1, -1],  [1, 0],  [1, 1]
-    ];
-    for (const [dr, dc] of kingOffsets) {
-      const nr = row + dr;
-      const nc = col + dc;
+    for (let i = 0; i < 8; i++) {
+      const nr = row + KING_OFFSETS[i][0];
+      const nc = col + KING_OFFSETS[i][1];
       if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
         const p = this.board[nr][nc];
         if (p && p.color === attackerColor && p.type === 'k') return true;
@@ -271,10 +301,19 @@ export class ChessEngine {
    * Finds the King coordinates of specified color
    */
   findKing(color) {
+    if (this.kingPos && this.kingPos[color]) {
+      const kp = this.kingPos[color];
+      const p = this.board[kp.row]?.[kp.col];
+      if (p && p.color === color && p.type === 'k') {
+        return kp;
+      }
+    }
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const p = this.board[r][c];
         if (p && p.color === color && p.type === 'k') {
+          if (!this.kingPos) this.kingPos = { w: null, b: null };
+          this.kingPos[color] = { row: r, col: c };
           return { row: r, col: c };
         }
       }
@@ -286,7 +325,7 @@ export class ChessEngine {
    * Checks if color's King is currently in check
    */
   isInCheck(color = this.turn) {
-    const king = this.findKing(color);
+    const king = (this.kingPos && this.kingPos[color]) ? this.kingPos[color] : this.findKing(color);
     if (!king) return false;
     const opponent = color === 'w' ? 'b' : 'w';
     return this.isSquareAttacked(king.row, king.col, opponent);
@@ -295,23 +334,43 @@ export class ChessEngine {
   /**
    * Generates all pseudo-legal moves for a piece at (row, col)
    */
-  generatePseudoMovesForPiece(row, col) {
+  generatePseudoMovesForPiece(row, col, outMoves = null, checkLegality = false) {
     const piece = this.board[row][col];
-    if (!piece) return [];
-    const moves = [];
+    if (!piece) return outMoves || [];
+    const moves = outMoves || [];
     const color = piece.color;
     const opp = color === 'w' ? 'b' : 'w';
+    const fromCoord = { row, col };
+    const fromSq = SQUARES[row][col];
+    const pType = piece.type;
 
-    const addMove = (toRow, toCol, extra = {}) => {
-      moves.push({
-        from: { row, col },
+    const addMove = (toRow, toCol, extra = null) => {
+      const m = {
+        from: fromCoord,
         to: { row: toRow, col: toCol },
-        fromSquare: ChessEngine.coordsToSquare(row, col),
-        toSquare: ChessEngine.coordsToSquare(toRow, toCol),
-        piece: piece.type,
+        fromSquare: fromSq,
+        toSquare: SQUARES[toRow][toCol],
+        piece: pType,
         color,
-        ...extra
-      });
+        captured: null,
+        promotion: null,
+        isCastling: false,
+        castlingSide: null,
+        isEnPassant: false,
+        isDoublePawn: false,
+        _p: 0
+      };
+      if (extra) {
+        if (extra.captured !== undefined) m.captured = extra.captured;
+        if (extra.promotion !== undefined) m.promotion = extra.promotion;
+        if (extra.isCastling !== undefined) m.isCastling = extra.isCastling;
+        if (extra.castlingSide !== undefined) m.castlingSide = extra.castlingSide;
+        if (extra.isEnPassant !== undefined) m.isEnPassant = extra.isEnPassant;
+        if (extra.isDoublePawn !== undefined) m.isDoublePawn = extra.isDoublePawn;
+      }
+      if (!checkLegality || this.isMoveLegal(m)) {
+        moves.push(m);
+      }
     };
 
     if (piece.type === 'p') {
@@ -361,13 +420,9 @@ export class ChessEngine {
         }
       }
     } else if (piece.type === 'n') {
-      const offsets = [
-        [-2, -1], [-2, 1], [-1, -2], [-1, 2],
-        [1, -2], [1, 2], [2, -1], [2, 1]
-      ];
-      for (const [dr, dc] of offsets) {
-        const nr = row + dr;
-        const nc = col + dc;
+      for (let i = 0; i < 8; i++) {
+        const nr = row + KNIGHT_OFFSETS[i][0];
+        const nc = col + KNIGHT_OFFSETS[i][1];
         if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
           const target = this.board[nr][nc];
           if (!target || target.color === opp) {
@@ -376,15 +431,11 @@ export class ChessEngine {
         }
       }
     } else if (piece.type === 'b' || piece.type === 'r' || piece.type === 'q') {
-      const dirs = [];
-      if (piece.type === 'b' || piece.type === 'q') {
-        dirs.push([-1, -1], [-1, 1], [1, -1], [1, 1]);
-      }
-      if (piece.type === 'r' || piece.type === 'q') {
-        dirs.push([-1, 0], [1, 0], [0, -1], [0, 1]);
-      }
+      const dirs = piece.type === 'b' ? DIAG_DIRS : (piece.type === 'r' ? ORTHO_DIRS : QUEEN_DIRS);
 
-      for (const [dr, dc] of dirs) {
+      for (let d = 0; d < dirs.length; d++) {
+        const dr = dirs[d][0];
+        const dc = dirs[d][1];
         let r = row + dr;
         let c = col + dc;
         while (r >= 0 && r < 8 && c >= 0 && c < 8) {
@@ -402,14 +453,9 @@ export class ChessEngine {
         }
       }
     } else if (piece.type === 'k') {
-      const offsets = [
-        [-1, -1], [-1, 0], [-1, 1],
-        [0, -1],           [0, 1],
-        [1, -1],  [1, 0],  [1, 1]
-      ];
-      for (const [dr, dc] of offsets) {
-        const nr = row + dr;
-        const nc = col + dc;
+      for (let i = 0; i < 8; i++) {
+        const nr = row + KING_OFFSETS[i][0];
+        const nc = col + KING_OFFSETS[i][1];
         if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
           const target = this.board[nr][nc];
           if (!target || target.color === opp) {
@@ -488,24 +534,180 @@ export class ChessEngine {
   /**
    * Generates all strictly legal moves for the active color
    */
-  generateLegalMoves(color = this.turn) {
+  generateLegalMoves(color = this.turn, checkLegality = true) {
     const legalMoves = [];
 
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = this.board[r][c];
         if (piece && piece.color === color) {
-          const pseudoMoves = this.generatePseudoMovesForPiece(r, c);
-          for (const move of pseudoMoves) {
-            if (this.isMoveLegal(move)) {
-              legalMoves.push(move);
+          this.generatePseudoMovesForPiece(r, c, legalMoves, checkLegality);
+        }
+      }
+    }
+
+    return legalMoves;
+  }
+
+  /**
+   * Generates tactical moves (captures and promotions only).
+   * Highly optimized for quiescence search: avoids testing non-tactical moves.
+   */
+  generateTacticalMoves(color = this.turn, checkLegality = true) {
+    const opp = color === 'w' ? 'b' : 'w';
+    const tacticalMoves = [];
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = this.board[r][c];
+        if (!piece || piece.color !== color) continue;
+
+        if (piece.type === 'p') {
+          const fwd = color === 'w' ? -1 : 1;
+          const promoRow = color === 'w' ? 0 : 7;
+          const fwdRow = r + fwd;
+
+          // Pawn promotions without capture
+          if (fwdRow === promoRow && fwdRow >= 0 && fwdRow < 8 && !this.board[fwdRow][c]) {
+            for (const promo of ['q', 'r', 'b', 'n']) {
+              const move = {
+                from: { row: r, col: c },
+                to: { row: fwdRow, col: c },
+                fromSquare: SQUARES[r][c],
+                toSquare: SQUARES[fwdRow][c],
+                piece: 'p',
+                color,
+                promotion: promo
+              };
+              if (!checkLegality || this.isMoveLegal(move)) tacticalMoves.push(move);
+            }
+          }
+
+          // Diagonal captures & EP
+          for (const dc of [-1, 1]) {
+            const captureCol = c + dc;
+            if (captureCol >= 0 && captureCol < 8 && fwdRow >= 0 && fwdRow < 8) {
+              const target = this.board[fwdRow][captureCol];
+              if (target && target.color === opp) {
+                if (fwdRow === promoRow) {
+                  for (const promo of ['q', 'r', 'b', 'n']) {
+                    const move = {
+                      from: { row: r, col: c },
+                      to: { row: fwdRow, col: captureCol },
+                      fromSquare: SQUARES[r][c],
+                      toSquare: SQUARES[fwdRow][captureCol],
+                      piece: 'p',
+                      color,
+                      promotion: promo,
+                      captured: target
+                    };
+                    if (!checkLegality || this.isMoveLegal(move)) tacticalMoves.push(move);
+                  }
+                } else {
+                  const move = {
+                    from: { row: r, col: c },
+                    to: { row: fwdRow, col: captureCol },
+                    fromSquare: SQUARES[r][c],
+                    toSquare: SQUARES[fwdRow][captureCol],
+                    piece: 'p',
+                    color,
+                    captured: target
+                  };
+                  if (!checkLegality || this.isMoveLegal(move)) tacticalMoves.push(move);
+                }
+              } else if (
+                this.enPassant &&
+                this.enPassant.row === fwdRow &&
+                this.enPassant.col === captureCol
+              ) {
+                const capturedPawn = this.board[r][captureCol];
+                const move = {
+                  from: { row: r, col: c },
+                  to: { row: fwdRow, col: captureCol },
+                  fromSquare: SQUARES[r][c],
+                  toSquare: SQUARES[fwdRow][captureCol],
+                  piece: 'p',
+                  color,
+                  isEnPassant: true,
+                  captured: capturedPawn
+                };
+                if (!checkLegality || this.isMoveLegal(move)) tacticalMoves.push(move);
+              }
+            }
+          }
+        } else if (piece.type === 'n') {
+          for (let i = 0; i < 8; i++) {
+            const nr = r + KNIGHT_OFFSETS[i][0];
+            const nc = c + KNIGHT_OFFSETS[i][1];
+            if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+              const target = this.board[nr][nc];
+              if (target && target.color === opp) {
+                const move = {
+                  from: { row: r, col: c },
+                  to: { row: nr, col: nc },
+                  fromSquare: SQUARES[r][c],
+                  toSquare: SQUARES[nr][nc],
+                  piece: 'n',
+                  color,
+                  captured: target
+                };
+                if (!checkLegality || this.isMoveLegal(move)) tacticalMoves.push(move);
+              }
+            }
+          }
+        } else if (piece.type === 'b' || piece.type === 'r' || piece.type === 'q') {
+          const dirs = piece.type === 'b' ? DIAG_DIRS : (piece.type === 'r' ? ORTHO_DIRS : QUEEN_DIRS);
+          for (let d = 0; d < dirs.length; d++) {
+            const dr = dirs[d][0];
+            const dc = dirs[d][1];
+            let nr = r + dr;
+            let nc = c + dc;
+            while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+              const target = this.board[nr][nc];
+              if (target) {
+                if (target.color === opp) {
+                  const move = {
+                    from: { row: r, col: c },
+                    to: { row: nr, col: nc },
+                    fromSquare: SQUARES[r][c],
+                    toSquare: SQUARES[nr][nc],
+                    piece: piece.type,
+                    color,
+                    captured: target
+                  };
+                  if (!checkLegality || this.isMoveLegal(move)) tacticalMoves.push(move);
+                }
+                break;
+              }
+              nr += dr;
+              nc += dc;
+            }
+          }
+        } else if (piece.type === 'k') {
+          for (let i = 0; i < 8; i++) {
+            const nr = r + KING_OFFSETS[i][0];
+            const nc = c + KING_OFFSETS[i][1];
+            if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+              const target = this.board[nr][nc];
+              if (target && target.color === opp) {
+                const move = {
+                  from: { row: r, col: c },
+                  to: { row: nr, col: nc },
+                  fromSquare: SQUARES[r][c],
+                  toSquare: SQUARES[nr][nc],
+                  piece: 'k',
+                  color,
+                  captured: target
+                };
+                if (!checkLegality || this.isMoveLegal(move)) tacticalMoves.push(move);
+              }
             }
           }
         }
       }
     }
 
-    return legalMoves;
+    return tacticalMoves;
   }
 
   /**
@@ -531,8 +733,10 @@ export class ChessEngine {
       this.board[epPawnPos.row][epPawnPos.col] = null;
     }
 
-    // Verify King safety
-    const inCheck = this.isInCheck(color);
+    // Verify King safety without extra allocations
+    const oppColor = color === 'w' ? 'b' : 'w';
+    const kPos = movingPiece.type === 'k' ? to : (this.kingPos && this.kingPos[color] ? this.kingPos[color] : this.findKing(color));
+    const inCheck = this.isSquareAttacked(kPos.row, kPos.col, oppColor);
 
     // Rollback move
     this.board[from.row][from.col] = movingPiece;
@@ -674,8 +878,10 @@ export class ChessEngine {
       }
     }
 
-    // Update Castling rights
+    // Update Castling rights & King position
     if (movingPiece.type === 'k') {
+      if (!this.kingPos) this.kingPos = { w: null, b: null };
+      this.kingPos[movingPiece.color] = { row: toCoords.row, col: toCoords.col };
       if (movingPiece.color === 'w') {
         this.castling.wK = false;
         this.castling.wQ = false;
@@ -749,6 +955,218 @@ export class ChessEngine {
     this.positionCounts.set(posKey, currentCount);
 
     return executedMove;
+  }
+
+  /**
+   * High-speed in-place move execution for search tree exploration.
+   * Updates board array, castling rights, en-passant target, king positions, and turn
+   * without allocating clones, without generating legal moves, without SAN formatting,
+   * and without FEN stringification.
+   *
+   * @param {Object|string} from - { row, col } or algebraic square ('e2') or move object { from, to, promotion }
+   * @param {Object|string} [to] - { row, col } or algebraic square ('e4')
+   * @param {string} [promotion='q'] - Promotion piece type ('q', 'r', 'b', 'n')
+   * @returns {Object} undoState - State snapshot to pass to unmakeMove()
+   */
+  makeMoveFast(from, to, promotion = 'q') {
+    let fromCoords, toCoords, promoChoice;
+    if (from && typeof from === 'object' && from.from && from.to) {
+      fromCoords = typeof from.from === 'string' ? ChessEngine.squareToCoords(from.from) : from.from;
+      toCoords = typeof from.to === 'string' ? ChessEngine.squareToCoords(from.to) : from.to;
+      promoChoice = from.promotion || to || promotion;
+    } else {
+      fromCoords = typeof from === 'string' ? ChessEngine.squareToCoords(from) : from;
+      toCoords = typeof to === 'string' ? ChessEngine.squareToCoords(to) : to;
+      promoChoice = promotion;
+    }
+
+    if (!fromCoords || !toCoords) return null;
+
+    const movingPiece = this.board[fromCoords.row][fromCoords.col];
+    if (!movingPiece) return null;
+
+    const targetPiece = this.board[toCoords.row][toCoords.col];
+    const color = movingPiece.color;
+
+    // Detect Castling
+    let isCastling = false;
+    let castlingSide = null;
+    if (movingPiece.type === 'k' && Math.abs(fromCoords.col - toCoords.col) === 2) {
+      isCastling = true;
+      castlingSide = toCoords.col === 6 ? 'k' : 'q';
+    }
+
+    // Detect En Passant capture
+    let isEnPassant = false;
+    let epCaptured = null;
+    if (movingPiece.type === 'p' && fromCoords.col !== toCoords.col && !targetPiece) {
+      isEnPassant = true;
+      epCaptured = this.board[fromCoords.row][toCoords.col];
+      this.board[fromCoords.row][toCoords.col] = null;
+    }
+
+    const isDoublePawn = movingPiece.type === 'p' && Math.abs(fromCoords.row - toCoords.row) === 2;
+    const isPromotion = movingPiece.type === 'p' && (toCoords.row === 0 || toCoords.row === 7);
+    const promoType = isPromotion ? (promoChoice ? promoChoice.toLowerCase() : 'q') : null;
+
+    // Execute move on board
+    this.board[fromCoords.row][fromCoords.col] = null;
+    if (isPromotion) {
+      this.board[toCoords.row][toCoords.col] = { type: promoType, color };
+    } else {
+      this.board[toCoords.row][toCoords.col] = movingPiece;
+    }
+
+    // Handle castling rook movement
+    if (isCastling) {
+      const rRow = fromCoords.row;
+      if (castlingSide === 'k') {
+        const rook = this.board[rRow][7];
+        this.board[rRow][7] = null;
+        this.board[rRow][5] = rook;
+      } else {
+        const rook = this.board[rRow][0];
+        this.board[rRow][0] = null;
+        this.board[rRow][3] = rook;
+      }
+    }
+
+    // Save previous state for undo
+    let prevKingRow = -1;
+    let prevKingCol = -1;
+    if (movingPiece.type === 'k') {
+      if (!this.kingPos) this.kingPos = { w: { row: 7, col: 4 }, b: { row: 0, col: 4 } };
+      const kp = this.kingPos[color];
+      if (kp) {
+        prevKingRow = kp.row;
+        prevKingCol = kp.col;
+        kp.row = toCoords.row;
+        kp.col = toCoords.col;
+      } else {
+        this.kingPos[color] = { row: toCoords.row, col: toCoords.col };
+      }
+    }
+
+    const prevCastling = {
+      wK: this.castling.wK,
+      wQ: this.castling.wQ,
+      bK: this.castling.bK,
+      bQ: this.castling.bQ
+    };
+
+    if (movingPiece.type === 'k') {
+      if (color === 'w') {
+        this.castling.wK = false;
+        this.castling.wQ = false;
+      } else {
+        this.castling.bK = false;
+        this.castling.bQ = false;
+      }
+    } else if (movingPiece.type === 'r') {
+      if (fromCoords.row === 7 && fromCoords.col === 0) this.castling.wQ = false;
+      else if (fromCoords.row === 7 && fromCoords.col === 7) this.castling.wK = false;
+      else if (fromCoords.row === 0 && fromCoords.col === 0) this.castling.bQ = false;
+      else if (fromCoords.row === 0 && fromCoords.col === 7) this.castling.bK = false;
+    }
+
+    if (targetPiece && targetPiece.type === 'r') {
+      if (toCoords.row === 7 && toCoords.col === 0) this.castling.wQ = false;
+      else if (toCoords.row === 7 && toCoords.col === 7) this.castling.wK = false;
+      else if (toCoords.row === 0 && toCoords.col === 0) this.castling.bQ = false;
+      else if (toCoords.row === 0 && toCoords.col === 7) this.castling.bK = false;
+    }
+
+    const prevEp = this.enPassant;
+    if (isDoublePawn) {
+      this.enPassant = { row: (fromCoords.row + toCoords.row) >> 1, col: fromCoords.col };
+    } else {
+      this.enPassant = null;
+    }
+
+    const prevHalfmoveClock = this.halfmoveClock;
+    const prevFullmoveNumber = this.fullmoveNumber;
+
+    if (targetPiece || movingPiece.type === 'p' || isEnPassant) {
+      this.halfmoveClock = 0;
+    } else {
+      this.halfmoveClock++;
+    }
+
+    const prevTurn = this.turn;
+    this.turn = this.turn === 'w' ? 'b' : 'w';
+    if (this.turn === 'w') {
+      this.fullmoveNumber++;
+    }
+
+    return {
+      from: fromCoords,
+      to: toCoords,
+      piece: movingPiece.type,
+      movingPiece,
+      color,
+      captured: targetPiece,
+      isEnPassant,
+      epCaptured,
+      isCastling,
+      castlingSide,
+      promotion: promoType,
+      prevKingRow,
+      prevKingCol,
+      prevCastling,
+      prevEp,
+      prevHalfmoveClock,
+      prevFullmoveNumber,
+      prevTurn
+    };
+  }
+
+  /**
+   * Reverses a move previously applied by makeMoveFast().
+   * Restores board array, castling rights, en-passant target, king positions, and turn.
+   *
+   * @param {Object} u - undoState returned by makeMoveFast()
+   */
+  unmakeMove(u) {
+    if (!u) return;
+
+    // Restore turn and counters
+    this.turn = u.prevTurn;
+    this.fullmoveNumber = u.prevFullmoveNumber;
+    this.halfmoveClock = u.prevHalfmoveClock;
+    this.castling.wK = u.prevCastling.wK;
+    this.castling.wQ = u.prevCastling.wQ;
+    this.castling.bK = u.prevCastling.bK;
+    this.castling.bQ = u.prevCastling.bQ;
+    this.enPassant = u.prevEp;
+
+    // Restore board
+    this.board[u.from.row][u.from.col] = u.movingPiece;
+    this.board[u.to.row][u.to.col] = u.captured;
+
+    // Restore En Passant captured pawn
+    if (u.isEnPassant) {
+      this.board[u.from.row][u.to.col] = u.epCaptured;
+    }
+
+    // Restore Castling Rook
+    if (u.isCastling) {
+      const rRow = u.from.row;
+      if (u.castlingSide === 'k') {
+        const rook = this.board[rRow][5];
+        this.board[rRow][5] = null;
+        this.board[rRow][7] = rook;
+      } else {
+        const rook = this.board[rRow][3];
+        this.board[rRow][3] = null;
+        this.board[rRow][0] = rook;
+      }
+    }
+
+    // Restore King position
+    if (u.piece === 'k' && this.kingPos && u.prevKingRow !== -1) {
+      this.kingPos[u.color].row = u.prevKingRow;
+      this.kingPos[u.color].col = u.prevKingCol;
+    }
   }
 
   /**

@@ -9,12 +9,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=VT323&family=Silkscreen&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 
-  <!-- Import map for modern native ES module Three.js -->
+  <!-- Import map for modern native ES module Three.js (100% Offline Local Bundle) -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "./src/vendor/three.module.js"
     }
   }
   </script>
@@ -1032,8 +1031,10 @@
       const portalVoxelStat = document.getElementById('portal-voxel-players');
       const portalChessStat = document.getElementById('portal-chess-games');
 
-      // Fast status fetch before heavy 3D assets download
-      fetch('/api/status')
+      // Fast status fetch before heavy 3D assets download (works both on web host and offline APK)
+      var apiBase = (window.location.protocol === 'http:' || window.location.protocol === 'https:') ? '' : 'https://voxel-realms-w9l3.onrender.com';
+      window.VOXEL_SERVER_URL = apiBase || window.location.origin;
+      fetch(apiBase + '/api/status')
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (statusPill && !statusPill.dataset.custom) {
@@ -1052,7 +1053,13 @@
         })
         .catch(function() {
           if (statusPill && !statusPill.dataset.custom) {
-            statusPill.innerHTML = '<span class="status-dot offline"></span> Reconectando...';
+            statusPill.innerHTML = '<span class="status-dot offline"></span> Modo Local Listo (Auto-Sync Online)';
+          }
+          if (portalVoxelStat) {
+            portalVoxelStat.textContent = 'Modo Local Offline + Auto-Sync Online';
+          }
+          if (portalChessStat) {
+            portalChessStat.textContent = 'Motor FIDE 2400+ Offline Listo';
           }
         });
 

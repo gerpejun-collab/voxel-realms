@@ -1,0 +1,1394 @@
+// public/src/multiplayer.js
+// Client WebSocket connection, delta synchronization, remote avatars and packet handling
+import { Avatar } from './avatar.js';
+
+export class MultiplayerClient {
+  constructor(world, scene, particleManager) {
+    this.world = world;
+    this.scene = scene;
+    this.particles = particleManager;
+
+    this.ws = null;
+    this.myId = null;
+    this.myName = 'Player';
+    this.myEmail = '';
+    this.adminKey = '';
+    this.isAdmin = false;
+    this.isOfflineMode = false;
+    this.connected = false;
+    this.reconnecting = false;
+    this.reconnectAttempts = 0;
+    this.kickedByAdminReset = false;
+
+    this.remoteAvatars = new Map(); // id -> Avatar
+    this.playerDirectory = new Map(); // id -> { id, name, pos, joinedAt }
+    this.pendingModifications = new Map(); // "x,y,z" -> originalBlock (for rollback on rejection)
+    this.offlineSyncQueue = new Map(); // "x,y,z" -> blockType (queued while offline, synced on connect)
+    this.remoteServerBaseUrl = 'https://voxel-realms-w9l3.onrender.com';
+    this.backgroundProbeTimer = null;
+    this.timeOfDay = 0.32; // Perpetual bright sunny day
+    this.currentRoomId = 'main';
+    this.currentRoomPin = null;
+    this.currentRoomName = 'Sala Principal';
+
+    // Throttled movement packets
+    this.lastSendTime = 0;
+    this.sendInterval = 45; // ~22 updates/sec
+    this.lastSentPos = [0, 0, 0];
+    this.lastSentRot = [0, 0];
+
+    // Callbacks for UI & World Managers
+    this.onConnected = null;
+    this.onDisconnected = null;
+    this.onPlayerCountChange = null;
+    this.onChatMessage = null;
+    this.onNotification = null;
+    this.onError = null;
+    this.onTeleportConfirm = null;
+    this.onAnimalsUpdate = null;
+    this.onAnimalBurst = null;
+    this.onWeaponHit = null;
+    this.onTntPrime = null;
+    this.onTntExplode = null;
+    this.onVehicleDrive = null;
+    this.onVehicleEnter = null;
+    this.onVehicleExit = null;
+    this.onAdminState = null;
+    this.onServerReset = null;
+    this.aerialTargetManager = null;
+    this.fighterAircraftManager = null;
+  }
+
+  get isConnected() {
+    return this.connected;
+  }
+
+  /**
+   * Returns true if the local user is the main administrator
+   */
+  isMainAdmin() {
+    const email = (this.myEmail || '').trim().toLowerCase();
+    const name = (this.myName || '').trim().toLowerCase();
+    return email === 'jsieiragerpe@gmail.com' || name === 'jsieiragerpe@gmail.com' || name === 'jsieiragerpe' || (this.isAdmin && !name.includes('cifrixa'));
+  }
+
+  /**
+   * Returns true if (x, y, z) falls inside the reserved Military Base or Underground Bunker zones
+   */
+  isRestrictedCoordinate(x, y, z) {
+    const bx = Math.round(x);
+    const bz = Math.round(z);
+    // Air Base perimeter (-455..-385, 115..185)
+    if (bx >= -455 && bx <= -385 && bz >= 115 && bz <= 185) return true;
+    // Underground Bunker & Silo perimeter (-565..-435, 235..365)
+    if (bx >= -565 && bx <= -435 && bz >= 235 && bz <= 365) return true;
+    return false;
+  }
+
+  /**
+   * Activate solo Offline / Sandbox Creative mode without connecting to the multiplayer network
+   */
+  startOfflineMode(playerName) {
+    this.isOfflineMode = true;
+    this.connected = false;
+    this.reconnecting = false;
+    this.kickedByAdminReset = false;
+    this.myId = 'offline_local_player';
+    if (playerName && playerName.trim()) {
+      this.myName = playerName.trim();
+    }
+
+    if (this.ws) {
+      try {
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        this.ws.onmessage = null;
+        this.ws.close();
+      } catch (_) {}
+      this.ws = null;
+    }
+
+    for (const avatar of this.remoteAvatars.values()) {
+      avatar.dispose();
+    }
+    this.remoteAvatars.clear();
+    this.playerDirectory.clear();
+    this.playerDirectory.set(this.myId, {
+      id: this.myId,
+      name: this.myName,
+      pos: this.physics?.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : [0, 25, 0],
+      joinedAt: Date.now()
+    });
+
+    if (this.onPlayerCountChange) {
+      this.onPlayerCountChange(1);
+    }
+    if (this.onPlayerInit) {
+      this.onPlayerInit({
+        id: this.myId,
+        player: { id: this.myId, name: this.myName, pos: [3, 25, 6] }
+      });
+    }
+    if (this.onNotification) {
+      this.onNotification(`🛠️ Modo Local Activado (${this.myName}). Sincronización automática en segundo plano lista cuando haya internet.`);
+    }
+    this.startBackgroundOnlineProbe();
+  }
+
+  getResolvedServerWsUrl() {
+    if (typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:') && window.location.host) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${window.location.host}`;
+    }
+    const base = (typeof window !== 'undefined' && window.VOXEL_SERVER_URL) ? window.VOXEL_SERVER_URL : this.remoteServerBaseUrl;
+    return base.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
+  }
+
+  getResolvedServerHttpUrl(path = '/api/status') {
+    if (typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:') && window.location.host) {
+      return path;
+    }
+    const base = (typeof window !== 'undefined' && window.VOXEL_SERVER_URL) ? window.VOXEL_SERVER_URL : this.remoteServerBaseUrl;
+    return `${base.replace(/\/$/, '')}${path}`;
+  }
+
+  startBackgroundOnlineProbe() {
+    if (this.backgroundProbeTimer) return;
+    const checkOnline = () => {
+      if (this.connected || this.kickedByAdminReset) return;
+      const statusUrl = this.getResolvedServerHttpUrl('/api/status');
+      fetch(statusUrl, { method: 'GET', cache: 'no-store' })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(() => {
+          if (!this.connected && !this.kickedByAdminReset) {
+            this.connect(this.myName, {
+              email: this.myEmail,
+              adminKey: this.adminKey,
+              roomId: this.currentRoomId,
+              pin: this.currentRoomPin,
+              roomName: this.currentRoomName,
+              silentFallback: true
+            });
+          }
+        })
+        .catch(() => {});
+    };
+    this.backgroundProbeTimer = setInterval(checkOnline, 10000);
+    if (typeof window !== 'undefined' && !this._hasOnlineListener) {
+      this._hasOnlineListener = true;
+      window.addEventListener('online', () => setTimeout(checkOnline, 500));
+    }
+    setTimeout(checkOnline, 1500);
+  }
+
+  connect(playerName, options = {}) {
+    this.isOfflineMode = false;
+    this.myName = playerName || 'Player';
+    if (options && typeof options.email === 'string') {
+      this.myEmail = options.email;
+    } else if (typeof playerName === 'string' && playerName.includes('@')) {
+      this.myEmail = playerName.trim();
+    }
+    if (options && typeof options.adminKey === 'string') {
+      this.adminKey = options.adminKey;
+    }
+    if (options && options.roomId) {
+      this.currentRoomId = options.roomId;
+    }
+    if (options && options.pin !== undefined) {
+      this.currentRoomPin = options.pin;
+    }
+    if (options && options.roomName) {
+      this.currentRoomName = options.roomName;
+    }
+    this.kickedByAdminReset = false;
+
+    // Build WebSocket URL matching current host or configured remote Render server
+    const wsUrl = this.getResolvedServerWsUrl();
+
+    try {
+      this.ws = new WebSocket(wsUrl);
+    } catch (e) {
+      if (!options.silentFallback) {
+        this.startOfflineMode(this.myName);
+      }
+      return;
+    }
+
+    this.ws.onopen = () => {
+      this.isOfflineMode = false;
+      this.connected = true;
+      this.reconnecting = false;
+      this.reconnectAttempts = 0;
+      if (this.onConnected) this.onConnected();
+
+      // Send join request (including stealth admin credentials and room parameters if present)
+      const joinPayload = { name: this.myName };
+      if (this.myEmail) joinPayload.email = this.myEmail;
+      if (this.adminKey) joinPayload.adminKey = this.adminKey;
+      const targetRoomId = (options && options.roomId) || (this.currentRoomId !== 'main' ? this.currentRoomId : null);
+      const targetPin = (options && options.pin) || this.currentRoomPin || null;
+      const targetRoomName = (options && options.roomName) || (this.currentRoomId !== 'main' ? this.currentRoomName : null);
+      if (targetRoomId) joinPayload.roomId = targetRoomId;
+      if (targetPin) joinPayload.pin = targetPin;
+      if (targetRoomName) joinPayload.roomName = targetRoomName;
+      this.send('join', joinPayload);
+
+      // Flush any blocks modified locally while offline
+      if (this.offlineSyncQueue && this.offlineSyncQueue.size > 0) {
+        const deltas = [];
+        for (const [k, bt] of this.offlineSyncQueue.entries()) {
+          const parts = k.split(',').map(Number);
+          if (parts.length === 3) {
+            deltas.push([parts[0], parts[1], parts[2], bt]);
+          }
+        }
+        this.offlineSyncQueue.clear();
+        if (deltas.length > 0) {
+          setTimeout(() => {
+            if (this.connected) {
+              this.send('block_modify_batch', { deltas });
+              if (this.onNotification) {
+                this.onNotification(`🌐 Sincronizados ${deltas.length} bloques locales con el servidor online.`);
+              }
+            }
+          }, 600);
+        }
+      }
+    };
+
+    this.ws.onmessage = (event) => {
+      this.handleMessage(event.data);
+    };
+
+    this.ws.onclose = () => {
+      this.handleDisconnect();
+    };
+
+    this.ws.onerror = () => {
+      this.handleDisconnect();
+    };
+  }
+
+  send(type, data) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type, data }));
+    }
+  }
+
+  handleDisconnect() {
+    if (!this.connected && !this.reconnecting) return;
+    this.connected = false;
+
+    // Clean up remote avatars
+    for (const avatar of this.remoteAvatars.values()) {
+      avatar.dispose();
+    }
+    this.remoteAvatars.clear();
+    this.playerDirectory.clear();
+
+    if (this.aerialTargetManager && typeof this.aerialTargetManager.clearAll === 'function') {
+      this.aerialTargetManager.clearAll();
+    }
+
+    if (this.onDisconnected) this.onDisconnected();
+
+    // Do not auto-reconnect if kicked to login screen by an admin server reset or in Offline Mode
+    if (this.kickedByAdminReset || this.isOfflineMode) {
+      this.reconnecting = false;
+      return;
+    }
+
+    // Auto-reconnect with exponential backoff
+    if (this.reconnectAttempts < 6) {
+      this.reconnecting = true;
+      this.reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
+      setTimeout(() => {
+        if (!this.connected && !this.kickedByAdminReset && !this.isOfflineMode) {
+          this.connect(this.myName, {
+            email: this.myEmail,
+            adminKey: this.adminKey,
+            roomId: this.currentRoomId,
+            pin: this.currentRoomPin,
+            roomName: this.currentRoomName
+          });
+        }
+      }, delay);
+    }
+  }
+
+  handleMessage(raw) {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch (e) {
+      return;
+    }
+
+    const { type, data } = msg;
+
+    switch (type) {
+      case 'room_list_response':
+        if (typeof this.onRoomList === 'function') {
+          this.onRoomList(data.rooms || []);
+        }
+        break;
+
+      case 'switch_room_confirm':
+        this.currentRoomId = data.roomId || 'main';
+        this.currentRoomName = data.roomName || 'Sala Principal';
+        for (const avatar of this.remoteAvatars.values()) {
+          avatar.remove();
+        }
+        this.remoteAvatars.clear();
+        this.playerDirectory.clear();
+        if (this.aerialTargetManager && typeof this.aerialTargetManager.clearAll === 'function') {
+          this.aerialTargetManager.clearAll();
+        }
+        if (this.fighterAircraftManager && typeof this.fighterAircraftManager.clearAll === 'function') {
+          this.fighterAircraftManager.clearAll();
+        }
+        if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
+          this.billboardManager.clear();
+        }
+        if (this.world) {
+          if (this.world.blockDeltas) this.world.blockDeltas.clear();
+          if (typeof this.world.reloadAllChunks === 'function') {
+            this.world.reloadAllChunks();
+          }
+        }
+        if (typeof this.onRoomSwitch === 'function') {
+          this.onRoomSwitch(data);
+        }
+        break;
+
+      case 'block_modify_batch':
+        if (data && Array.isArray(data.deltas) && data.deltas.length > 0 && this.world) {
+          if (typeof this.world.applyBlockDeltasBatch === 'function') {
+            this.world.applyBlockDeltasBatch(data.deltas);
+          } else {
+            for (const [x, y, z, bt] of data.deltas) {
+              if (typeof this.world.applyBlockDelta === 'function') {
+                this.world.applyBlockDelta(x, y, z, bt);
+              }
+            }
+          }
+        }
+        break;
+
+      case 'billboard_create':
+        if (data && this.billboardManager && typeof this.billboardManager.createBillboardFromNetwork === 'function') {
+          this.billboardManager.createBillboardFromNetwork(data);
+        }
+        break;
+
+      case 'billboard_remove':
+        if (data && data.id && this.billboardManager && typeof this.billboardManager.removeBillboard === 'function') {
+          this.billboardManager.removeBillboard(data.id);
+        }
+        break;
+
+      case 'init':
+        this.currentRoomId = data.roomId || (data.room && data.room.id) || this.currentRoomId || 'main';
+        this.currentRoomName = data.roomName || (data.room && data.room.name) || (this.currentRoomId === 'main' ? 'Sala Principal' : `Sala ${this.currentRoomId}`);
+        for (const avatar of this.remoteAvatars.values()) {
+          avatar.remove();
+        }
+        this.remoteAvatars.clear();
+        this.playerDirectory.clear();
+        if (this.aerialTargetManager) {
+          this.aerialTargetManager.clearAll();
+          if (Array.isArray(data.aerialTargets)) {
+            this.aerialTargetManager.syncFromServer(data.aerialTargets);
+          }
+        }
+        if (this.fighterAircraftManager) {
+          this.fighterAircraftManager.clearAll();
+          const initAircraft = data.fighterAircraft || data.aircraft;
+          if (Array.isArray(initAircraft)) {
+            this.fighterAircraftManager.syncFromServer(initAircraft);
+          }
+        }
+        if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
+          this.billboardManager.clear();
+        }
+        if (typeof this.onRoomSwitch === 'function') {
+          this.onRoomSwitch({ roomId: this.currentRoomId, roomName: this.currentRoomName, room: data.room });
+        }
+        this.myId = data.id;
+        this.timeOfDay = data.timeOfDay ?? 0.32;
+        if (data.isAdmin || (data.player && data.player.isAdmin)) {
+          this.isAdmin = true;
+        }
+        if (data.player && data.player.name) {
+          this.myName = data.player.name;
+        }
+
+        // Apply world seed if different
+        if (data.seed && this.world.seed !== data.seed) {
+          this.world.seed = data.seed;
+        }
+
+        // Apply pre-existing block deltas from server in a single fast batch
+        if (Array.isArray(data.deltas) && data.deltas.length > 0) {
+          if (typeof this.world.applyBlockDeltasBatch === 'function') {
+            this.world.applyBlockDeltasBatch(data.deltas);
+          } else {
+            for (const [x, y, z, blockType] of data.deltas) {
+              if (this.world.getBlock(x, y, z) !== blockType) {
+                this.world.applyBlockDelta(x, y, z, blockType);
+              } else if (this.world.blockDeltas && typeof this.world.blockDeltas.set === 'function') {
+                this.world.blockDeltas.set(`${x},${y},${z}`, blockType);
+              }
+            }
+          }
+        }
+
+        this.playerDirectory.clear();
+        if (data.player) {
+          this.playerDirectory.set(data.id, {
+            id: data.id,
+            name: data.player.name || this.myName,
+            pos: Array.isArray(data.player.pos) ? [...data.player.pos] : [0, 25, 0],
+            joinedAt: data.player.joinedAt || Date.now()
+          });
+        }
+
+        // Spawn existing remote players
+        if (Array.isArray(data.players)) {
+          for (const p of data.players) {
+            this.addRemotePlayer(p);
+            this.playerDirectory.set(p.id, {
+              id: p.id,
+              name: p.name || 'Player',
+              pos: Array.isArray(p.pos) ? [...p.pos] : [0, 25, 0],
+              joinedAt: p.joinedAt || Date.now()
+            });
+          }
+        }
+
+        // Sync initial authoritative animals
+        if (Array.isArray(data.animals) && this.onAnimalsUpdate) {
+          this.onAnimalsUpdate(data.animals);
+        }
+
+        if (this.onPlayerCountChange) {
+          this.onPlayerCountChange(this.remoteAvatars.size + 1);
+        }
+        if (this.isAdmin && this.onAdminState) {
+          this.onAdminState({
+            isAdmin: true,
+            onlineCount: this.remoteAvatars.size + 1,
+            players: Array.from(this.playerDirectory.values())
+          });
+        }
+        if (this.onPlayerInit) {
+          this.onPlayerInit(data);
+        }
+        if (Array.isArray(data.billboards) && this.billboardManager && typeof this.billboardManager.syncBillboardsFromServer === 'function') {
+          this.billboardManager.syncBillboardsFromServer(data.billboards);
+        }
+        if (this.onNotification) {
+          this.onNotification(`Bienvenido a Voxel Realms, ${this.myName}!`);
+        }
+        break;
+
+      case 'player_joined':
+        this.addRemotePlayer(data);
+        if (data && data.id) {
+          this.playerDirectory.set(data.id, {
+            id: data.id,
+            name: data.name || 'Player',
+            pos: Array.isArray(data.pos) ? [...data.pos] : [0, 25, 0],
+            joinedAt: data.joinedAt || Date.now()
+          });
+        }
+        if (this.onPlayerCountChange) {
+          this.onPlayerCountChange(this.remoteAvatars.size + 1);
+        }
+        if (this.isAdmin && this.onAdminState) {
+          this.onAdminState({
+            isAdmin: true,
+            onlineCount: this.remoteAvatars.size + 1,
+            players: Array.from(this.playerDirectory.values())
+          });
+        }
+        if (this.onNotification) {
+          this.onNotification(`${data.name} se ha unido al reino.`);
+        }
+        break;
+
+      case 'player_left':
+        this.removeRemotePlayer(data.id);
+        if (data && data.id) {
+          if (data.lastPos && this.playerDirectory.has(data.id)) {
+            const existing = this.playerDirectory.get(data.id);
+            existing.pos = [...data.lastPos];
+            existing.isDisconnected = true;
+          } else {
+            this.playerDirectory.delete(data.id);
+          }
+        }
+        if (this.onPlayerCountChange) {
+          this.onPlayerCountChange(this.remoteAvatars.size + 1);
+        }
+        if (this.isAdmin && this.onAdminState) {
+          this.onAdminState({
+            isAdmin: true,
+            onlineCount: this.remoteAvatars.size + 1,
+            players: Array.from(this.playerDirectory.values()).filter(p => !p.isDisconnected)
+          });
+        }
+        if (this.onNotification) {
+          this.onNotification(`${data.name || 'Un jugador'} ha salido del reino.`);
+        }
+        break;
+
+      case 'players_update':
+        if (typeof data.timeOfDay === 'number') {
+          this.timeOfDay = data.timeOfDay;
+        }
+        if (Array.isArray(data.players)) {
+          for (const p of data.players) {
+            const existingMeta = this.playerDirectory.get(p.id);
+            if (existingMeta) {
+              if (Array.isArray(p.pos)) existingMeta.pos = [...p.pos];
+              if (p.name) existingMeta.name = p.name;
+              if (p.joinedAt) existingMeta.joinedAt = p.joinedAt;
+            } else if (p.id) {
+              this.playerDirectory.set(p.id, {
+                id: p.id,
+                name: p.name || (p.id === this.myId ? this.myName : 'Player'),
+                pos: Array.isArray(p.pos) ? [...p.pos] : [0, 25, 0],
+                joinedAt: p.joinedAt || Date.now()
+              });
+            }
+            if (p.id !== this.myId) {
+              const avatar = this.remoteAvatars.get(p.id);
+              if (avatar) {
+                avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled, p.isFlying);
+                if (p.weaponsEnabled !== undefined && typeof avatar.setWeaponsEnabled === 'function') {
+                  avatar.setWeaponsEnabled(p.weaponsEnabled);
+                }
+              }
+            }
+          }
+        }
+        if (Array.isArray(data.aerialTargets) && this.aerialTargetManager) {
+          this.aerialTargetManager.syncFromServer(data.aerialTargets);
+        }
+        const aircraftList = data.aircraft || data.fighterAircraft;
+        if (Array.isArray(aircraftList) && this.fighterAircraftManager) {
+          this.fighterAircraftManager.syncFromServer(aircraftList);
+        }
+        break;
+
+      case 'admin_state':
+        if (data && data.isAdmin) {
+          this.isAdmin = true;
+          if (Array.isArray(data.players)) {
+            for (const p of data.players) {
+              if (p && p.id) {
+                this.playerDirectory.set(p.id, {
+                  id: p.id,
+                  name: p.name || 'Player',
+                  pos: Array.isArray(p.pos) ? [...p.pos] : [0, 25, 0],
+                  joinedAt: p.joinedAt || Date.now()
+                });
+              }
+            }
+          }
+          if (this.onAdminState) {
+            this.onAdminState({
+              isAdmin: true,
+              onlineCount: data.onlineCount || this.playerDirectory.size,
+              players: Array.from(this.playerDirectory.values())
+            });
+          }
+        }
+        break;
+
+      case 'server_reset':
+        this.kickedByAdminReset = true;
+        this.connected = false;
+        this.reconnecting = false;
+        for (const avatar of this.remoteAvatars.values()) {
+          avatar.dispose();
+        }
+        this.remoteAvatars.clear();
+        this.playerDirectory.clear();
+        if (this.billboardManager && typeof this.billboardManager.clear === 'function') {
+          this.billboardManager.clear();
+        }
+        if (this.world && typeof this.world.resetToInitialTerrain === 'function') {
+          this.world.resetToInitialTerrain();
+        }
+        if (this.ws) {
+          try { this.ws.close(); } catch (_) {}
+          this.ws = null;
+        }
+        const resetReason = (data && (data.message || data.reason)) ? (data.message || data.reason) : 'El admin ha reiniciado el server';
+        if (typeof document !== 'undefined') {
+          const banner = document.getElementById('server-reset-banner');
+          if (banner) {
+            banner.textContent = resetReason;
+            banner.classList.remove('hidden');
+          }
+          const lobby = document.getElementById('lobby-overlay');
+          if (lobby) {
+            lobby.classList.remove('hidden');
+          }
+          const hud = document.getElementById('hud-overlay') || document.getElementById('hud');
+          if (hud) {
+            hud.classList.add('hidden');
+          }
+          const pauseMenu = document.getElementById('pause-menu');
+          if (pauseMenu) {
+            pauseMenu.classList.add('hidden');
+          }
+        }
+        if (this.onServerReset) {
+          this.onServerReset(resetReason);
+        }
+        break;
+
+      case 'weapon_toggle':
+        if (data && data.id && data.id !== this.myId) {
+          const avatar = this.remoteAvatars.get(data.id);
+          if (avatar && typeof avatar.setWeaponsEnabled === 'function') {
+            avatar.setWeaponsEnabled(data.enabled);
+          }
+        }
+        break;
+
+      case 'animals_update':
+        if (data && Array.isArray(data.animals) && this.onAnimalsUpdate) {
+          this.onAnimalsUpdate(data.animals);
+        }
+        break;
+
+      case 'animal_burst':
+        if (data && this.onAnimalBurst) {
+          this.onAnimalBurst(data);
+        }
+        break;
+
+      case 'aerial_targets_update':
+        if (data && Array.isArray(data.targets) && this.aerialTargetManager) {
+          this.aerialTargetManager.syncFromServer(data.targets);
+        }
+        break;
+
+      case 'aerial_target_hit':
+        if (data && this.aerialTargetManager) {
+          this.aerialTargetManager.handleHit(data);
+        }
+        if (typeof this.onAerialTargetHit === 'function') {
+          this.onAerialTargetHit(data);
+        }
+        break;
+
+      case 'aerial_target_destroyed':
+        if (data && this.aerialTargetManager) {
+          this.aerialTargetManager.handleDestroyed(data);
+        }
+        if (typeof this.onAerialTargetDestroyed === 'function') {
+          this.onAerialTargetDestroyed(data);
+        }
+        break;
+
+      case 'aerial_target_spawn':
+        if (data && this.aerialTargetManager) {
+          this.aerialTargetManager.handleSpawn(data);
+        }
+        break;
+
+      case 'aircraft_update':
+        if (data && Array.isArray(data.aircraft) && this.fighterAircraftManager) {
+          this.fighterAircraftManager.syncFromServer(data.aircraft);
+        }
+        break;
+
+      case 'aircraft_evade':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleEvade(data);
+        }
+        break;
+
+      case 'aircraft_hit':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleHit(data);
+        }
+        if (typeof this.onAircraftHit === 'function') {
+          this.onAircraftHit(data);
+        }
+        break;
+
+      case 'aircraft_destroyed':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleDestroyed(data);
+        }
+        if (typeof this.onAircraftDestroyed === 'function') {
+          this.onAircraftDestroyed(data);
+        }
+        break;
+
+      case 'aircraft_spawn':
+        if (data && this.fighterAircraftManager) {
+          this.fighterAircraftManager.handleSpawn(data);
+        }
+        break;
+
+      case 'weapon_shot_fx':
+        if (data && data.shooterId !== this.myId) {
+          const o = Array.isArray(data.origin)
+            ? { x: data.origin[0], y: data.origin[1], z: data.origin[2] }
+            : (data.origin && typeof data.origin === 'object' ? data.origin : null);
+          const hp = Array.isArray(data.hitPos)
+            ? { x: data.hitPos[0], y: data.hitPos[1], z: data.hitPos[2] }
+            : (data.hitPos && typeof data.hitPos === 'object' ? data.hitPos : null);
+          const d = Array.isArray(data.dir)
+            ? { x: data.dir[0], y: data.dir[1], z: data.dir[2] }
+            : (data.dir && typeof data.dir === 'object' ? data.dir : { x: 0, y: 0, z: -1 });
+          if (o && this.particles && typeof this.particles.spawnMuzzleFlash === 'function') {
+            this.particles.spawnMuzzleFlash(o);
+          }
+          if (o && this.particles) {
+            const target = hp || { x: o.x + d.x * 65, y: o.y + d.y * 65, z: o.z + d.z * 65 };
+            if (data.weaponType === 'bazooka' && typeof this.particles.spawnBazookaRocket === 'function') {
+              this.particles.spawnBazookaRocket(o, target);
+            } else if (data.weaponType === 'plasma' && typeof this.particles.spawnPlasmaBolt === 'function') {
+              this.particles.spawnPlasmaBolt(o, target);
+            } else if (typeof this.particles.spawnBulletTracer === 'function') {
+              this.particles.spawnBulletTracer(o, target);
+            }
+          }
+          if (data.shooterId && data.weaponType) {
+            const remote = this.remoteAvatars.get(data.shooterId);
+            if (remote && typeof remote.setWeaponType === 'function') {
+              remote.setWeaponType(data.weaponType);
+            }
+          }
+        }
+        break;
+
+      case 'weapon_hit':
+        if (data && this.onWeaponHit) {
+          this.onWeaponHit(data);
+        }
+        break;
+
+      case 'vehicle_drive':
+        if (data && this.onVehicleDrive) {
+          this.onVehicleDrive(data);
+        }
+        break;
+
+      case 'vehicle_enter':
+        if (data && this.onVehicleEnter) {
+          this.onVehicleEnter(data);
+        }
+        break;
+
+      case 'vehicle_exit':
+        if (data && this.onVehicleExit) {
+          this.onVehicleExit(data);
+        }
+        break;
+
+      case 'tnt_primed':
+        if (data && this.onTntPrime) {
+          this.onTntPrime(data.x, data.y, data.z, data.fuseMs || 1600, data.playerId || null);
+        }
+        break;
+
+      case 'tnt_explode':
+        if (data) {
+          const destroyed = data.destroyedBlocks || data.destroyed;
+          if (Array.isArray(destroyed) && destroyed.length > 0) {
+            if (typeof this.world.applyBlockDeltasBatch === 'function') {
+              const batch = destroyed.map(([bx, by, bz]) => [bx, by, bz, 0]);
+              this.world.applyBlockDeltasBatch(batch);
+            } else {
+              for (const [bx, by, bz] of destroyed) {
+                if (typeof this.world.applyBlockDelta === 'function') {
+                  this.world.applyBlockDelta(bx, by, bz, 0);
+                } else if (typeof this.world.setBlock === 'function') {
+                  this.world.setBlock(bx, by, bz, 0, true);
+                }
+              }
+            }
+            if (typeof this.checkAvatarsGroundAfterBlockBreak === 'function') {
+              this.checkAvatarsGroundAfterBlockBreak();
+            }
+          }
+          if (this.particles && typeof this.particles.spawnExplosion === 'function') {
+            this.particles.spawnExplosion(data.x, data.y, data.z);
+          }
+          if (sound && typeof sound.playExplosion === 'function') {
+            sound.playExplosion();
+          }
+          if (this.onTntExplode) {
+            this.onTntExplode(data);
+          }
+        }
+        break;
+
+      case 'missile_spawn':
+        if (data && this.missileManager && typeof this.missileManager.spawnMissile === 'function') {
+          this.missileManager.spawnMissile(data);
+        }
+        if (this.onNotification && data) {
+          const isTargetMe = (data.targetPlayerId === this.myId || data.targetName === this.myName);
+          if (isTargetMe) {
+            this.onNotification(`⚠️ ¡ALERTA! ¡Misil guiado hostil aproximándose hacia ti!`);
+          } else if (data.launcherId === this.myId) {
+            this.onNotification(`🚀 Misil lanzado hacia ${data.targetName || 'objetivo'}.`);
+          }
+        }
+        break;
+
+      case 'missile_intercept_defense':
+        if (data && this.missileManager && typeof this.missileManager.triggerIronDomeDefense === 'function') {
+          this.missileManager.triggerIronDomeDefense(data);
+        }
+        if (data && this.bomberManager && typeof this.bomberManager.launchMission === 'function') {
+          this.bomberManager.launchMission(data.attackerId, data.attackerPos, data.attackerName);
+        }
+        if (this.onNotification && (data?.defenderId === this.myId || data?.defenderName === this.myName)) {
+          this.onNotification('🛡️ [DEFENSA ACTIVA] Cúpula de Hierro desplegando 5 interceptores...');
+        }
+        break;
+
+      case 'missile_impact':
+        if (data && this.onMissileImpact) {
+          this.onMissileImpact(data);
+        }
+        break;
+
+      case 'block_update':
+        // Synchronized block change
+        const { x, y, z, blockType, playerId, affectedPlayers } = data;
+        const key = `${x},${y},${z}`;
+        this.pendingModifications.delete(key);
+
+        const previousBlock = this.world.getBlock(x, y, z);
+        if (previousBlock === blockType) {
+          // Guard: block already matches target blockType; do not trigger redundant synchronous chunk remeshing
+          if (this.world.blockDeltas && typeof this.world.blockDeltas.set === 'function') {
+            this.world.blockDeltas.set(key, blockType);
+          }
+          break;
+        }
+
+        // Spawn debris particles if block was destroyed
+        if (blockType === 0 && previousBlock !== 0) {
+          this.particles.spawnBlockDebris(x, y, z);
+        }
+
+        // Trigger arm swing on the avatar who modified the block
+        if (playerId && playerId !== this.myId) {
+          const remote = this.remoteAvatars.get(playerId);
+          if (remote) remote.triggerSwing();
+        }
+
+        // Apply authoritative block delta across client world
+        this.world.applyBlockDelta(x, y, z, blockType);
+
+        // If block was broken, immediately check supporting blocks and update ground detection
+        if (blockType === 0) {
+          this.checkAvatarsGroundAfterBlockBreak(x, y, z);
+        }
+
+        // If server provided affected players who fell, synchronize their authoritative positions
+        if (Array.isArray(affectedPlayers)) {
+          for (const ap of affectedPlayers) {
+            if (ap.id !== this.myId) {
+              const remote = this.remoteAvatars.get(ap.id);
+              if (remote) {
+                remote.setTargetState(ap.pos, null, null);
+                remote.updateGroundDetection();
+              }
+            }
+          }
+        }
+        break;
+
+      case 'block_reject':
+        // Rollback optimistic modification on server rejection
+        const rejKey = `${data.x},${data.y},${data.z}`;
+        if (this.pendingModifications.has(rejKey)) {
+          const original = this.pendingModifications.get(rejKey);
+          this.pendingModifications.delete(rejKey);
+          this.world.applyBlockDelta(data.x, data.y, data.z, original);
+          this.checkAvatarsGroundAfterBlockBreak(data.x, data.y, data.z);
+        }
+        if (this.onError) {
+          this.onError(data.reason || 'Modificación no permitida');
+        }
+        break;
+
+      case 'teleport_confirm':
+        if (this.onTeleportConfirm && data) {
+          const x = typeof data.x === 'number' ? data.x : (Array.isArray(data.pos) ? data.pos[0] : 0);
+          const y = typeof data.y === 'number' ? data.y : (Array.isArray(data.pos) ? data.pos[1] : 25);
+          const z = typeof data.z === 'number' ? data.z : (Array.isArray(data.pos) ? data.pos[2] : 0);
+          this.onTeleportConfirm(x, y, z, data.targetName || 'Jugador');
+        }
+        break;
+
+      case 'chat_broadcast':
+        if (this.onChatMessage) {
+          this.onChatMessage(data.senderName, data.text);
+        }
+        break;
+
+      case 'error':
+        if (this.onError) {
+          this.onError(data.message || 'Error del servidor');
+        }
+        break;
+    }
+  }
+
+  addRemotePlayer(p) {
+    if (this.remoteAvatars.has(p.id) || p.id === this.myId) return;
+    const avatar = new Avatar(p.id, p.name, this.scene, this.world);
+    avatar.world = this.world;
+    if (p.isFlying !== undefined) {
+      avatar.isFlying = Boolean(p.isFlying);
+    }
+    if (p.pos) {
+      avatar.group.position.set(p.pos[0], p.pos[1], p.pos[2]);
+      avatar.setTargetState(p.pos, p.rot, p.action, p.weaponsEnabled, p.isFlying);
+    }
+    if (p.weaponsEnabled !== undefined && typeof avatar.setWeaponsEnabled === 'function') {
+      avatar.setWeaponsEnabled(p.weaponsEnabled);
+    }
+    this.remoteAvatars.set(p.id, avatar);
+  }
+
+  removeRemotePlayer(id) {
+    const avatar = this.remoteAvatars.get(id);
+    if (avatar) {
+      avatar.dispose();
+      this.remoteAvatars.delete(id);
+    }
+  }
+
+  sendMove(pos, rot, action) {
+    if (!this.connected) return;
+    const now = Date.now();
+    if (now - this.lastSendTime < this.sendInterval) return;
+
+    // Check if player moved significantly to save network traffic
+    const dx = Math.abs(pos.x - this.lastSentPos[0]);
+    const dy = Math.abs(pos.y - this.lastSentPos[1]);
+    const dz = Math.abs(pos.z - this.lastSentPos[2]);
+    const dyaw = Math.abs(rot.yaw - this.lastSentRot[0]);
+    const dpitch = Math.abs(rot.pitch - this.lastSentRot[1]);
+
+    if (dx < 0.01 && dy < 0.01 && dz < 0.01 && dyaw < 0.01 && dpitch < 0.01) {
+      return;
+    }
+
+    this.lastSendTime = now;
+    this.lastSentPos = [pos.x, pos.y, pos.z];
+    this.lastSentRot = [rot.yaw, rot.pitch];
+
+    const weaponsEnabled = (this.controls && typeof this.controls.weaponsMode === 'boolean')
+      ? this.controls.weaponsMode
+      : true;
+
+    const isFlying = Boolean(
+      (this.controls && this.controls.physics && (this.controls.physics.flightMode || this.controls.physics.isFlying)) ||
+      (this.physics && (this.physics.flightMode || this.physics.isFlying)) ||
+      action === 'flying'
+    );
+
+    this.send('move', {
+      pos: [
+        Math.round(pos.x * 100) / 100,
+        Math.round(pos.y * 100) / 100,
+        Math.round(pos.z * 100) / 100
+      ],
+      rot: [
+        Math.round(rot.yaw * 100) / 100,
+        Math.round(rot.pitch * 100) / 100
+      ],
+      action: isFlying ? 'flying' : (action || 'idle'),
+      isFlying,
+      weaponsEnabled
+    });
+  }
+
+  sendBlockModify(x, y, z, blockType) {
+    // Restricted zone check (enforced both online and in Offline Mode for non-admins)
+    if (!this.isMainAdmin() && this.isRestrictedCoordinate(x, y, z)) {
+      if (this.onError) {
+        this.onError('🛡️ Zona reservada: La Base Militar y el Búnker están protegidos.');
+      } else if (this.onNotification) {
+        this.onNotification('🛡️ Zona reservada: La Base Militar y el Búnker están protegidos.');
+      }
+      return;
+    }
+
+    // Optimistic local update using applyBlockDelta to sync local deltas Map
+    const previous = this.world.getBlock(x, y, z);
+    const key = `${x},${y},${z}`;
+    if (!this.isOfflineMode && this.connected) {
+      this.pendingModifications.set(key, previous);
+    }
+
+    if (blockType === 0 && previous !== 0 && this.particles && typeof this.particles.spawnBlockDebris === 'function') {
+      this.particles.spawnBlockDebris(x, y, z);
+    }
+    this.world.applyBlockDelta(x, y, z, blockType);
+
+    // If block was broken, immediately check supporting blocks and update ground detection
+    if (blockType === 0) {
+      this.checkAvatarsGroundAfterBlockBreak(x, y, z);
+    }
+
+    // Send request to server if online, or queue for automatic background sync when internet returns
+    if (!this.isOfflineMode && this.connected) {
+      this.send('block_modify', { x, y, z, blockType });
+    } else if (this.offlineSyncQueue) {
+      this.offlineSyncQueue.set(key, blockType);
+    }
+  }
+
+  /**
+   * Checks ground detection for all remote avatars and local physics when a block is removed
+   */
+  checkAvatarsGroundAfterBlockBreak(x, y, z) {
+    for (const avatar of this.remoteAvatars.values()) {
+      if (!avatar) continue;
+      if (avatar.isFlying || avatar.action === 'flying') continue;
+      if (typeof avatar.onSupportingBlockRemoved === 'function') {
+        avatar.onSupportingBlockRemoved(x, y, z);
+      } else if (typeof avatar.updateGroundDetection === 'function') {
+        avatar.updateGroundDetection();
+      }
+    }
+
+    if (this.physics && typeof this.physics.onBlockBroken === 'function') {
+      if (!this.physics.flightMode && !this.physics.isFlying) {
+        this.physics.onBlockBroken(x, y, z);
+      }
+    }
+  }
+
+  sendWeaponToggle(enabled) {
+    this.send('weapon_toggle', { enabled: Boolean(enabled) });
+  }
+
+  sendWeaponShoot(payload) {
+    this.send('weapon_shoot', payload);
+  }
+
+  sendTntTrigger(x, y, z, fuseMs = 1800, radius = 3) {
+    if (!this.isMainAdmin() && this.isRestrictedCoordinate(x, y, z)) {
+      if (this.onNotification) {
+        this.onNotification('🛡️ Zona reservada: Explosivos desactivados cerca de la Base Militar y el Búnker.');
+      }
+      return;
+    }
+
+    if (this.isOfflineMode || !this.connected) {
+      const r = Math.max(1, Math.min(8, typeof radius === 'number' ? radius : 3));
+      const delay = Math.max(0, typeof fuseMs === 'number' ? fuseMs : 0);
+      const detonateLocal = () => {
+        const batch = [];
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            for (let dz = -r; dz <= r; dz++) {
+              if (dx * dx + dy * dy + dz * dz <= r * r + 0.5) {
+                const bx = Math.round(x + dx);
+                const by = Math.round(y + dy);
+                const bz = Math.round(z + dz);
+                if (by >= 19 && by < 120 && (this.isMainAdmin() || !this.isRestrictedCoordinate(bx, by, bz))) {
+                  batch.push([bx, by, bz, 0]);
+                }
+              }
+            }
+          }
+        }
+        if (batch.length > 0 && this.world && typeof this.world.applyBlockDeltasBatch === 'function') {
+          this.world.applyBlockDeltasBatch(batch);
+        }
+        if (this.particles && typeof this.particles.spawnExplosion === 'function') {
+          this.particles.spawnExplosion(x, y, z);
+        }
+        this.checkAvatarsGroundAfterBlockBreak(x, y, z);
+      };
+      if (delay <= 30) {
+        detonateLocal();
+      } else {
+        setTimeout(detonateLocal, delay);
+      }
+      return;
+    }
+
+    this.send('tnt_trigger', { x, y, z, fuseMs, radius });
+  }
+
+  /**
+   * Raycast against remote players' avatars for non-lethal rifle hits
+   */
+  getRaycastPlayerHit(rayOrigin, rayDir, maxDist = 80) {
+    let closestId = null;
+    let closestName = null;
+    let closestDist = maxDist;
+
+    for (const [id, avatar] of this.remoteAvatars.entries()) {
+      if (!avatar || !avatar.currentPos) continue;
+      const center = {
+        x: avatar.currentPos.x,
+        y: avatar.currentPos.y + 0.9,
+        z: avatar.currentPos.z
+      };
+      const vx = center.x - rayOrigin.x;
+      const vy = center.y - rayOrigin.y;
+      const vz = center.z - rayOrigin.z;
+      const proj = vx * rayDir.x + vy * rayDir.y + vz * rayDir.z;
+      if (proj < 0 || proj > closestDist) continue;
+
+      const distSq = vx * vx + vy * vy + vz * vz;
+      const perpSq = distSq - proj * proj;
+      if (perpSq <= 0.65 * 0.65) {
+        closestDist = proj;
+        closestId = id;
+        closestName = avatar.name;
+      }
+    }
+
+    if (!closestId) return null;
+    return { id: closestId, name: closestName, distance: closestDist };
+  }
+
+  sendChat(text) {
+    if (!text || !text.trim()) return;
+    this.send('chat', { text: text.trim() });
+  }
+
+  requestTeleportToPlayer(targetPlayerId) {
+    if (!this.connected || !targetPlayerId) return;
+    this.send('teleport_to_player', { targetPlayerId });
+  }
+
+  shareLocation(x, y, z, sectorName) {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const sector = sectorName ? (sectorName.startsWith('[') ? sectorName : `[${sectorName}]`) : '[Tierras del Reino]';
+    const msg = `📍 Mi ubicación: ${sector} (X: ${rx}, Y: ${ry}, Z: ${rz}) — [Clic para Teletransportarse]`;
+    this.sendChat(msg);
+
+    // Update browser URL query string and copy shareable link if supported
+    try {
+      if (typeof window !== 'undefined' && window.location && window.history && window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tp', `${rx},${ry},${rz}`);
+        window.history.replaceState({}, '', url.toString());
+        if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(url.toString()).catch(() => {});
+        }
+      }
+    } catch (_) {
+      // Ignore in headless test environments
+    }
+
+    return msg;
+  }
+
+  sendVehicleDrive(car) {
+    if (!this.connected || !car) return;
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (this.lastVehicleSend && (now - this.lastVehicleSend < 35)) return;
+    this.lastVehicleSend = now;
+
+    this.send('vehicle_drive', {
+      vehicleId: car.id,
+      x: car.pos.x,
+      y: car.pos.y,
+      z: car.pos.z,
+      yaw: car.yaw,
+      pitch: car.pitch || 0,
+      roll: car.roll || 0,
+      speed: car.speed || 0,
+      steering: car.steering || 0,
+      isDrifting: Boolean(car.isDrifting)
+    });
+  }
+
+  sendVehicleEnter(vehicleId) {
+    if (!this.connected || !vehicleId) return;
+    this.send('vehicle_enter', { vehicleId });
+  }
+
+  sendVehicleExit(vehicleId) {
+    if (!this.connected || !vehicleId) return;
+    this.send('vehicle_exit', { vehicleId });
+  }
+
+  sendAdminAuth(email, adminKey) {
+    this.myEmail = email || this.myEmail;
+    this.adminKey = adminKey || this.adminKey;
+    this.send('admin_auth', { email: this.myEmail, adminKey: this.adminKey });
+  }
+
+  sendAdminResetServer() {
+    this.send('admin_reset_server', { email: this.myEmail, adminKey: this.adminKey });
+  }
+
+  requestAdminResetServer() {
+    return this.sendAdminResetServer();
+  }
+
+  sendAdminLaunchMissile(targetPlayerId, origin = null, yaw = null, launchType = null, count = null, targetPos = null, mode = null, delay = null) {
+    const lType = launchType || ((this.physics && this.physics.pos && this.physics.pos.y > 28) ? 'air' : 'land');
+    let salvoCount = 1;
+    if (typeof count === 'number') {
+      salvoCount = count;
+    } else if (this.controls && this.controls.missileSalvoCount) {
+      salvoCount = this.controls.missileSalvoCount;
+    } else {
+      try {
+        salvoCount = parseInt(localStorage.getItem('voxel_missile_salvo_count'), 10) || 1;
+      } catch (e) {}
+    }
+    salvoCount = Math.min(30, Math.max(1, salvoCount));
+
+    const salvoMode = mode || this.controls?.missileSalvoMode || (typeof localStorage !== 'undefined' ? localStorage.getItem('voxel_missile_salvo_mode') : null) || 'sequential';
+    const salvoDelay = (typeof delay === 'number') ? delay : (this.controls?.missileSalvoDelay || (typeof localStorage !== 'undefined' ? parseFloat(localStorage.getItem('voxel_missile_salvo_delay')) : null) || 0.25);
+
+    if (!this.connected || this.isOfflineMode) {
+      // Offline fallback: spawn missiles locally via missileManager
+      if (this.missileManager && typeof this.missileManager.spawnMissile === 'function') {
+        const pStart = origin || (this.physics && this.physics.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : [0, 25, 0]);
+        let tgtPos = targetPos || [0, 25, 0];
+        let tgtName = 'Objetivo';
+        if (targetPlayerId && this.playerDirectory && this.playerDirectory.has(targetPlayerId)) {
+          const tp = this.playerDirectory.get(targetPlayerId);
+          if (tp && Array.isArray(tp.pos)) tgtPos = tp.pos;
+          if (tp && tp.name) tgtName = tp.name;
+        } else if (targetPos) {
+          tgtName = `Coordenadas (${Math.round(targetPos[0])}, ${Math.round(targetPos[2])})`;
+        }
+
+        // Cadena de misiles continua con intervalo visible (nunca todos de golpe)
+        const userDelay = Math.max(0.12, Math.min(1.0, Number(salvoDelay) || 0.25));
+        const streamInterval = (salvoMode === 'pairs')
+          ? Math.max(180, Math.round(userDelay * 1000))
+          : ((salvoCount >= 100) ? Math.max(85, Math.min(220, Math.round(userDelay * 650))) : Math.max(140, Math.round(userDelay * 1000)));
+
+        for (let i = 0; i < salvoCount; i++) {
+          const mId = 'local_msl_' + Date.now() + '_' + i;
+          const spreadAngle = (i / salvoCount) * Math.PI * 2;
+          const spreadRadius = salvoCount > 1 ? Math.min(8.0, 0.4 + (i * 0.06)) : 0;
+          const mPos = [pStart[0] + Math.cos(spreadAngle) * spreadRadius, pStart[1], pStart[2] + Math.sin(spreadAngle) * spreadRadius];
+
+          const fireDelay = (salvoMode === 'pairs')
+            ? Math.floor(i / 2) * streamInterval
+            : (i * streamInterval);
+
+          if (fireDelay === 0) {
+            this.missileManager.spawnMissile({
+              missileId: mId,
+              targetPlayerId,
+              targetName: tgtName,
+              targetPos: tgtPos,
+              startPos: mPos,
+              power: 4,
+              launchType: lType
+            });
+          } else {
+            setTimeout(() => {
+              this.missileManager.spawnMissile({
+                missileId: mId,
+                targetPlayerId,
+                targetName: tgtName,
+                targetPos: tgtPos,
+                startPos: mPos,
+                power: 4,
+                launchType: lType
+              });
+            }, fireDelay);
+          }
+        }
+      }
+      return;
+    }
+
+    this.send('admin_launch_missile', {
+      targetPlayerId: targetPlayerId || null,
+      targetPos: targetPos || null,
+      origin: origin || (this.physics && this.physics.pos ? [this.physics.pos.x, this.physics.pos.y, this.physics.pos.z] : null),
+      yaw: (typeof yaw === 'number') ? yaw : (this.controls ? this.controls.yaw : 0),
+      launchType: lType,
+      count: salvoCount,
+      mode: salvoMode,
+      delay: salvoDelay
+    });
+  }
+
+  sendLaunchMissile(targetPlayerId, origin = null, yaw = null, launchType = null) {
+    return this.sendAdminLaunchMissile(targetPlayerId, origin, yaw, launchType);
+  }
+
+  sendMissileDetonate(data) {
+    this.send('missile_detonate', data);
+  }
+
+  requestRoomList() {
+    this.send('room_list', {});
+  }
+
+  switchRoom(roomId, pin = null, roomName = null) {
+    this.currentRoomId = roomId;
+    this.currentRoomPin = pin;
+    this.currentRoomName = roomName || (roomId === 'main' ? 'Sala Principal' : `Sala ${roomId}`);
+    if (!this.connected || this.isOfflineMode) {
+      this.isOfflineMode = false;
+      this.connect(this.myName || 'Player', { roomId, pin, roomName });
+      return;
+    }
+    this.send('switch_room', { roomId, pin, roomName });
+  }
+
+  sendBlockModifyBatch(deltas) {
+    if (!this.connected || this.isOfflineMode || !Array.isArray(deltas) || deltas.length === 0) return;
+    const chunkSize = 400;
+    for (let i = 0; i < deltas.length; i += chunkSize) {
+      const chunk = deltas.slice(i, i + chunkSize);
+      this.send('block_modify_batch', { deltas: chunk });
+    }
+  }
+
+  sendAnimalSpawn(species, x, y, z) {
+    if (!this.connected || this.isOfflineMode) return;
+    this.send('animal_spawn', { species, x, y, z });
+  }
+
+  sendBillboardCreate(data) {
+    if (!this.connected || this.isOfflineMode) return;
+    this.send('billboard_create', data);
+  }
+
+  sendBillboardRemove(id) {
+    if (!this.connected || this.isOfflineMode || !id) return;
+    this.send('billboard_remove', { id });
+  }
+
+  update(dt) {
+    for (const avatar of this.remoteAvatars.values()) {
+      avatar.update(dt);
+    }
+    if (this.aerialTargetManager && typeof this.aerialTargetManager.update === 'function') {
+      this.aerialTargetManager.update(dt);
+    }
+  }
+}
+

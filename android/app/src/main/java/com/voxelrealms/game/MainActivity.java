@@ -48,13 +48,14 @@ public class MainActivity extends Activity {
         webView = findViewById(R.id.game_webview);
         configureWebView();
 
-        // Load the live Voxel Realms multiplayer world
-        String targetUrl = getIntent().getStringExtra("SERVER_URL");
-        if (targetUrl == null || targetUrl.trim().isEmpty()) {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            targetUrl = prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL);
+        // Start 100% locally from bundled assets so both Chess and Voxel Realms work immediately offline,
+        // while the app automatically probes & syncs with the Render server in the background when online!
+        String customUrl = getIntent().getStringExtra("SERVER_URL");
+        if (customUrl != null && !customUrl.trim().isEmpty()) {
+            webView.loadUrl(customUrl.trim());
+        } else {
+            webView.loadUrl("file:///android_asset/index.html");
         }
-        webView.loadUrl(targetUrl);
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -70,7 +71,13 @@ public class MainActivity extends Activity {
         // Web Audio autoplay support without requiring user interaction
         settings.setMediaPlaybackRequiresUserGesture(false);
 
-        // Rendering & Performance optimizations
+        // Rendering & Performance optimizations + local asset file access for ES modules & Web Workers
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            settings.setAllowFileAccessFromFileURLs(true);
+            settings.setAllowUniversalAccessFromFileURLs(true);
+        }
         settings.setLoadsImagesAutomatically(true);
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
@@ -241,14 +248,15 @@ class GameWebViewClient extends WebViewClient {
     @Override
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && request.isForMainFrame()) {
-            activity.showConnectionHub(request.getUrl().toString());
+            // Fall back to local offline bundle instead of blocking with an error screen
+            view.loadUrl("file:///android_asset/index.html");
         }
     }
 
     @SuppressWarnings("deprecation")
     @Override
     public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-        activity.showConnectionHub(failingUrl);
+        view.loadUrl("file:///android_asset/index.html");
     }
 }
 

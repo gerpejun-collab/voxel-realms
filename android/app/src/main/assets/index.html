@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VOXEL REALMS — Exploración y Construcción Multijugador Hiperrealista</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=VT323&family=Silkscreen&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Import map for modern native ES module Three.js (100% Offline Local Bundle) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./src/vendor/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 3D Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- In-game HUD -->
+  <div id="hud-overlay" class="hidden">
+    <!-- Sniper Rifle Scope Reticle Overlay -->
+    <div id="rifle-scope-overlay" class="hidden">
+      <div class="scope-vignette"></div>
+      <div class="scope-circle">
+        <div class="scope-line-h"></div>
+        <div class="scope-line-v"></div>
+        <div class="scope-mil-dots-h"></div>
+        <div class="scope-mil-dots-v"></div>
+        <div class="scope-center-dot"></div>
+      </div>
+      <div class="scope-telemetry" id="scope-telemetry-text">ZOOM ÓPTICO 2.4x • MODO FRANCOTIRADOR (ALCANCE INFINITO)</div>
+      <div id="scope-overlay-actions" class="scope-overlay-actions">
+        <button id="scope-btn-shoot" class="scope-action-btn scope-shoot-btn mc-btn" type="button" title="Disparar Arma Actual">
+          <span id="scope-btn-shoot-label">🔫 TIRAR</span>
+        </button>
+        <button id="scope-btn-switch" class="scope-action-btn scope-switch-btn mc-btn" type="button" title="Cambiar entre Fusil, Bazooka y Plasma (Tecla C)">
+          <span id="scope-btn-switch-label">🚀 BAZOOKA</span>
+        </button>
+        <button id="scope-btn-exit" class="scope-action-btn scope-exit-btn mc-btn" type="button" title="Salir de la Mira">
+          <span>❌ QUITAR MIRA</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Non-Lethal Friendly Hit Notification Toast -->
+    <div id="weapon-hit-toast" class="hidden"></div>
+
+    <!-- Crosshair Reticle -->
+    <div id="crosshair">
+      <div class="cross-line vertical"></div>
+      <div class="cross-line horizontal"></div>
+      <div class="cross-dot"></div>
+    </div>
+
+    <!-- Targeted Block Info -->
+    <div id="target-block-name"></div>
+
+    <!-- Top Left Information Bar (Compact Corner Performance Badge) -->
+    <div id="hud-top-bar">
+      <div id="hud-corner-badge" class="hud-corner-chip mc-badge">
+        <span class="status-pulse-dot">🟢</span>
+        <span id="hud-fps-val" class="perf-fps">60 FPS</span>
+        <span class="perf-sep">•</span>
+        <span id="hud-online-count" class="perf-players">👥 1</span>
+        <span class="perf-sep">•</span>
+        <span id="hud-coords" class="perf-coords">XYZ: 0 / 25 / 0</span>
+      </div>
+    </div>
+
+    <!-- Live GPS Circular Minimap (Radar) - Repositioned cleanly below status chip -->
+    <div id="minimap-container" class="minimap-container">
+      <canvas id="minimap-canvas" width="80" height="80" title="Mini-Mapa GPS en Vivo"></canvas>
+      <div class="minimap-north-pin">N</div>
+    </div>
+
+    <!-- Top Right Quick Access Pill Actions -->
+    <div id="hud-quick-actions">
+      <button id="btn-switch-chess" class="hud-action-pill mc-pill highlight-pill" title="Jugar al Ajedrez FIDE (2D / 3D)"><span class="hud-pill-icon">♟️</span><span class="hud-pill-txt"> Ajedrez</span></button>
+      <button id="btn-rooms" class="hud-action-pill mc-pill highlight-pill" title="Salas de Jugadores y PIN Privado"><span class="hud-pill-icon">🚪</span><span class="hud-pill-txt"> Salas</span></button>
+      <button id="btn-toggle-cam" class="hud-action-pill mc-pill" title="Alternar Vista de Cámara (F5)"><span class="hud-pill-icon">📷</span><span class="hud-pill-txt"> Vista</span></button>
+      <button id="btn-map" class="hud-action-pill mc-pill" title="Mapa del Mundo y Viaje Rápido (M)"><span class="hud-pill-icon">🗺️</span><span class="hud-pill-txt"> Mapa</span></button>
+      <button id="btn-share-loc" class="hud-action-pill mc-pill desktop-only" title="Compartir mi Ubicación en el Chat"><span class="hud-pill-icon">📍</span><span class="hud-pill-txt"> Ubicación</span></button>
+      <button id="btn-open-builder" class="hud-action-pill mc-pill builder-pill" title="Estudio Constructor, Edificios, Animales y Guardar Mapa (B)"><span class="hud-pill-icon">🛠️</span><span class="hud-pill-txt"> Constructor</span></button>
+      <button id="btn-grapple" class="hud-action-pill mc-pill grapple-pill" title="Disparar Gancho de Agarre a Edificios (G)"><span class="hud-pill-icon">🪝</span><span class="hud-pill-txt"> Gancho</span></button>
+      <button id="btn-cycle-weather" class="hud-action-pill mc-pill weather-pill" title="Cambiar Clima y Hora (Día / Noche / Lluvia)"><span class="hud-pill-icon">☀️</span><span class="hud-pill-txt"> Clima</span></button>
+      <button id="btn-toggle-weapons" class="hud-action-pill mc-pill highlight-pill" title="Alternar Modo Armas & TNT"><span class="hud-pill-icon">🔫</span><span class="hud-pill-txt"> Armas</span></button>
+      <button id="hud-speed-btn" class="hud-action-pill mc-pill hud-speed-pill desktop-only" title="Velocidad (V): 1x / 2.5x / 5x Vuelo"><span class="hud-pill-icon">⚡</span><span class="hud-pill-txt"> 1x</span></button>
+      <button id="btn-open-chat" class="hud-action-pill mc-pill" title="Abrir Chat (T)"><span class="hud-pill-icon">💬</span><span class="hud-pill-txt"> Chat</span></button>
+      <button id="btn-open-inv" class="hud-action-pill mc-pill" title="Inventario de Bloques (E)"><span class="hud-pill-icon">🎒</span><span class="hud-pill-txt"> Bloques</span></button>
+      <button id="btn-fullscreen" class="hud-action-pill mc-pill" title="Alternar Pantalla Completa"><span class="hud-pill-icon">⛶</span></button>
+      <button id="btn-menu-toggle" class="hud-action-pill mc-pill highlight-pill" title="Menú de Juego y Ajustes (ESC)"><span class="hud-pill-icon">⚙️</span><span class="hud-pill-txt"> Menú</span></button>
+    </div>
+
+    <!-- Mobile-First Floating Active Builder Tool Bar (Appears when Prefab / Brush / Cloner / Animal is active) -->
+    <div id="sandbox-active-tool-bar" class="sandbox-tool-banner hidden">
+      <div class="sandbox-tool-info">
+        <span id="sandbox-tool-badge" class="sandbox-tool-badge">🛠️ Herramienta Activa</span>
+        <span id="sandbox-tool-label" class="sandbox-tool-label">Torre Eiffel</span>
+      </div>
+      <div class="sandbox-tool-actions">
+        <button id="sandbox-btn-stamp" class="mc-btn sandbox-act-btn stamp-btn" type="button" title="Pegar / Aplicar donde apuntas">✨ PEGAR / USAR</button>
+        <button id="sandbox-btn-rotate" class="mc-btn sandbox-act-btn rotate-btn" type="button" title="Rotar Estructura 90° (Tecla R)">🔄 ROTAR (0°)</button>
+        <button id="sandbox-btn-undo" class="mc-btn sandbox-act-btn undo-btn" type="button" title="Deshacer última construcción (Ctrl+Z)">↩️ DESHACER</button>
+        <button id="sandbox-btn-clear" class="mc-btn sandbox-act-btn clear-btn" type="button" title="Volver a bloque normal 1x1">❌ QUITAR</button>
+      </div>
+    </div>
+
+    <!-- Weapons & Reactive TNT HUD Action Bar (Visible when Weapons Mode is active) -->
+    <div id="weapons-hud-controls">
+      <!-- Ergonomic 1-Tap Weapon Selector Bar (FUSIL / BAZOOKA / PLASMA) -->
+      <div id="weapon-selector-bar" class="weapon-selector-bar" role="group" aria-label="Selector de Armas">
+        <button id="btn-select-rifle" class="weapon-tab-btn mc-btn active" type="button" data-weapon="rifle" title="Fusil Francotirador (Precisión Infinita)">
+          <span class="wtab-icon">🔫</span>
+          <span class="wtab-label">FUSIL</span>
+        </button>
+        <button id="btn-select-bazooka" class="weapon-tab-btn mc-btn bazooka-tab" type="button" data-weapon="bazooka" title="Bazooka RPG Destructor (Impacto Explosivo de Misil)">
+          <span class="wtab-icon">🚀</span>
+          <span class="wtab-label">BAZOOKA</span>
+        </button>
+        <button id="btn-select-plasma" class="weapon-tab-btn mc-btn plasma-tab" type="button" data-weapon="plasma" title="Cañón de Plasma Táctico (Ráfaga Energética)">
+          <span class="wtab-icon">⚡</span>
+          <span class="wtab-label">PLASMA</span>
+        </button>
+      </div>
+      <button id="btn-weapon-aim" class="weapon-hud-btn mc-btn" title="Apuntar con Mira Telescópica (Click Der / Tecla Z)">
+        <span class="weapon-btn-icon">🎯</span>
+        <span class="weapon-btn-label" id="weapon-aim-label">APUNTAR</span>
+      </button>
+      <button id="btn-weapon-shoot" class="weapon-hud-btn mc-btn shoot-highlight" title="Disparar Arma Seleccionada (Click Izq / Tecla F)">
+        <span class="weapon-btn-icon" id="weapon-shoot-icon">🔫</span>
+        <span class="weapon-btn-label" id="weapon-shoot-label">DISPARAR</span>
+      </button>
+      <button id="btn-weapon-salvo" class="weapon-hud-btn mc-btn salvo-badge-btn" type="button" title="Salva de Misiles: 1x / 5x / 10x / 15x / 20x / 30x">
+        <span class="weapon-btn-icon">🚀</span>
+        <span id="weapon-salvo-hud-label" class="weapon-btn-label">x1</span>
+      </button>
+      <button id="btn-weapon-tnt" class="weapon-hud-btn mc-btn tnt-highlight" title="Colocar y Detonar TNT Reactivo (Tecla G)">
+        <span class="weapon-btn-icon">🧨</span>
+        <span class="weapon-btn-label">TNT REACTIVO</span>
+      </button>
+      <button id="btn-tnt-power" class="weapon-hud-btn mc-btn power-highlight" title="Ajustar Potencia del TNT">
+        <span class="weapon-btn-icon">⚡</span>
+        <span class="weapon-btn-label" id="tnt-power-label">POTENCIA: 1x</span>
+      </button>
+      <button id="btn-admin-missile" class="weapon-hud-btn mc-btn missile-highlight" title="Lanzar Misil Teledirigido Táctico">
+        <span class="weapon-btn-icon">🚀</span>
+        <span class="weapon-btn-label">MISIL TÁCTICO</span>
+      </button>
+    </div>
+
+    <!-- Selected block toast label -->
+    <div id="selected-block-label">Césped</div>
+
+    <!-- Ergonomic Floating Quick Build Dock (1-Tap Creation Tools) -->
+    <!-- Ergonomic Floating Quick Build Side Button & Collapsible Dock -->
+    <button id="btn-toggle-quick-build" class="quick-build-side-toggle mc-btn" type="button" title="Herramientas Rápidas de Construcción">
+      <span class="side-toggle-icon">🛠️</span>
+      <span class="side-toggle-label">CONSTRUIR</span>
+    </button>
+
+    <div id="quick-build-dock" class="quick-build-dock collapsed">
+      <button id="qbuild-btn-torch" class="qbuild-btn mc-btn" type="button" title="Colocar Antorcha / Luz Instantánea">
+        <span class="qbuild-icon">💡</span>
+        <span class="qbuild-label">LUZ</span>
+      </button>
+      <button id="qbuild-btn-flatten" class="qbuild-btn mc-btn" type="button" title="Aplanar Terreno 3x3 (Bulldozer Rápido)">
+        <span class="qbuild-icon">🚜</span>
+        <span class="qbuild-label">APLANAR</span>
+      </button>
+      <button id="qbuild-btn-dome" class="qbuild-btn mc-btn" type="button" title="Generador Instantáneo de Cúpulas">
+        <span class="qbuild-icon">⭕</span>
+        <span class="qbuild-label">CÚPULA</span>
+      </button>
+      <button id="qbuild-btn-undo" class="qbuild-btn mc-btn" type="button" title="Deshacer última construcción (Ctrl+Z)">
+        <span class="qbuild-icon">↩️</span>
+        <span class="qbuild-label">DESHACER</span>
+      </button>
+      <button id="qbuild-btn-catalog" class="qbuild-btn mc-btn highlight-btn" type="button" title="Catálogo de Edificios, Casas y Animales">
+        <span class="qbuild-icon">🏛️</span>
+        <span class="qbuild-label">EDIFICIOS</span>
+      </button>
+    </div>
+
+    <!-- Bottom Hotbar -->
+    <div id="hotbar-wrapper">
+      <div id="hotbar"></div>
+      <div class="hotbar-hint">1-9 o Rueda: Elegir bloque | E o 🎒: Catálogo | F5: Vista</div>
+    </div>
+
+    <!-- In-Game Driving HUD & Real-Time Speedometer (Milestone M5) -->
+    <div id="vehicle-driving-hud" class="vehicle-hud hidden">
+      <div class="vehicle-hud-content">
+        <div class="vehicle-hud-top">
+          <div id="vehicle-model-name" class="vehicle-badge">🏎️ Scuderia Red #1</div>
+          <div id="vehicle-cam-indicator" class="vehicle-pill">📷 Vista Persecución [V]</div>
+        </div>
+        <div class="speedo-main">
+          <div class="speedo-dial">
+            <span id="vehicle-speed-num">0</span>
+            <span class="speedo-unit">KM/H</span>
+          </div>
+          <div class="speedo-sub-val"><span id="vehicle-speed-ms">0.0</span> m/s</div>
+        </div>
+        <div class="speedo-bar-container">
+          <div id="vehicle-speed-bar" class="speedo-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div class="vehicle-keys-hint">
+          <span>[W]</span> Acelerar • <span>[S]</span> Freno/Reversa • <span>[A/D]</span> Girar • <span>[Espacio]</span> Derrape • <span>[V]</span> Cámara • <span>[E / F]</span> Salir
+        </div>
+      </div>
+    </div>
+
+    <!-- Vehicle Interaction Proximity Prompt -->
+    <div id="vehicle-enter-prompt" class="vehicle-prompt hidden">
+      <span class="prompt-icon">🏎️</span>
+      <span id="vehicle-prompt-text">Presiona <strong>[E]</strong> o <strong>[F]</strong> para conducir el coche</span>
+    </div>
+
+    <!-- Bunker Console Proximity Prompt -->
+    <div id="bunker-console-prompt" class="vehicle-prompt hidden">
+      <span class="prompt-icon">🛡️</span>
+      <span id="bunker-prompt-text">Presiona <strong>[E]</strong> para Consola de Mando de Silos</span>
+    </div>
+
+    <!-- In-Game Chat Feed & Input -->
+    <div id="chat-container">
+      <div id="chat-feed"></div>
+      <div id="chat-input" class="hidden">
+        <input type="text" id="chat-input-field" placeholder="Escribe un mensaje y presiona Enter..." maxlength="120" autocomplete="off">
+        <button id="chat-share-loc-btn" class="mc-btn chat-share-btn" title="Compartir mi Ubicación en el Chat">📍 Compartir</button>
+        <button id="chat-send-btn">Enviar</button>
+      </div>
+    </div>
+
+    <!-- Mobile Touch Controls Overlay -->
+    <div id="mobile-touch-overlay" class="hidden">
+      <!-- Relocated Camera Perspective Toggle (Separated from right-hand mining cluster) -->
+      <button id="mobile-btn-cam" class="mobile-action-btn cam-btn mc-action-btn mobile-cam-relocated" title="Alternar Cámara (1ª / 3ª Persona)">
+        <span class="btn-icon">📷</span>
+        <span class="btn-label">CÁMARA</span>
+      </button>
+
+      <!-- Mobile Vehicle Enter/Exit Actions -->
+      <button id="mobile-btn-car" class="mobile-action-btn car-action-btn mc-action-btn hidden" title="Conducir / Salir del Vehículo">
+        <span class="btn-icon">🏎️</span>
+        <span class="btn-label">COCHE</span>
+      </button>
+      <button id="mobile-btn-car-exit" class="mobile-action-btn car-exit-btn mc-action-btn hidden" title="Salir del Coche">
+        <span class="btn-icon">🚪</span>
+        <span class="btn-label">SALIR</span>
+      </button>
+
+      <!-- Left Virtual Joystick Zone (#virtual-joystick) -->
+      <div id="virtual-joystick" class="virtual-joystick-container">
+        <div id="joystick-zone">
+          <div id="joystick-base">
+            <div id="joystick-knob"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Touch Action Fan Arc (#mobile-action-buttons) -->
+      <!-- Dedicated Right Floating Mobility Dock (Gancho & Jetpack - Ergonómico y Separado) -->
+      <!-- Dedicated Right Floating Hook Dock (Gancho de Agarre - Cristal Puro) -->
+      <div id="mobile-mobility-dock" class="mobile-mobility-dock">
+        <button id="mobile-btn-grapple" class="mobile-action-btn grapple-btn mc-action-btn glass-pure-btn" type="button" title="Gancho de Agarre a Edificios (G)">
+          <span class="btn-icon">🪝</span>
+        </button>
+      </div>
+      <div id="mobile-action-buttons" class="action-fan-arc">
+        <button id="mobile-btn-sprint" class="mobile-action-btn sprint-btn mc-action-btn glass-pure-btn" title="Alternar Correr">
+          <span class="btn-icon">⚡</span>
+        </button>
+        <button id="mobile-btn-break" class="mobile-action-btn break-btn mc-action-btn glass-pure-btn" title="Romper Bloque / Disparar">
+          <span class="btn-icon">⛏️</span>
+        </button>
+        <button id="mobile-btn-place" class="mobile-action-btn place-btn mc-action-btn glass-pure-btn" title="Colocar Bloque">
+          <span class="btn-icon">🧱</span>
+        </button>
+        <button id="mobile-btn-jump" class="mobile-action-btn jump-btn mc-action-btn glass-pure-btn" title="Saltar">
+          <span class="btn-icon">⏫</span>
+        </button>
+      </div>
+
+      <!-- Dedicated Mobile Driving Pedals & Steering Controls (Visible when driving a car) -->
+      <div id="mobile-driving-controls" class="mobile-driving-controls hidden">
+        <div class="mobile-steer-pad">
+          <button id="mobile-drive-left" class="mobile-drive-btn steer-btn mc-action-btn" type="button" title="Girar Izquierda">
+            <span class="btn-icon">◀</span>
+            <span class="btn-label">IZQ</span>
+          </button>
+          <button id="mobile-drive-right" class="mobile-drive-btn steer-btn mc-action-btn" type="button" title="Girar Derecha">
+            <span class="btn-icon">▶</span>
+            <span class="btn-label">DER</span>
+          </button>
+        </div>
+        <div class="mobile-pedal-pad">
+          <button id="mobile-drive-brake" class="mobile-drive-btn brake-pedal-btn mc-action-btn" type="button" title="Frenar / Marcha Atrás">
+            <span class="btn-icon">▼</span>
+            <span class="btn-label">FRENO / ATRÁS</span>
+          </button>
+          <button id="mobile-drive-gas" class="mobile-drive-btn gas-pedal-btn mc-action-btn" type="button" title="Acelerar">
+            <span class="btn-icon">▲</span>
+            <span class="btn-label">ACELERAR</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- World Map & Fast Travel Modal ('M' Key) -->
+  <div id="map-modal" class="hidden">
+    <div class="map-modal-card world-map-card">
+      <div class="modal-header">
+        <h2>🗺️ Mapa del Mundo y Viaje Rápido</h2>
+        <button id="close-map-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <p class="modal-desc">Selecciona un monumento o distrito conectado por autopistas y túneles:</p>
+
+      <div class="map-sectors-grid">
+        <button class="map-dest-btn mc-btn" data-x="0" data-y="25" data-z="0" data-landmark="spawn">
+          <span class="dest-icon">🏰</span>
+          <div class="dest-info">
+            <span class="dest-title">Plaza Central (0, 0)</span>
+            <span class="dest-coords">XYZ (0, 25, 0) • Altar Dorado, Rotonda & Guardianes</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="250" data-y="25" data-z="250" data-landmark="japan">
+          <span class="dest-icon">⛩️</span>
+          <div class="dest-info">
+            <span class="dest-title">Japón Imperial (+250, +250)</span>
+            <span class="dest-coords">XYZ (+250, 25, +250) • Gran Pagoda, Castillo Himeji & Torii</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="-250" data-y="25" data-z="250" data-landmark="china">
+          <span class="dest-icon">🏮</span>
+          <div class="dest-info">
+            <span class="dest-title">China y Shanghai (-250, +250)</span>
+            <span class="dest-coords">XYZ (-250, 25, +250) • Shanghai Tower, SWFC & Ciudad Prohibida</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="250" data-y="25" data-z="-250" data-landmark="paris">
+          <span class="dest-icon">🗼</span>
+          <div class="dest-info">
+            <span class="dest-title">París y Torre Eiffel (+250, -250)</span>
+            <span class="dest-coords">XYZ (+250, 25, -250) • Torre Eiffel, Pirámide Louvre & Notre-Dame</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="-250" data-y="25" data-z="-250" data-landmark="newyork">
+          <span class="dest-icon">🗽</span>
+          <div class="dest-info">
+            <span class="dest-title">Nueva York (-250, -250)</span>
+            <span class="dest-coords">XYZ (-250, 25, -250) • Empire State, Chrysler, WTC & Central Park</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="0" data-y="50" data-z="500" data-landmark="norway">
+          <span class="dest-icon">🏔️</span>
+          <div class="dest-info">
+            <span class="dest-title">Fiordos de Noruega (0, +500)</span>
+            <span class="dest-coords">XYZ (0, 50, +500) • Puente Colgante, Drakkar Vikingo & Cascadas</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="0" data-y="20" data-z="-500" data-landmark="beach">
+          <span class="dest-icon">🏖️</span>
+          <div class="dest-info">
+            <span class="dest-title">Playa Paraíso (0, -500)</span>
+            <span class="dest-coords">XYZ (0, 20, -500) • Resort Real, Muelle, Superyate & Chiringuito</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="500" data-y="26" data-z="500" data-landmark="fuji">
+          <span class="dest-icon">🗻</span>
+          <div class="dest-info">
+            <span class="dest-title">🗻 Monte Fuji (+500, +500)</span>
+            <span class="dest-coords">XYZ (+500, 26, +500) • Volcán Colosal, Cráter Nevado, Lagos & Cavernas</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn" data-x="-500" data-y="25" data-z="-500" data-landmark="circuit">
+          <span class="dest-icon">🏎️</span>
+          <div class="dest-info">
+            <span class="dest-title">🏎️ Gran Circuito (-500, -500)</span>
+            <span class="dest-coords">XYZ (-500, 25, -500) • Pista Internacional, Gradas, Boxes, Lago & Túneles</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn highlight-pill" data-x="600" data-y="25" data-z="-600" data-landmark="pradera">
+          <span class="dest-icon">🌾</span>
+          <div class="dest-info">
+            <span class="dest-title">🌾 Gran Pradera Libre (+600, -600)</span>
+            <span class="dest-coords">XYZ (+600, 25, -600) • Explanada Gigante 360×360 para Construir Libremente</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn highlight-pill" data-x="-420" data-y="25" data-z="150" data-landmark="military_base">
+          <span class="dest-icon">🎖️</span>
+          <div class="dest-info">
+            <span class="dest-title">🎖️ Base Militar (-420, +150)</span>
+            <span class="dest-coords">XYZ (-420, 25, +150) • Aeródromo Estratégico, Hangar Blindado & Pista B-1</span>
+          </div>
+        </button>
+
+        <button class="map-dest-btn mc-btn highlight-pill" data-x="-500" data-y="12" data-z="300" data-landmark="underground_bunker">
+          <span class="dest-icon">🛡️</span>
+          <div class="dest-info">
+            <span class="dest-title">🛡️ Búnker Subterráneo (-500, +300)</span>
+            <span class="dest-coords">XYZ (-500, 12, +300) • Centro de Mando, 180 Silos & Montaña Blindada</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="map-speed-control">
+        <label class="speed-label">Modo de Velocidad y Movimiento (Tecla V):</label>
+        <div class="speed-options">
+          <button id="speed-btn-1" class="speed-opt-btn mc-btn active" data-speed="1.0" data-flight="false">⚡ 1x Caminar</button>
+          <button id="speed-btn-2" class="speed-opt-btn mc-btn" data-speed="2.5" data-flight="false">⚡ 2.5x Explorar</button>
+          <button id="speed-btn-5" class="speed-opt-btn mc-btn" data-speed="5.0" data-flight="true">🕊️ 5x Volar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player List (Tab Key) -->
+  <div id="player-list-modal" class="hidden">
+    <div class="player-list-card">
+      <div class="modal-header">
+        <h3>Exploradores en el Reino (Máx. 30)</h3>
+        <button id="close-player-list-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <table class="player-table">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Ubicación</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody id="player-list-body">
+          <!-- Populated dynamically -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Guide / How to Play Modal -->
+  <div id="guide-modal" class="hidden">
+    <div class="guide-card">
+      <div class="modal-header">
+        <h2>Guía de Exploración y Construcción</h2>
+        <button id="close-guide-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <div class="guide-content">
+        <div class="guide-section">
+          <h3>🏰 Punto de Encuentro (Descampado Central)</h3>
+          <p>Todos los exploradores aparecen juntos en el descampado central en <strong>XYZ (0, 24, 0)</strong>, conectado por autopistas con tráfico de coches, puentes colgantes y túneles de montaña hacia los 7 distritos del mundo.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3>⛏️ Cómo Minar, Construir y Usar Modo Armas/TNT</h3>
+          <ul>
+            <li><strong>Romper / Minar Bloques:</strong> Apunta a un bloque con la cruceta central y haz <strong>Clic Izquierdo</strong> (o toca el botón <strong>⛏️ Romper</strong> en móvil).</li>
+            <li><strong>Colocar Bloques:</strong> Apunta a la cara del bloque donde deseas edificar y haz <strong>Clic Derecho</strong> (o toca el botón <strong>🧱 Colocar</strong> en móvil).</li>
+            <li><strong>Modo Armas y TNT Reactivo:</strong> Actívalo desde el menú de <strong>Ajustes (⚙️)</strong> para equipar el Rifle de Francotirador con mira telescópica (<strong>🎯 Apuntar</strong> / <strong>🔫 Disparar</strong>) y lanzar <strong>🧨 TNT Reactivo</strong> con onda expansiva.</li>
+          </ul>
+        </div>
+
+        <div class="guide-section">
+          <h3>🎮 Controles de Movimiento</h3>
+          <div class="guide-split">
+            <div class="split-col">
+              <h4>💻 Computadora</h4>
+              <p><strong>W, A, S, D</strong>: Moverse</p>
+              <p><strong>Espacio</strong>: Saltar / Salir del agua</p>
+              <p><strong>Shift</strong>: Correr a mayor velocidad</p>
+              <p><strong>F / Z / G</strong>: Disparar / Apuntar / TNT</p>
+              <p><strong>T o Enter</strong>: Abrir Chat</p>
+              <p><strong>Esc</strong>: Menú y Ajustes</p>
+            </div>
+            <div class="split-col">
+              <h4>📱 Móvil / Pantalla Táctil</h4>
+              <p><strong>Joystick (esquina izq)</strong>: Desplazarse en 360°</p>
+              <p><strong>Arrastrar lado derecho</strong>: Girar cámara</p>
+              <p><strong>Botón 📷 (izq)</strong>: Alternar Cámara</p>
+              <p><strong>Botones ⛏️ / 🧱 / ⏫</strong>: Romper, Colocar y Saltar</p>
+              <p><strong>Botón 💬</strong>: Abrir chat y compartir link</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="guide-understand-btn" class="primary-btn">¡Entendido, a construir!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inventory Modal ('E' Key) -->
+  <div id="inventory-modal" class="hidden">
+    <div class="inventory-card">
+      <div class="modal-header">
+        <h2>Catálogo de Bloques y Materiales</h2>
+        <button id="close-inventory-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <p class="modal-desc">Haz clic en cualquier material para asignarlo a tu casilla activa de la barra rápida:</p>
+      <div id="inventory-grid"></div>
+    </div>
+  </div>
+
+  <!-- Estudio Constructor & Sandbox Offline Modal ('B' Key / 🛠️ Button) -->
+  <div id="builder-modal" class="hidden">
+    <div class="builder-modal-card">
+      <div class="modal-header">
+        <div>
+          <h2>🛠️ Estudio Constructor & Modo Offline</h2>
+          <p class="modal-desc" style="margin:2px 0 0 0;">Construye monumentos, puentes, lagos, bosques, animales NPC y guarda o carga tu propio mapa (.vrealm.json)</p>
+        </div>
+        <button id="close-builder-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+
+      <!-- Top Quick Bar inside Builder Modal -->
+      <div class="builder-quick-bar">
+        <button id="builder-tp-pradera-btn" type="button" class="mc-btn builder-top-pill highlight-pill">
+          🌾 Ir a La Gran Pradera Libre (+600, -600)
+        </button>
+        <button id="builder-toggle-offline-btn" type="button" class="mc-btn builder-top-pill">
+          🌐 Activar Modo Offline Solo
+        </button>
+        <button id="builder-save-map-btn" type="button" class="mc-btn builder-top-pill save-pill">
+          💾 Descargar Mi Mapa
+        </button>
+        <button id="builder-load-map-btn" type="button" class="mc-btn builder-top-pill load-pill">
+          📂 Subir / Cargar Mapa
+        </button>
+      </div>
+
+      <!-- Category Tabs -->
+      <div class="builder-tabs" role="tablist">
+        <button class="builder-tab-btn mc-btn active" data-tab="buildings" type="button">🏛️ Edificios & Monumentos</button>
+        <button class="builder-tab-btn mc-btn" data-tab="nature" type="button">🌉 Puentes, Agua & Árboles</button>
+        <button class="builder-tab-btn mc-btn" data-tab="brushes" type="button">🧱 Brochas & Copiar Edificios</button>
+        <button class="builder-tab-btn mc-btn" data-tab="animals" type="button">🐾 Animales NPC</button>
+        <button class="builder-tab-btn mc-btn" data-tab="worldfile" type="button">💾 Mapa & Permisos Android</button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div id="builder-tab-buildings" class="builder-tab-panel">
+        <p class="builder-section-hint">Selecciona cualquier edificio o monumento (como la Torre Eiffel o la Pagoda Imperial) y toca en el mapa o pulsa <strong>✨ PEGAR</strong> para colocarlo donde quieras (excepto en zonas reservadas):</p>
+        <div id="builder-prefabs-buildings-grid" class="builder-catalog-grid"></div>
+      </div>
+
+      <div id="builder-tab-nature" class="builder-tab-panel hidden">
+        <p class="builder-section-hint">Coloca puentes colgantes, tramos de autopista, murallas, lagos de agua cristalina, cascadas y bosques enteros con 1 toque:</p>
+        <div id="builder-prefabs-nature-grid" class="builder-catalog-grid"></div>
+      </div>
+
+      <div id="builder-tab-brushes" class="builder-tab-panel hidden">
+        <p class="builder-section-hint">Construye con brochas multi-bloque (plataformas 3×3, 5×5, muros, esferas, piscinas de agua) o copia cualquier edificio del mapa:</p>
+        <div id="builder-brushes-grid" class="builder-catalog-grid"></div>
+
+        <div class="cloner-box">
+          <h4>📋 Clonador 3D de Edificios del Mapa (Excluye Base Militar y Búnker)</h4>
+          <p>Apunta a cualquier edificio del mapa (Torre Eiffel, rascacielos, casas, templos) y cópialo para pegarlo donde quieras:</p>
+          <div class="cloner-actions-row">
+            <button id="cloner-copy-targeted-btn" type="button" class="mc-btn highlight-pill">🎯 Copiar Edificio al que Apunto</button>
+            <button id="cloner-select-box-btn" type="button" class="mc-btn">📐 Marcar Esquina A y B</button>
+            <button id="cloner-paste-mode-btn" type="button" class="mc-btn">📋 Modo Pegar Copia</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="builder-tab-animals" class="builder-tab-panel hidden">
+        <p class="builder-section-hint">Genera animales NPC vivos que caminan libremente por tus praderas y jardines con detección de colisiones (¡no atraviesan tus edificios ni muros!):</p>
+        <div id="builder-animals-grid" class="builder-catalog-grid"></div>
+      </div>
+
+      <div id="builder-tab-worldfile" class="builder-tab-panel hidden">
+        <div class="worldfile-panel-card">
+          <h3>💾 Guardar / Descargar y Cargar Tu Mundo Offline (.vrealm.json)</h3>
+          <p>Tu archivo de mapa guarda automáticamente tu <strong>nombre de jugador</strong>, tu <strong>posición exacta</strong>, todos los <strong>bloques y edificios construidos</strong> y tus <strong>animales NPC</strong>. Las zonas reservadas (Base Militar y Búnker) permanecen protegidas.</p>
+          <div class="worldfile-actions-grid">
+            <button id="worldfile-download-btn" type="button" class="mc-btn highlight-pill" style="padding:12px 16px;font-weight:bold;">
+              💾 DESCARGAR MI MAPA AHORA (.vrealm.json)
+            </button>
+            <button id="worldfile-upload-btn" type="button" class="mc-btn" style="padding:12px 16px;font-weight:bold;">
+              📂 SUBIR Y CARGAR ARCHIVO DE MAPA
+            </button>
+          </div>
+
+          <div class="android-permissions-box">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <div>
+                <h4>📱 Permisos de Archivos del Sistema en Android</h4>
+                <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Necesarios en dispositivos Android para guardar y leer tus archivos de mapa <code>.vrealm.json</code> en el almacenamiento del dispositivo.</p>
+              </div>
+              <span id="android-perm-status-badge" class="mc-badge">🔒 Pendiente / Listo</span>
+            </div>
+            <button id="android-request-perm-btn" type="button" class="mc-btn" style="margin-top:10px;width:100%;padding:10px;">
+              🛡️ Solicitar / Verificar Permisos de Almacenamiento Android
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Android System Storage Permission Request Dialog -->
+  <div id="android-permission-modal" class="hidden">
+    <div class="android-perm-card">
+      <div class="android-perm-icon">📁📱</div>
+      <h3>Permiso de Acceso a Archivos (Android)</h3>
+      <p>¿Permitir que <strong>Voxel Realms</strong> acceda a los archivos, fotos y almacenamiento de tu dispositivo para poder <strong>guardar y cargar mapas</strong> <code>.vrealm.json</code> y <strong>subir fotos para carteles gigantes</strong>?</p>
+      <div class="android-perm-perms-list">
+        <span>• READ_MEDIA_IMAGES (Subir fotos y anuncios a carteles)</span>
+        <span>• READ_EXTERNAL_STORAGE (Leer mapas guardados)</span>
+        <span>• WRITE_EXTERNAL_STORAGE (Guardar tu mapa offline)</span>
+      </div>
+      <div class="android-perm-actions">
+        <button id="android-perm-allow-btn" type="button" class="mc-btn highlight-pill" style="flex:1;padding:10px;font-weight:bold;">✅ PERMITIR ACCESO A ARCHIVOS</button>
+        <button id="android-perm-deny-btn" type="button" class="mc-btn" style="padding:10px;">Ahora no</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause Menu (Escape Key) -->
+  <div id="pause-menu" class="hidden">
+    <div class="pause-card">
+      <div class="pause-header-row">
+        <h2 class="game-logo-small">OPCIONES Y TELEMETRÍA</h2>
+        <span id="session-uptime-badge" class="mc-badge session-timer-chip" title="Tiempo activo en la sesión">⏱️ Sesión: <strong id="session-uptime-val">00:00:00</strong></span>
+      </div>
+      <div class="pause-divider"></div>
+
+      <div class="pause-scroll-body">
+        <!-- Real-Time FPS Telemetry & Performance Score Panel -->
+        <div id="telemetry-panel" class="telemetry-box">
+          <div class="telemetry-top-row">
+            <div class="telemetry-stat">
+              <span class="t-label">FPS ACTUAL / PROM</span>
+              <span class="t-val"><strong id="telemetry-fps-now">60</strong> / <span id="telemetry-fps-avg">60</span></span>
+            </div>
+            <div class="telemetry-stat">
+              <span class="t-label">MÍN / MÁX</span>
+              <span class="t-val"><span id="telemetry-fps-min">58</span> / <span id="telemetry-fps-max">60</span></span>
+            </div>
+            <div id="telemetry-grade-badge" class="telemetry-grade grade-s">S+ ÓPTIMO (98%)</div>
+          </div>
+          <canvas id="fps-telemetry-canvas" width="320" height="54"></canvas>
+        </div>
+
+        <!-- Authentic Minecraft Special Mode Toggles (Boost & Weapons/TNT) -->
+        <div class="pause-special-toggles">
+          <button id="boost-mode-toggle" class="mc-btn special-toggle-btn" type="button">
+            🚀 Modo BOOST: <span id="boost-mode-state">OFF</span>
+          </button>
+          <button id="weapons-mode-toggle" class="mc-btn special-toggle-btn weapons-toggle-btn" type="button">
+            🔫 Modo Armas y TNT: <span id="weapons-mode-state">OFF</span>
+          </button>
+        </div>
+
+        <!-- Configuración de Ráfagas y Cadencia de Armas -->
+        <div id="weapons-config-panel" class="settings-group weapons-config-card">
+          <div class="weapons-config-header">
+            <span class="weapons-config-icon">🔫</span>
+            <span class="weapons-config-title">Configuración de Ráfagas y Armas</span>
+          </div>
+
+          <div class="weapons-autofire-row">
+            <label class="autofire-toggle-label" for="weapons-autofire-toggle">
+              <input type="checkbox" id="weapons-autofire-toggle" class="mc-checkbox">
+              <span>⚡ Modo Ráfaga Automática (Disparo continuo al mantener pulsado)</span>
+            </label>
+          </div>
+
+          <div class="weapons-sliders-grid">
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-cadence-rifle">Cadencia Fusil: <strong id="cadence-rifle-val">120 ms (8.3 disp/s)</strong></label>
+              <input type="range" id="weapon-cadence-rifle" class="mc-range" min="60" max="350" step="10" value="120">
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-cadence-bazooka">Velocidad Bazooka: <strong id="cadence-bazooka-val">650 ms</strong></label>
+              <input type="range" id="weapon-cadence-bazooka" class="mc-range" min="300" max="1500" step="50" value="650">
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-cadence-plasma">Cadencia Plasma/Láser: <strong id="cadence-plasma-val">180 ms</strong></label>
+              <input type="range" id="weapon-cadence-plasma" class="mc-range" min="80" max="500" step="20" value="180">
+            </div>
+          </div>
+
+          <!-- Ráfagas de Armas Personales: Bazooka, Fusil / Escopeta, Plasma (1 a 500 Disparos) -->
+          <div class="weapons-burst-config" style="margin-top: 14px; padding: 12px; background: rgba(0, 0, 0, 0.28); border: 2px solid #ea580c; border-radius: 4px;">
+            <div class="weapons-config-header">
+              <span class="weapons-config-icon">⚡</span>
+              <span class="weapons-config-title" style="color: #fb923c; font-weight: 800;">Ráfagas de Armas (Bazooka, Fusil, Plasma): 1 a 500</span>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-burst-count">Cantidad de Disparos por Ráfaga: <strong id="weapon-burst-val">1 disparo</strong></label>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="range" id="weapon-burst-count" class="mc-range" min="1" max="500" step="1" value="1" style="flex:1;">
+                <input type="number" id="weapon-burst-count-num" class="mc-input-num" min="1" max="500" value="1" style="width: 70px; padding: 4px 6px; background: #11141c; color: #fbbf24; border: 2px solid #475569; font-weight: bold; text-align: center;">
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <label for="weapon-burst-mode">Modo de Ráfaga de Armas:</label>
+              <select id="weapon-burst-mode" class="mc-select">
+                <option value="sequential" selected>Tandas seguidas (uno a uno con cadencia)</option>
+                <option value="pairs">De par en par (2 a 2 en ráfaga)</option>
+                <option value="simultaneous">Torrente simultáneo (ráfaga instantánea)</option>
+              </select>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-burst-delay">Intervalo entre Disparos: <strong id="weapon-burst-delay-val">0.08 seg</strong></label>
+              <input type="range" id="weapon-burst-delay" class="mc-range" min="0.02" max="0.5" step="0.01" value="0.08">
+            </div>
+          </div>
+
+          <!-- Salvas de Misiles Potentes Teledirigidos / Radar (1 a 30) -->
+          <div class="weapons-salvo-config" style="margin-top: 14px; padding: 12px; background: rgba(0, 0, 0, 0.28); border: 2px solid #dc2626; border-radius: 4px;">
+            <div class="weapons-config-header">
+              <span class="weapons-config-icon">🚀</span>
+              <span class="weapons-config-title" style="color: #f87171; font-weight: 800;">Salvas de Misiles Potentes (Radar y Búnker): 1 a 30</span>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-salvo-count">Cantidad de Misiles por Disparo: <strong id="salvo-count-val">1 misil</strong></label>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="range" id="weapon-salvo-count" class="mc-range" min="1" max="30" step="1" value="1" style="flex:1;">
+                <input type="number" id="weapon-salvo-count-num" class="mc-input-num" min="1" max="30" value="1" style="width: 70px; padding: 4px 6px; background: #11141c; color: #f87171; border: 2px solid #475569; font-weight: bold; text-align: center;">
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <label for="weapon-salvo-mode">Modo de Ráfaga de Misiles:</label>
+              <select id="weapon-salvo-mode" class="mc-select">
+                <option value="sequential" selected>Tandas seguidas (uno a uno con cadencia)</option>
+                <option value="pairs">De par en par (2 a 2 en ráfaga)</option>
+                <option value="simultaneous">Bombardeo simultáneo (todos a la vez)</option>
+              </select>
+            </div>
+
+            <div class="settings-group mc-slider-group">
+              <label for="weapon-salvo-delay">Intervalo entre Misiles: <strong id="salvo-delay-val">0.25 seg</strong></label>
+              <input type="range" id="weapon-salvo-delay" class="mc-range" min="0.2" max="1.0" step="0.05" value="0.25">
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-columns">
+          <div class="settings-group mc-slider-group">
+            <label for="fps-cap-slider">Límite de FPS Máximos: <strong id="fps-cap-label">MAX</strong></label>
+            <input type="range" id="fps-cap-slider" class="mc-range" min="0" max="5" step="1" value="5">
+            <div class="fps-cap-ticks">
+              <span>10</span><span>30</span><span>60</span><span>100</span><span>120</span><span>MAX</span>
+            </div>
+          </div>
+
+          <div class="settings-group mc-slider-group">
+            <label for="render-dist-slider">Distancia Renderizado: <strong id="render-dist-val">5</strong> Chunks</label>
+            <input type="range" id="render-dist-slider" class="mc-range" min="3" max="10" step="1" value="5">
+          </div>
+
+          <div class="settings-group mc-slider-group">
+            <label for="sens-slider">Sensibilidad Cámara: <strong id="sens-val">100%</strong></label>
+            <input type="range" id="sens-slider" class="mc-range" min="0.001" max="0.005" step="0.0002" value="0.0022">
+          </div>
+
+          <div class="settings-group mc-slider-group">
+            <label for="fov-slider">Campo de Visión (FOV): <strong id="fov-val">75°</strong></label>
+            <input type="range" id="fov-slider" class="mc-range" min="60" max="100" step="1" value="75">
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <label for="menu-quality-select">Perfil Gráfico</label>
+          <select id="menu-quality-select" class="mc-select">
+            <option value="balanced">Equilibrado (Más Rendimiento)</option>
+            <option value="high" selected>Alto (Sombras Suaves PBR)</option>
+            <option value="ultra">Ultra (Máximo Realismo)</option>
+            <option value="boost">🚀 Modo BOOST (Ultra Distancia + Máximo FPS)</option>
+          </select>
+        </div>
+
+        <!-- Photo Upload for Giant Billboard Ads -->
+        <div class="settings-group photo-upload-card" id="photos-upload-config">
+          <div class="photo-upload-header">
+            <span class="photo-upload-title">📸 Subir Fotos / Anuncios (Cartel Gigante)</span>
+            <span class="photo-upload-badge" id="photo-upload-count">0 fotos</span>
+          </div>
+          <p class="photo-upload-desc">Sube fotos de tu galería para proyectarlas en el <strong>Cartel Gigante</strong> de la ciudad. Si subes varias fotos, cambiarán automáticamente cada pocos segundos.</p>
+          <div class="photo-upload-actions">
+            <button id="btn-select-photos" type="button" class="mc-btn photo-upload-btn">📁 Seleccionar Fotos</button>
+            <input type="file" id="billboard-photo-input" accept="image/*" multiple style="display:none;">
+            <button id="btn-clear-photos" type="button" class="mc-btn photo-clear-btn" title="Eliminar fotos subidas">🗑️ Vaciar Fotos</button>
+          </div>
+          <div id="photo-preview-grid" class="photo-preview-grid"></div>
+        </div>
+
+        <div class="pause-menu-grid">
+          <button id="menu-btn-builder" class="mc-btn menu-grid-btn highlight-pill">🛠️ Estudio Constructor</button>
+          <button id="menu-btn-pradera" class="mc-btn menu-grid-btn highlight-pill">🌾 Gran Pradera Libre</button>
+          <button id="menu-btn-save-world" class="mc-btn menu-grid-btn">💾 Descargar Mi Mapa</button>
+          <button id="menu-btn-load-world" class="mc-btn menu-grid-btn">📂 Subir / Cargar Mapa</button>
+          <button id="menu-btn-map" class="mc-btn menu-grid-btn">🗺️ Mapa y Viajes</button>
+          <button id="menu-btn-base-militar" class="mc-btn menu-grid-btn highlight-pill">🎖️ Base Militar</button>
+          <button id="menu-btn-bunker" class="mc-btn menu-grid-btn highlight-pill">🛡️ Búnker Subterráneo</button>
+          <button id="menu-btn-speed" class="mc-btn menu-grid-btn">⚡ Velocidad: 1x</button>
+          <button id="menu-btn-cam" class="mc-btn menu-grid-btn">📷 Cámara: 1ª P.</button>
+          <button id="menu-btn-share-loc" class="mc-btn menu-grid-btn">📍 Mi Ubicación</button>
+          <button id="menu-btn-inv" class="mc-btn menu-grid-btn">🎒 Catálogo Bloques</button>
+          <button id="menu-btn-guide" class="mc-btn menu-grid-btn">❓ Guía & Controles</button>
+          <button id="menu-btn-fullscreen" class="mc-btn menu-grid-btn">⛶ Pantalla Completa</button>
+        </div>
+
+        <!-- Exclusive Control Section (Only unlocked when authenticated) -->
+        <div id="admin-settings-panel" class="admin-settings-panel hidden">
+          <div class="admin-panel-header">
+            <span class="admin-panel-title">🛡️ Panel de Control del Servidor</span>
+            <span id="admin-online-badge" class="mc-badge">1 conectado</span>
+          </div>
+          <div class="admin-quick-bar" style="display:flex;gap:8px;margin-bottom:10px;">
+            <button id="admin-open-radar-btn" class="mc-btn radar-launch-btn" type="button" style="flex:1;padding:8px 12px;font-size:12px;font-weight:bold;">
+              📡 Abrir Radar Táctico de Misiles
+            </button>
+          </div>
+          <div class="admin-players-table-wrap">
+            <table class="player-table admin-players-table">
+              <thead>
+                <tr>
+                  <th>Jugador</th>
+                  <th>Hora</th>
+                  <th>Teletransporte / Misil</th>
+                </tr>
+              </thead>
+              <tbody id="admin-players-tbody"></tbody>
+            </table>
+          </div>
+          <button id="admin-reset-server-btn" class="mc-btn admin-reset-btn" type="button">
+            🔄 Reiniciar Servidor (Borrar Cambios y Expulsar Jugadores)
+          </button>
+        </div>
+      </div>
+
+      <div class="pause-actions">
+        <button id="resume-btn" class="primary-btn mc-btn">Volver al Juego</button>
+        <button id="switch-to-chess-btn" class="mc-btn highlight-btn" type="button">♟️ Ir a Grandmaster Chess</button>
+        <button id="disconnect-btn" class="secondary-btn mc-btn">Salir al Portal Principal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Desktop Click-to-Lock Prompt Banner -->
+  <div id="click-to-lock-prompt" class="hidden">
+    <span>🖱️ Haz clic en la pantalla para mover la cámara (ESC para el menú)</span>
+  </div>
+
+  <!-- Dual Game Portal Hub (Initial Screen) -->
+  <div id="portal-hub-modal">
+    <div class="portal-backdrop"></div>
+    <div class="portal-container">
+      <div class="portal-header">
+        <div class="portal-supertitle">PLATAFORMA MULTIJUGADOR DUAL</div>
+        <h1 class="portal-title">PORTAL DE JUEGOS</h1>
+        <p class="portal-subtitle">Elige tu experiencia: Exploración 3D hiperrealista o Gran Maestro de Ajedrez</p>
+      </div>
+
+      <div class="portal-cards-grid">
+        <!-- Game 1: Voxel Realms -->
+        <div class="portal-card voxel-card" id="portal-card-voxel">
+          <div class="portal-card-glow"></div>
+          <div class="portal-card-badge">MUNDO ABIERTO 3D</div>
+          <div class="portal-card-icon">⛏️</div>
+          <h2 class="portal-card-title">VOXEL REALMS</h2>
+          <p class="portal-card-desc">
+            Construcción libre infinita, monumentos mundiales, aviones caza acrobáticos, vehículos de carreras, combate aéreo de misiles y multijugador masivo online.
+          </p>
+          <ul class="portal-features-list">
+            <li>⚡ 30 Exploradores por sala</li>
+            <li>✈️ Aviones caza y combate de misiles</li>
+            <li>🏎️ Circuitos de carreras y vehículos</li>
+            <li>🏰 6 Sectores de monumentos épicos</li>
+          </ul>
+          <div class="portal-live-stat">
+            <span class="portal-stat-dot online"></span>
+            <span id="portal-voxel-players">Servidor En Línea</span>
+          </div>
+          <button id="portal-btn-launch-voxel" class="portal-launch-btn voxel-theme-btn" type="button">
+            <span>ENTRAR A VOXEL REALMS</span>
+            <span class="portal-btn-arrow">➔</span>
+          </button>
+        </div>
+
+        <!-- Game 2: Grandmaster Chess -->
+        <div class="portal-card chess-card" id="portal-card-chess">
+          <div class="portal-card-glow"></div>
+          <div class="portal-card-badge">ESTRATEGIA FIDE 2D / 3D</div>
+          <div class="portal-card-icon">
+            <svg class="portal-chess-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 22H5v-2h14v2M17 19H7v-2h10v2M16.5 10.5c0-.29-.12-.56-.32-.75.52-.63.82-1.4.82-2.25 0-1.93-1.57-3.5-3.5-3.5-.44 0-.85.08-1.23.23L12 2h-2l-.27 2.23C9.35 4.08 8.94 4 8.5 4 6.57 4 5 5.57 5 7.5c0 .85.3 1.62.82 2.25-.2.19-.32.46-.32.75 0 .55.45 1 1 1h.63L8 16h6l.87-4.5h.63c.55 0 1-.45 1-1z"/></svg>
+          </div>
+          <h2 class="portal-card-title">GRANDMASTER CHESS</h2>
+          <p class="portal-card-desc">
+            Ajedrez profesional con reglas 100% FIDE. Alterna entre vista 2D vector y 3D Three.js Staunton con 1 clic. Emparejamiento por ritmos, salas privadas por PIN y motor IA local.
+          </p>
+          <ul class="portal-features-list">
+            <li><svg class="portal-feat-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M21 16.5l-9 5.2-9-5.2V7.5l9-5.2 9 5.2v9zM12 4.1L5 8.1l7 4 7-4-7-4zm-8 5.2v6.2l7 4V13.3L4 9.3zm16 0l-7 4v6.2l7-4V9.3z"/></svg> Vista 2D clásica y 3D Staunton con 1 clic</li>
+            <li><svg class="portal-feat-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg> Bullet (1m), Blitz (3m/5m), Rápida (10m)</li>
+            <li><svg class="portal-feat-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg> Salas privadas seguras con PIN de 4 dígitos</li>
+            <li><svg class="portal-feat-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h4V5.72c-.6-.34-1-.98-1-1.72a2 2 0 0 1 2-2M7.5 13a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m9 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-7.5 4h6a1 1 0 0 0 0-2h-6a1 1 0 0 0 0 2"/></svg> Motor IA propio de 5 niveles con cálculo táctico</li>
+            <li><svg class="portal-feat-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg> Retransmisión de partidas en directo</li>
+          </ul>
+          <div class="portal-live-stat">
+            <span class="portal-stat-dot chess-dot"></span>
+            <span id="portal-chess-games">Motor FIDE Listo</span>
+          </div>
+          <button id="portal-btn-launch-chess" class="portal-launch-btn chess-theme-btn" type="button">
+            <span>ENTRAR A GRANDMASTER CHESS</span>
+            <svg class="portal-btn-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Initial Lobby Overlay -->
+  <div id="lobby-overlay" class="hidden">
+    <div class="lobby-backdrop"></div>
+    <div class="lobby-card">
+      <div class="game-badge">HIPERREALISMO 3D • MULTIJUGADOR WEB (30 JUGADORES)</div>
+      <h1 class="game-logo">VOXEL REALMS</h1>
+      <p class="tagline">Exploración y construcción infinita en tiempo real sin descargas.</p>
+
+      <!-- Server Status Badge -->
+      <div class="status-panel">
+        <div id="server-status-pill" class="status-pill">
+          <span class="status-dot online"></span> Conectando al Servidor...
+        </div>
+        <div id="lobby-players-count" class="players-count">-- conectados</div>
+      </div>
+
+      <div id="server-reset-banner" class="server-reset-banner hidden"></div>
+
+      <div class="lobby-form">
+        <div class="input-group">
+          <label for="player-name-input">Nombre del Explorador</label>
+          <input type="text" id="player-name-input" placeholder="Ingresa tu nombre..." maxlength="40" autofocus>
+        </div>
+
+        <div id="access-key-group" class="input-group hidden">
+          <label for="access-key-input">Clave de Acceso</label>
+          <input type="password" id="access-key-input" placeholder="Introduce tu clave..." maxlength="32" autocomplete="off">
+        </div>
+
+        <div class="input-group">
+          <label for="quality-select">Calidad Gráfica</label>
+          <select id="quality-select">
+            <option value="balanced">Equilibrado (Fluido en cualquier equipo o móvil)</option>
+            <option value="high" selected>Alto (PBR + Sombras Suaves + Agua Dinámica)</option>
+            <option value="ultra">Ultra (Máximo Detalle + Partículas + Atmósfera)</option>
+            <option value="boost">🚀 Modo BOOST (Ultra Distancia + Máximo Rendimiento)</option>
+          </select>
+        </div>
+
+        <button id="join-btn" class="launch-btn">
+          <span>ENTRAR AL MUNDO (MULTIJUGADOR ONLINE)</span>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-7.85-1.42 1.42L16.86 11H5v2z"/>
+          </svg>
+        </button>
+
+        <div class="lobby-offline-row">
+          <button id="join-offline-btn" type="button" class="mc-btn offline-launch-btn">
+            <span>🛠️ MODO OFFLINE (SOLO / CREATIVO LIBRE)</span>
+          </button>
+          <button id="load-world-lobby-btn" type="button" class="mc-btn load-world-btn">
+            <span>📂 CARGAR MI MAPA (.vrealm / .json)</span>
+          </button>
+          <input type="file" id="world-file-input" accept=".json,.vrealm,application/json" class="hidden">
+        </div>
+
+        <a href="/VoxelRealms.apk" download="VoxelRealms.apk" class="mc-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;text-decoration:none;font-size:12px;">
+          <span>📱 DESCARGAR APK ANDROID v2 (PANTALLA COMPLETA)</span>
+        </a>
+      </div>
+
+      <div class="controls-guide">
+        <div class="guide-item"><span class="key">W A S D</span> Moverse</div>
+        <div class="guide-item"><span class="key">ESPACIO</span> Saltar / Nadar</div>
+        <div class="guide-item"><span class="key">CLICK IZQ</span> Romper Bloque</div>
+        <div class="guide-item"><span class="key">CLICK DER</span> Colocar Bloque</div>
+        <div class="guide-item"><span class="key">1 - 9 / E</span> Barra & Catálogo</div>
+        <div class="guide-item"><span class="key">M / MAPA</span> Viaje Rápido</div>
+        <div class="guide-item"><span class="key">V / VEL</span> 1x / 2.5x / 5x</div>
+        <div class="guide-item"><span class="key">TAB</span> Exploradores</div>
+        <div class="guide-item"><span class="key">T / CHAT</span> Chat & Ubicación</div>
+        <div class="guide-item"><span class="key">MÓVIL</span> Joystick y Botones</div>
+        <div class="guide-item"><span class="key">ESC</span> Pausa y Ajustes</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grandmaster Chess Arena Container -->
+  <div id="chess-app-modal" class="hidden">
+    <div id="chess-root-container"></div>
+  </div>
+
+  <!-- Fast Pre-Load Status Probe & Join Fallback -->
+  <script>
+    (function() {
+      const portalHub = document.getElementById('portal-hub-modal');
+      const launchVoxelBtn = document.getElementById('portal-btn-launch-voxel');
+      const launchChessBtn = document.getElementById('portal-btn-launch-chess');
+      const lobbyOverlay = document.getElementById('lobby-overlay');
+      const chessModal = document.getElementById('chess-app-modal');
+      const statusPill = document.getElementById('server-status-pill');
+      const lobbyCount = document.getElementById('lobby-players-count');
+      const joinBtn = document.getElementById('join-btn');
+      const portalVoxelStat = document.getElementById('portal-voxel-players');
+      const portalChessStat = document.getElementById('portal-chess-games');
+
+      // Fast status fetch before heavy 3D assets download (works both on web host and offline APK)
+      var apiBase = (window.location.protocol === 'http:' || window.location.protocol === 'https:') ? '' : 'https://voxel-realms-w9l3.onrender.com';
+      window.VOXEL_SERVER_URL = apiBase || window.location.origin;
+      fetch(apiBase + '/api/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (statusPill && !statusPill.dataset.custom) {
+            statusPill.innerHTML = '<span class="status-dot online"></span> Servidor En Línea';
+          }
+          if (lobbyCount) {
+            lobbyCount.textContent = (d.onlinePlayers || 0) + ' / ' + (d.maxPlayers || 30) + ' conectados';
+          }
+          if (portalVoxelStat) {
+            portalVoxelStat.textContent = (d.onlinePlayers || 0) + ' / ' + (d.maxPlayers || 30) + ' jugadores online';
+          }
+          if (portalChessStat) {
+            var active = (d.chess && d.chess.activeGames) || 0;
+            portalChessStat.textContent = active > 0 ? (active + ' partida(s) en curso') : 'Motor FIDE & Online Listo';
+          }
+        })
+        .catch(function() {
+          if (statusPill && !statusPill.dataset.custom) {
+            statusPill.innerHTML = '<span class="status-dot offline"></span> Modo Local Listo (Auto-Sync Online)';
+          }
+          if (portalVoxelStat) {
+            portalVoxelStat.textContent = 'Modo Local Offline + Auto-Sync Online';
+          }
+          if (portalChessStat) {
+            portalChessStat.textContent = 'Motor FIDE 2400+ Offline Listo';
+          }
+        });
+
+      if (launchVoxelBtn) {
+        launchVoxelBtn.addEventListener('click', function() {
+          if (portalHub) portalHub.classList.add('hidden');
+          if (lobbyOverlay) lobbyOverlay.classList.remove('hidden');
+          if (window.VoxelAndroid && typeof window.VoxelAndroid.setOrientation === 'function') {
+            window.VoxelAndroid.setOrientation('landscape');
+          }
+          if (screen.orientation && typeof screen.orientation.lock === 'function') {
+            screen.orientation.lock('landscape').catch(function() {});
+          }
+        });
+      }
+
+      if (launchChessBtn) {
+        launchChessBtn.addEventListener('click', function() {
+          if (portalHub) portalHub.classList.add('hidden');
+          if (lobbyOverlay) lobbyOverlay.classList.add('hidden');
+          if (chessModal) chessModal.classList.remove('hidden');
+          if (window.VoxelAndroid && typeof window.VoxelAndroid.setOrientation === 'function') {
+            window.VoxelAndroid.setOrientation('portrait');
+          }
+          if (screen.orientation && typeof screen.orientation.lock === 'function') {
+            screen.orientation.lock('portrait').catch(function() {});
+          }
+          if (window.openChessApp) {
+            window.openChessApp();
+          }
+        });
+      }
+
+      if (joinBtn) {
+        joinBtn.addEventListener('click', function() {
+          if (!window.app) {
+            window.__wantsToJoin = true;
+            if (statusPill) {
+              statusPill.dataset.custom = '1';
+              statusPill.innerHTML = '<span class="status-dot online"></span> Cargando gráficos 3D...';
+            }
+          }
+        });
+      }
+    })();
+  </script>
+
+  <!-- Aerial Targets Module -->
+  <script type="module" src="src/aerial_targets.js"></script>
+  <!-- Fighter Aircraft Module -->
+  <script type="module" src="src/fighter_aircraft.js"></script>
+  <!-- Main Game Script -->
+  <script type="module" src="src/main.js"></script>
+  <!-- Multiplayer Rooms & PIN Private Room Modal ('R' Key / 🚪 Button) -->
+  <div id="rooms-modal" class="hidden">
+    <div class="rooms-modal-card">
+      <div class="modal-header">
+        <div>
+          <h2>🚪 Salas de Jugadores & Partidas Privadas</h2>
+          <p class="modal-desc" style="margin:2px 0 0 0;">Únete a una sala pública o crea tu sala privada protegida por código PIN de 4 dígitos</p>
+        </div>
+        <button id="close-rooms-btn" class="icon-btn mc-btn mc-close-btn" title="Cerrar">&times;</button>
+      </div>
+
+      <!-- Current Room Indicator -->
+      <div class="current-room-banner">
+        <span>📍 Sala Actual:</span>
+        <strong id="current-room-name" class="current-room-badge">Sala Principal (Global)</strong>
+      </div>
+
+      <!-- Rooms Grid Sections -->
+      <div class="rooms-sections-container">
+        <!-- Section 1: Join by PIN -->
+        <div class="room-action-box">
+          <h3>🔒 Entrar a Sala Privada por PIN</h3>
+          <p class="room-box-desc">Si un amigo te dio un código PIN de 4 dígitos, escríbelo aquí:</p>
+          <div class="room-input-row">
+            <input type="text" id="join-room-id-input" placeholder="ID de la sala (ej: sala1)" maxlength="24" class="mc-input">
+            <input type="password" id="join-room-pin-input" placeholder="PIN (4 dígitos)" maxlength="8" class="mc-input pin-input">
+            <button id="btn-join-pin-room" class="mc-btn primary-btn" type="button">🔑 ENTRAR</button>
+          </div>
+        </div>
+
+        <!-- Section 2: Create New Room -->
+        <div class="room-action-box">
+          <h3>✨ Crear Nueva Sala</h3>
+          <p class="room-box-desc">Crea una sala pública o privada para ti y tus amigos:</p>
+          <div class="room-input-row">
+            <input type="text" id="create-room-id-input" placeholder="ID único (ej: amigos24)" maxlength="20" class="mc-input">
+            <input type="text" id="create-room-name-input" placeholder="Nombre (ej: Mi Fortaleza)" maxlength="28" class="mc-input">
+            <input type="password" id="create-room-pin-input" placeholder="PIN (opcional)" maxlength="8" class="mc-input pin-input">
+            <button id="btn-create-custom-room" class="mc-btn highlight-btn" type="button">➕ CREAR Y ENTRAR</button>
+          </div>
+        </div>
+
+        <!-- Section 3: Available Public Rooms List -->
+        <div class="room-action-box">
+          <h3>🌐 Salas Disponibles</h3>
+          <div id="rooms-list-grid" class="rooms-list-grid">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

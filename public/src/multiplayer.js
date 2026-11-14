@@ -23,6 +23,9 @@ export class MultiplayerClient {
     this.remoteAvatars = new Map(); // id -> Avatar
     this.playerDirectory = new Map(); // id -> { id, name, pos, joinedAt }
     this.pendingModifications = new Map(); // "x,y,z" -> originalBlock (for rollback on rejection)
+    this.offlineSyncQueue = new Map(); // "x,y,z" -> blockType (queued while offline, synced on connect)
+    this.remoteServerBaseUrl = 'https://voxel-realms-w9l3.onrender.com';
+    this.backgroundProbeTimer = null;
     this.timeOfDay = 0.32; // Perpetual bright sunny day
     this.currentRoomId = 'main';
     this.currentRoomPin = null;
@@ -127,8 +130,55 @@ export class MultiplayerClient {
       });
     }
     if (this.onNotification) {
-      this.onNotification(`🛠️ Modo Offline Activado (${this.myName}). Construye libremente y descarga tu mapa cuando quieras.`);
+      this.onNotification(`🛠️ Modo Local Activado (${this.myName}). Sincronización automática en segundo plano lista cuando haya internet.`);
     }
+    this.startBackgroundOnlineProbe();
+  }
+
+  getResolvedServerWsUrl() {
+    if (typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:') && window.location.host) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${window.location.host}`;
+    }
+    const base = (typeof window !== 'undefined' && window.VOXEL_SERVER_URL) ? window.VOXEL_SERVER_URL : this.remoteServerBaseUrl;
+    return base.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
+  }
+
+  getResolvedServerHttpUrl(path = '/api/status') {
+    if (typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:') && window.location.host) {
+      return path;
+    }
+    const base = (typeof window !== 'undefined' && window.VOXEL_SERVER_URL) ? window.VOXEL_SERVER_URL : this.remoteServerBaseUrl;
+    return `${base.replace(/\/$/, '')}${path}`;
+  }
+
+  startBackgroundOnlineProbe() {
+    if (this.backgroundProbeTimer) return;
+    const checkOnline = () => {
+      if (this.connected || this.kickedByAdminReset) return;
+      const statusUrl = this.getResolvedServerHttpUrl('/api/status');
+      fetch(statusUrl, { method: 'GET', cache: 'no-store' })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(() => {
+          if (!this.connected && !this.kickedByAdminReset) {
+            this.connect(this.myName, {
+              email: this.myEmail,
+              adminKey: this.adminKey,
+              roomId: this.currentRoomId,
+              pin: this.currentRoomPin,
+              roomName: this.currentRoomName,
+              silentFallback: true
+            });
+          }
+        })
+        .catch(() => {});
+    };
+    this.backgroundProbeTimer = setInterval(checkOnline, 10000);
+    if (typeof window !== 'undefined' && !this._hasOnlineListener) {
+      this._hasOnlineListener = true;
+      window.addEventListener('online', () => setTimeout(checkOnline, 500));
+    }
+    setTimeout(checkOnline, 1500);
   }
 
   connect(playerName, options = {}) {
@@ -153,18 +203,20 @@ export class MultiplayerClient {
     }
     this.kickedByAdminReset = false;
 
-    // Build WebSocket URL matching current host and secure protocol
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    // Build WebSocket URL matching current host or configured remote Render server
+    const wsUrl = this.getResolvedServerWsUrl();
 
     try {
       this.ws = new WebSocket(wsUrl);
     } catch (e) {
-      if (this.onError) this.onError('Error al conectar con el servidor.');
+      if (!options.silentFallback) {
+        this.startOfflineMode(this.myName);
+      }
       return;
     }
 
     this.ws.onopen = () => {
+      this.isOfflineMode = false;
       this.connected = true;
       this.reconnecting = false;
       this.reconnectAttempts = 0;
@@ -181,6 +233,28 @@ export class MultiplayerClient {
       if (targetPin) joinPayload.pin = targetPin;
       if (targetRoomName) joinPayload.roomName = targetRoomName;
       this.send('join', joinPayload);
+
+      // Flush any blocks modified locally while offline
+      if (this.offlineSyncQueue && this.offlineSyncQueue.size > 0) {
+        const deltas = [];
+        for (const [k, bt] of this.offlineSyncQueue.entries()) {
+          const parts = k.split(',').map(Number);
+          if (parts.length === 3) {
+            deltas.push([parts[0], parts[1], parts[2], bt]);
+          }
+        }
+        this.offlineSyncQueue.clear();
+        if (deltas.length > 0) {
+          setTimeout(() => {
+            if (this.connected) {
+              this.send('block_modify_batch', { deltas });
+              if (this.onNotification) {
+                this.onNotification(`🌐 Sincronizados ${deltas.length} bloques locales con el servidor online.`);
+              }
+            }
+          }, 600);
+        }
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -977,9 +1051,11 @@ export class MultiplayerClient {
       this.checkAvatarsGroundAfterBlockBreak(x, y, z);
     }
 
-    // Send request to server if online
+    // Send request to server if online, or queue for automatic background sync when internet returns
     if (!this.isOfflineMode && this.connected) {
       this.send('block_modify', { x, y, z, blockType });
+    } else if (this.offlineSyncQueue) {
+      this.offlineSyncQueue.set(key, blockType);
     }
   }
 

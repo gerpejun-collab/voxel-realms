@@ -6,6 +6,7 @@
 
 import { ChessEngine } from './chess_engine.js';
 import { ChessAI } from './chess_ai.js';
+import { ChessZobrist } from './chess_zobrist.js';
 
 let engineInstance = null;
 let aiInstance = null;
@@ -43,7 +44,7 @@ export async function handleWorkerMessage(data, postMessageFn = (msg) => {
     }
 
     if (data.type === 'SEARCH') {
-        const { fen, level = 3, timeLimitMs = null, id = null } = data;
+        const { fen, level = 3, timeLimitMs = null, id = null, recentHashes = null, recentFens = null } = data;
         const ai = getAI();
         const engine = getEngine();
 
@@ -52,7 +53,24 @@ export async function handleWorkerMessage(data, postMessageFn = (msg) => {
                 engine.loadFen(fen);
             }
             const startTime = Date.now();
-            const bestMove = await ai.findBestMove(engine, level, timeLimitMs);
+            let effectiveHashes = recentHashes;
+            if (Array.isArray(recentFens) && recentFens.length > 0) {
+                const temp = new ChessEngine();
+                effectiveHashes = [];
+                for (const rFen of recentFens) {
+                    if (rFen) {
+                        temp.loadFen(rFen);
+                        const posKey = temp.getPositionKey();
+                        engine.positionCounts.set(posKey, (engine.positionCounts.get(posKey) || 0) + 1);
+                        effectiveHashes.push(ChessZobrist.computeHash(temp));
+                    }
+                }
+            }
+            const bestMove = await ai.findBestMove(engine, {
+                level,
+                timeLimitMs,
+                recentHashes: effectiveHashes
+            });
             const elapsedMs = Math.max(1, Date.now() - startTime);
             const nodes = ai.lastNodesSearched || ai.nodesEvaluated || 0;
             const nps = Math.round((nodes / elapsedMs) * 1000);

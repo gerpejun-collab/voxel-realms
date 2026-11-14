@@ -1255,6 +1255,11 @@ export class ChessUI {
     }
 
     initAIWorker() {
+        // Android WebView on file:// blocks module Web Workers; skip worker immediately to avoid 5s timeout per move
+        if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+            this.aiWorker = null;
+            return;
+        }
         if (typeof Worker !== 'undefined') {
             try {
                 this.aiWorker = new Worker(new URL('./chess_ai_worker.js', import.meta.url), { type: 'module' });
@@ -1274,7 +1279,12 @@ export class ChessUI {
                     }
                 };
                 this.aiWorker.onerror = (err) => {
-                    console.warn('[ChessUI] AI Worker error, falling back to sync search:', err);
+                    console.warn('[ChessUI] AI Worker error, disabling worker & falling back to direct search:', err);
+                    this.aiWorker = null;
+                    for (const [reqId, resolver] of this.pendingWorkerResolvers.entries()) {
+                        this.pendingWorkerResolvers.delete(reqId);
+                        resolver.reject(new Error('Worker failed'));
+                    }
                 };
             } catch (e) {
                 console.warn('[ChessUI] Web Worker initialization failed, fallback active:', e);
@@ -1295,6 +1305,10 @@ export class ChessUI {
     }
 
     async findAIMoveAsync(engine, level = 3, timeLimitMs = null) {
+        const recentFens = Array.isArray(engine.history)
+            ? engine.history.slice(-24).map(m => m.fenBefore).filter(Boolean)
+            : [];
+
         if (this.aiWorker) {
             return new Promise((resolve) => {
                 const id = ++this.workerRequestId;
@@ -1302,9 +1316,10 @@ export class ChessUI {
                 const timeoutTimer = setTimeout(() => {
                     if (this.pendingWorkerResolvers.has(id)) {
                         this.pendingWorkerResolvers.delete(id);
+                        this.aiWorker = null;
                         this.ai.findBestMove(engine, level, timeLimitMs).then(resolve).catch(() => resolve(null));
                     }
-                }, Math.max(5000, (timeLimitMs || 2000) * 2));
+                }, Math.max(2500, (timeLimitMs || 1200) * 2));
 
                 this.pendingWorkerResolvers.set(id, {
                     resolve: (bestMove) => {
@@ -1323,16 +1338,19 @@ export class ChessUI {
                         id,
                         fen,
                         level,
-                        timeLimitMs
+                        timeLimitMs,
+                        recentFens
                     });
                 } catch (postErr) {
                     clearTimeout(timeoutTimer);
                     this.pendingWorkerResolvers.delete(id);
+                    this.aiWorker = null;
                     this.ai.findBestMove(engine, level, timeLimitMs).then(resolve).catch(() => resolve(null));
                 }
             });
         }
-        // Fallback: synchronous local thread search
+        // Yield 1 frame before synchronous search so mobile UI stays responsive
+        await new Promise(r => setTimeout(r, 16));
         return this.ai.findBestMove(engine, level, timeLimitMs);
     }
 
@@ -1519,7 +1537,7 @@ export class ChessUI {
         }
         const delayMs = this.aiSpeedMode === 'natural'
             ? Math.round(3000 + Math.random() * 3000)
-            : 450;
+            : 30;
 
         const formatLabel = (lvl) => lvl === '5_classic' ? 'Nv.5 Clásico' : (lvl === 5 || lvl === '5' ? 'Nv.5+ Nuevo' : `Nv.${lvl}`);
         const turnLabel = this.engine.turn === 'w'
@@ -1756,7 +1774,7 @@ export class ChessUI {
     checkLocalGameOver() {
         const status = this.engine.getGameStatus();
         if (status.isGameOver) {
-            if (status.result === 'threefold_repetition') {
+            if (status.result === 'threefold_repetition' && this.gameMode !== 'ai_vs_ai') {
                 return false;
             }
             this.stopClock();

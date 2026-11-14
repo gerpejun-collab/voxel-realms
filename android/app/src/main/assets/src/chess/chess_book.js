@@ -10,6 +10,7 @@ export class ChessBook {
     this.fenTable = new Map();     // canonical FEN -> Array<{ from, to, promotion, san, weight, eco, name }>
     this.zobristTable = new Map(); // BigInt hash -> Array<{ from, to, promotion, san, weight, eco, name }>
     this.infoTable = new Map();    // canonical FEN -> { eco, name }
+    this.recentRootMoves = [];     // tracks recently chosen early moves so consecutive games vary openings
     this.initBook();
   }
 
@@ -329,7 +330,11 @@ export class ChessBook {
     const candidates = this.getCandidates(engine);
     if (!candidates || candidates.length === 0) return null;
 
-    if (candidates.length === 1 || temperature <= 0.05) {
+    if (candidates.length === 1) {
+      return { ...candidates[0] };
+    }
+
+    if (temperature <= 0.05) {
       let best = candidates[0];
       for (const c of candidates) {
         if (c.weight > best.weight) best = c;
@@ -337,26 +342,48 @@ export class ChessBook {
       return { ...best };
     }
 
-    // Temperature-weighted sampling: P(m_i) ~ w_i^(1/T)
-    const invT = 1.0 / Math.max(0.1, temperature);
+    const plyCount = Array.isArray(engine.history) ? engine.history.length : 0;
+    // In the first 8 plies (4 full moves), boost effective temperature so all GM openings get fair play
+    const effectiveTemp = plyCount < 8 ? Math.max(temperature, 1.25) : temperature;
+    const invT = 1.0 / Math.max(0.15, effectiveTemp);
+
     const expWeights = [];
     let sum = 0.0;
     for (const c of candidates) {
-      const ew = Math.pow(Math.max(1, c.weight), invT);
+      let w = Math.max(1, c.weight);
+      // Penalize recently played early moves in this session so consecutive matches open differently
+      if (plyCount < 4 && this.recentRootMoves.length > 0) {
+        const moveKey = `${plyCount}:${c.from}-${c.to}`;
+        const recentOccurrences = this.recentRootMoves.filter(k => k === moveKey).length;
+        if (recentOccurrences > 0) {
+          w = Math.max(5, w / Math.pow(2.8, recentOccurrences));
+        }
+      }
+      const ew = Math.pow(w, invT);
       expWeights.push(ew);
       sum += ew;
     }
 
     const r = Math.random() * sum;
     let accum = 0.0;
+    let chosen = candidates[candidates.length - 1];
     for (let i = 0; i < candidates.length; i++) {
       accum += expWeights[i];
       if (accum >= r) {
-        return { ...candidates[i] };
+        chosen = candidates[i];
+        break;
       }
     }
 
-    return { ...candidates[candidates.length - 1] };
+    if (plyCount < 4 && chosen) {
+      const moveKey = `${plyCount}:${chosen.from}-${chosen.to}`;
+      this.recentRootMoves.push(moveKey);
+      if (this.recentRootMoves.length > 16) {
+        this.recentRootMoves.shift();
+      }
+    }
+
+    return { ...chosen };
   }
 }
 

@@ -150,22 +150,81 @@ export class ChessAI {
     }
 
     /**
+     * Seeds repetitionTracker with real game history hashes so both Worker and Main Thread
+     * searches know which positions have already occurred in the actual game.
+     */
+    seedGameHistoryHashes(engine, externalHashes = null) {
+        this.repetitionTracker.clear();
+        if (Array.isArray(externalHashes) && externalHashes.length > 0) {
+            for (const h of externalHashes) {
+                try {
+                    const bigH = typeof h === 'bigint' ? h : BigInt(h);
+                    // Push twice so any position that already happened in the real game triggers repCount >= 2 at root
+                    this.repetitionTracker.push(bigH);
+                    this.repetitionTracker.push(bigH);
+                } catch (_) {}
+            }
+            return;
+        }
+        if (engine && Array.isArray(engine.history) && engine.history.length > 0) {
+            const temp = new ChessEngine();
+            const startIdx = Math.max(0, engine.history.length - 24);
+            for (let i = 0; i < engine.history.length; i++) {
+                const m = engine.history[i];
+                if (i >= startIdx && m.fenBefore) {
+                    temp.loadFen(m.fenBefore);
+                    const bigH = ChessZobrist.computeHash(temp);
+                    this.repetitionTracker.push(bigH);
+                    this.repetitionTracker.push(bigH);
+                }
+            }
+        }
+    }
+
+    /**
      * Classic 2400 engine search (original Alpha-Beta depth 4 without NMP/LMR/tapered eval)
      * Preserved specifically so users can pit the New 2400+ model vs the Classic 2400 model head-to-head!
+     * Includes proper alpha-beta root pruning, MVV-LVA capture ordering for mobile speed, and anti-repetition.
      */
-    searchClassic(engine, depth = 4) {
+    searchClassic(engine, depth = 4, externalHashes = null) {
+        this.seedGameHistoryHashes(engine, externalHashes);
         const isWhite = engine.turn === 'w';
         const legalMoves = engine.generateLegalMoves(engine.turn);
         if (legalMoves.length === 0) return null;
-        let bestMove = legalMoves[0];
+
+        // Sort captures first (MVV-LVA) + slight micro-shuffle among quiet moves so Classic doesn't play identical games
+        const orderedMoves = legalMoves.slice().sort((a, b) => {
+            const capA = a.captured ? (PIECE_VALUES[a.captured.type] || 100) * 10 - (PIECE_VALUES[a.piece?.type || a.piece] || 100) : 0;
+            const capB = b.captured ? (PIECE_VALUES[b.captured.type] || 100) * 10 - (PIECE_VALUES[b.piece?.type || b.piece] || 100) : 0;
+            if (capB !== capA) return capB - capA;
+            return (Math.random() - 0.5);
+        });
+
+        const rootHash = ChessZobrist.computeHash(engine);
+        let bestMove = orderedMoves[0];
         let bestScore = -Infinity;
-        for (const move of legalMoves) {
+        let alpha = -Infinity;
+        const beta = Infinity;
+
+        for (const move of orderedMoves) {
             const undo = engine.makeMoveFast(move.from, move.to, move.promotion || 'q');
-            const score = -this.minimaxClassic(engine, depth - 1, -Infinity, Infinity, !isWhite);
+            const childHash = ChessZobrist.updateHash(rootHash, undo, undo.prevCastling, engine.castling, undo.prevEp, engine.enPassant);
+            const prevOccurrences = this.repetitionTracker.getCount(childHash);
+
+            let score = -this.minimaxClassic(engine, depth - 1, -beta, -alpha, !isWhite);
             engine.unmakeMove(undo);
+
+            // Prevent 2-piece back-and-forth infinite loops unless losing badly
+            if (prevOccurrences >= 1 && score > -150 && score < 15000) {
+                score -= prevOccurrences >= 2 ? 220 : 65;
+            }
+
             if (score > bestScore) {
                 bestScore = score;
                 bestMove = move;
+            }
+            if (score > alpha) {
+                alpha = score;
             }
         }
         this.lastNodesSearched = this.nodesEvaluated;
@@ -180,17 +239,26 @@ export class ChessAI {
             const ev = this.evaluateClassic(engine);
             return isWhiteTurn ? ev : -ev;
         }
-        const legalMoves = engine.generateLegalMoves(engine.turn);
-        if (legalMoves.length === 0) {
-            if (engine.isInCheck(engine.turn)) return -20000;
-            return 0;
-        }
-        for (const move of legalMoves) {
+        const movingColor = engine.turn;
+        const pseudoMoves = engine.generateLegalMoves(movingColor, false);
+        let legalCount = 0;
+
+        for (let i = 0; i < pseudoMoves.length; i++) {
+            const move = pseudoMoves[i];
             const undo = engine.makeMoveFast(move.from, move.to, move.promotion || 'q');
+            if (engine.isInCheck(movingColor)) {
+                engine.unmakeMove(undo);
+                continue;
+            }
+            legalCount++;
             const score = -this.minimaxClassic(engine, depth - 1, -beta, -alpha, !isWhiteTurn);
             engine.unmakeMove(undo);
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
+        }
+        if (legalCount === 0) {
+            if (engine.isInCheck(movingColor)) return -20000 - depth;
+            return 0;
         }
         return alpha;
     }
@@ -249,10 +317,12 @@ export class ChessAI {
             : { level: levelOrOptions };
 
         const level = options.level !== undefined ? options.level : 3;
+        const isClassic = level === '5_classic' || level === 'classic' || options.useClassic === true || options.engineVariant === 'classic';
         const useBook = options.useBook !== false;
         const mctsSims = options.mctsSims || (level === 5 ? 200 : 100);
-        const temperature = options.temperature !== undefined ? options.temperature : (level === 5 ? 0.2 : 0.8);
+        const temperature = options.temperature !== undefined ? options.temperature : 0.85;
         const customTime = typeof maybeTimeLimit === 'number' ? maybeTimeLimit : options.timeLimitMs;
+        const recentHashes = options.recentHashes || null;
 
         const legalMoves = engine.generateLegalMoves(engine.turn);
         if (legalMoves.length === 0) return null;
@@ -263,13 +333,9 @@ export class ChessAI {
             return ChessAI.normalizeMove(legalMoves[0], 0);
         }
 
-        // Classic 2400 model variant (requested for head-to-head IA vs IA matches)
-        if (level === '5_classic' || level === 'classic' || options.useClassic === true || options.engineVariant === 'classic') {
-            return this.searchClassic(engine, 4);
-        }
-
         // 1. Grandmaster Opening Book Lookup (100% offline, 1,822 positions)
-        if (useBook && level >= 2) {
+        // Both New (5) and Classic (5_classic) use the GM Opening Book with balanced variety so games don't clone!
+        if (useBook && (isClassic || level >= 2)) {
             const bookMove = this.book.findBookMove(engine, temperature);
             if (bookMove) {
                 const isLegal = legalMoves.some(m => {
@@ -289,6 +355,11 @@ export class ChessAI {
                     });
                 }
             }
+        }
+
+        // Classic 2400 model variant (requested for head-to-head IA vs IA matches)
+        if (isClassic) {
+            return this.searchClassic(engine, 4, recentHashes);
         }
 
         // 2. Level 1: Novice (Fast, friendly, 60% random, 40% 1-ply)
@@ -341,8 +412,8 @@ export class ChessAI {
             }
         }
 
-        // 6. Level 5: Grandmaster Master Mode (Proprietary Deep Alpha-Beta + Quiescence with 1200ms budget)
-        return this.searchIterativeDeepening(engine, 5, customTime || 1200);
+        // 6. Level 5: Grandmaster Master Mode (Proprietary Deep Alpha-Beta + Quiescence with 700ms budget)
+        return this.searchIterativeDeepening(engine, 5, customTime || 700, recentHashes);
     }
 
     search1Ply(engine, legalMoves) {
@@ -385,12 +456,12 @@ export class ChessAI {
      * Guarantees fast response (~500ms-1.2s max), never freezes browser for 20s,
      * and uses the deepest fully completed depth for tactical perfection.
      */
-    async searchIterativeDeepening(engine, maxDepth = 5, timeLimitMs = 1200) {
+    async searchIterativeDeepening(engine, maxDepth = 5, timeLimitMs = 700, externalHashes = null) {
         const startTime = Date.now();
         this.searchStartTime = startTime;
         this.searchTimeLimit = timeLimitMs;
         this.timeUp = false;
-        this.repetitionTracker.clear();
+        this.seedGameHistoryHashes(engine, externalHashes);
 
         let bestMove = null;
         let completedDepth = 0;
@@ -424,11 +495,11 @@ export class ChessAI {
             if (this.stopRequested) {
                 break;
             }
-            // Don't start next iteration if more than 60% of budget already spent
-            if (Date.now() - startTime > timeLimitMs * 0.6) {
+            const stopRatio = d >= 4 ? 0.45 : 0.60;
+            if (Date.now() - startTime > timeLimitMs * stopRatio) {
                 break;
             }
-            if (d >= 3) {
+            if (d >= 4) {
                 await new Promise(r => setTimeout(r, 0));
             }
         }
@@ -474,8 +545,9 @@ export class ChessAI {
             }
 
             const repCount = this.repetitionTracker.getCount(childHash);
-            if (repCount >= 2 && score > -80) {
-                score -= repCount >= 3 ? 120 : 45;
+            // Penalize previous visits in the real game so pieces never shuffle back-and-forth unless losing badly
+            if (repCount >= 2 && score > -150 && score < 15000) {
+                score -= repCount >= 3 ? 220 : 65;
             }
 
             if (score > bestScore) {
